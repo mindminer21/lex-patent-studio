@@ -32,6 +32,11 @@ npx tsc --noEmit
 npm run build
 ```
 
+## Repository
+
+- Public source: [github.com/mindminer21/lex-patent-studio](https://github.com/mindminer21/lex-patent-studio)
+- Claude Design assignment: [`CLAUDE-DESIGN-PROMPT.md`](CLAUDE-DESIGN-PROMPT.md)
+
 ## Design and product context
 
 - [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md)
