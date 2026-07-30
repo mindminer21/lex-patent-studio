@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lex Patent Studio
 
-## Getting Started
+Design-stage Next.js codebase for a multi-model, source-grounded patent drafting and strategy workspace with a separate connected-counsel pathway.
 
-First, run the development server:
+## Product lanes
+
+1. **Self-service software** — drafting, analysis, research, model choice, citations, and document exports. Software use does not create an attorney-client relationship.
+2. **Meet with Patent Counsel — Evaluate, Prepare & File** — limited conflict intake, attorney review, consultation, separate engagement, counsel-guided preparation, supervised filing, and receipt/docket handoff. Jeff is the initial connected patent lawyer.
+
+## Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- Planned: Vercel, separate Supabase private-application and public-corpus projects, Stripe, OpenAI, Anthropic, and xAI
+
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Quality checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
-## Learn More
+## Design and product context
 
-To learn more about Next.js, take a look at the following resources:
+- [`docs/DESIGN-HANDOFF.md`](docs/DESIGN-HANDOFF.md)
+- [`docs/business-and-product-proposal.md`](docs/business-and-product-proposal.md)
+- [`docs/legal-ethics-risk-memo.md`](docs/legal-ethics-risk-memo.md)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Status
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This repository is an initial design handoff and product shell, not production legal software. It does not authenticate users, process confidential inventions, provide legal advice, or submit filings.
