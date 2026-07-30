@@ -20,12 +20,19 @@ Read these files first:
 
 ## Objective
 
-Design and implement a production-quality frontend concept for **Lex Patent Studio**, a source-grounded, multi-model patent drafting and strategy workspace with a separate connected-patent-counsel pathway.
+Design and implement a production-quality frontend concept for **Lex Patent Studio**, a source-grounded, multi-model patent drafting and strategy workspace for law firms, registered patent practitioners, and in-house legal teams. Lex is the professional product in a two-brand architecture.
 
-The result should make two product lanes unmistakably different:
+## Brand architecture and assignment boundary
 
-1. **Self-service patent software** — patent research, fact organization, drafting, office-action analysis, claim strategy, citations, multi-model review, and document export. Use of this lane does not create an attorney-client relationship.
-2. **Meet with Patent Counsel — Evaluate, Prepare & File** — limited conflict intake, attorney clearance, consultation, separate engagement, counsel-guided preparation, client/attorney approval, supervised filing, and receipt/docket status. Jeff is the initial connected patent lawyer.
+1. **Lex Patent Studio** — the product implemented in this repository. Practitioner-only positioning: **“Your next patent associate.”** The metaphor must be qualified by clear supervision language; Lex is not a person, attorney, agent, or autonomous legal-service provider.
+2. **Invention Atlas** *(working name; isolated prototype routes are present in this repository)* — a separately branded/domain-bound product for VCs, founders, early-stage companies, and R&D teams. It organizes invention facts and counsel-ready drafts but does not provide legal advice or filing-ready work product. The shared repository is a design convenience only; production must use separate deployment, domain, public identity, onboarding, terms, support, billing descriptor, and analytics property.
+
+The products may share development infrastructure, but must not share confusing public branding, navigation, onboarding, terms, support identity, billing descriptors, analytics properties, prompts, or output permissions. **Do not add non-lawyer signup or founder self-service flows to Lex routes or navigation.** Keep the existing Invention Atlas prototype isolated under `/venture` and `/self-service-terms`, suitable for later extraction to its own domain. A separate connected-counsel module may appear in Lex only with explicit conflict, engagement, and attorney-control states.
+
+Within Lex, make these two operating contexts unmistakably different:
+
+1. **Practitioner software** — patent research, fact organization, drafting, office-action analysis, claim strategy, citations, multi-model review, and document export under responsible-practitioner supervision.
+2. **Connected-counsel administration** — limited conflict intake, attorney clearance, consultation, separate engagement, counsel-guided preparation, client/attorney approval, supervised filing, and receipt/docket status. Jeff is the initial connected patent lawyer.
 
 This is a frontend design implementation and realistic product prototype—not permission to implement live legal advice, real billing, live model calls, confidential-data processing, or autonomous USPTO filing.
 
@@ -34,13 +41,13 @@ This is a frontend design implementation and realistic product prototype—not p
 ### Primary
 
 - Registered patent attorneys and agents
-- Small IP boutiques
-- In-house patent teams
-- Sophisticated technical founders already working with counsel
+- Small IP boutiques and law-firm practice groups
+- In-house patent and legal teams
+- Patent operations professionals working under responsible-practitioner supervision
 
-### Secondary
+### Separate product and routes—not a Lex audience
 
-- Inventors/founders who need educational organization tools and a clear way to request connected patent counsel
+VCs, founders, early-stage companies, R&D departments, and innovation teams belong in the separately branded **Invention Atlas** experience. The existing `/venture` and `/self-service-terms` routes are isolated prototype surfaces. Do not add that audience to Lex onboarding/navigation or visually merge the two brands.
 
 ## Surface decisions
 
@@ -58,12 +65,12 @@ Implement at least these responsive routes or route-equivalent prototype surface
 
 ### 1. `/` — Public marketing homepage
 
-- Original, editorial hero
-- Clear statement of the product and audience
+- Original, editorial hero for patent practitioners, anchored by “Your next patent associate” and a nearby supervision qualifier
+- Clear statement of the professional product and audience
 - Demonstrate the three-pane workspace with a realistic synthetic matter
-- Explain source-grounding and multi-model choice
-- Explain the self-service/counsel separation
-- Prominent but careful counsel CTA
+- Explain source-grounding, supervision, and multi-model choice
+- Explain practitioner control and the separately gated connected-counsel administration context
+- Do not add founder/non-lawyer self-service signup to Lex; preserve that experience only in the isolated Invention Atlas prototype routes
 - Pricing overview
 - Trust/data-handling section without unsupported compliance badges
 - Final conversion CTA
@@ -127,6 +134,18 @@ The interface must make clear:
 - Use the effective-dated rate table in `docs/business-and-product-proposal.md`; label it as a snapshot rather than a permanent promise
 - Separate sections for platform/model charges, connected-counsel legal fees, and government/third-party filing costs
 
+### 5. `/venture` and `/self-service-terms` — Isolated Invention Atlas prototype
+
+Preserve and refine these as a visually and legally separate product proof:
+
+- No Lex navigation, wordmark, practitioner promise, or shared signup language
+- Founder/VC/R&D positioning limited to invention documentation and counsel readiness
+- Explicit working-draft, no-legal-advice, no-attorney-client-relationship labels
+- Unchecked, affirmative clickwrap controls before substantive invention intake
+- Clear qualified-counsel review requirement before filing or consequential use
+- Draft terms labeled as design-stage legal architecture—not approved customer terms
+- Architecture suitable for later extraction to a separate domain/deployment
+
 ## Product components to design
 
 - Project switcher
@@ -173,7 +192,9 @@ Avoid:
 
 Preserve and reinforce these boundaries from the repository documents:
 
-- Never call Lex an “AI patent lawyer,” “Grok clone,” lawyer replacement, or autonomous filing service.
+- Never call Lex an “AI patent lawyer,” “Grok clone,” lawyer replacement, autonomous filing service, licensed person, employee, attorney, or agent.
+- “Your next patent associate” is a qualified marketing metaphor only; pair it with responsible-practitioner supervision and do not claim human-attorney equivalence.
+- Keep Invention Atlas separate in brand, navigation, domain/deployment intent, onboarding, terms, support, billing, analytics, and permissions; preserve it only in the isolated `/venture` and `/self-service-terms` prototype routes.
 - Never promise patentability, allowance, filing success, deadline accuracy, or “USPTO compliant” output without substantiation.
 - Self-service output is draft work product and is not legal representation.
 - Connected legal services begin only after conflict clearance, attorney acceptance, and signed engagement.
@@ -218,8 +239,8 @@ Report the routes/files changed, tests run, remaining placeholders, and any assu
 The implementation is successful when:
 
 - The public product story is understandable in under 30 seconds.
-- A patent practitioner can identify the primary workflow and evidence controls immediately.
-- A founder can find counsel without mistaking software signup or an intake request for representation.
+- A responsible patent practitioner can identify the primary workflow and evidence controls immediately.
+- A prospective connected-counsel client cannot mistake intake, scheduling, payment, or software access for representation.
 - The workspace feels like a professional document-and-evidence tool, not a generic chatbot.
 - Model selection makes cost/quality differences comprehensible before execution.
 - The counsel and filing flows visibly preserve attorney/client authorization gates.

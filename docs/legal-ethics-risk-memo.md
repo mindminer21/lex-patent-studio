@@ -141,6 +141,40 @@ USPTO’s own terms say most government-produced material is public domain but w
 
 ## Recommended launch positioning
 
+### Dual-brand recommendation
+
+Use the same underlying agent only behind **two separately branded and permissioned products**:
+
+- **Lex Patent Studio** for law firms and in-house legal departments, marketed as **“Your next patent associate.”** The surrounding copy must make clear that the system is a supervised tool and not a licensed person or autonomous legal provider. The responsible practitioner supplies legal judgment, reviews outputs, communicates with the client, and controls filings.
+- **Invention Atlas** *(working name)* for VCs, founders, early-stage companies, and R&D teams. Position it as invention documentation, issue spotting, and counsel-readiness—not legal advice or representation. Require express agreement that outputs are drafts and that qualified patent counsel must review and approve patent documents before filing or consequential legal reliance.
+
+Separate brand names, domains, visual systems, marketing claims, onboarding, clickwrap, email/support identities, billing descriptors, analytics properties, prompt policies, output labels, and permission sets. Common ownership and shared infrastructure may be disclosed where appropriate, but no UI should make a non-lawyer reasonably believe they are using the practitioner product or have retained its founder.
+
+#### LegalZoom-informed terms architecture (independently drafted)
+
+LegalZoom’s public Terms of Use, reviewed July 30, 2026, use several risk-allocation categories relevant to a self-service legal-technology product: a not-a-law-firm/no-legal-advice boundary; no attorney-client relationship; no review for legal sufficiency; independent attorney access separated from the software provider; jurisdiction/currentness warnings; “as is/as available” warranty disclaimers; limits on consequential and punitive damages and an aggregate cap subject to applicable-law carve-outs; user indemnity; dispute procedures; and state-specific savings clauses.
+
+The non-lawyer product should use the same *categories*, but not copy LegalZoom’s wording and not assume the clauses are enforceable for this product. Patent drafting, generative AI, founder-lawyer involvement, prospective-client duties, state consumer rules, UPL, gross negligence, professional discipline, and FTC authority require product-specific terms and jurisdiction review.
+
+Minimum contract package:
+
+1. Conspicuous notice plus affirmative, unchecked clickwrap at account creation and again before substantive invention intake/export.
+2. Clear identity of the SaaS operator and separate identity of any connected law firm.
+3. No legal advice, no legal-sufficiency review, no representation, and no privilege promise in the self-service lane.
+4. Automated-draft warning and mandatory qualified-counsel review/approval before filing or consequential use.
+5. No deadline monitoring, filing, patentability/FTO/validity/ownership opinion, or outcome guarantee unless expressly provided in a signed legal engagement.
+6. User responsibility for input accuracy, completeness, rights to materials, lawful use, and review of outputs.
+7. AI limitations, source/currentness/jurisdiction limitations, provider/subprocessor disclosure, retention terms, and sensitive-data restrictions.
+8. “As is/as available” and express/implied warranty disclaimers to the fullest lawful extent.
+9. Carefully drafted direct-damages cap; exclusion of indirect, incidental, special, exemplary, punitive, and consequential damages where permitted; conspicuous exceptions and non-waivable rights.
+10. User indemnity limited to third-party claims arising from unlawful uploads, rights violations, or misuse—not an overbroad attempt to erase the operator’s own duties.
+11. Refund/cancellation, dispute notice, arbitration/class-waiver decisions if chosen, governing law, venue, limitation period, severability, survival, assignment, and change-notice terms.
+12. State- and customer-type savings clauses; accessible process for consumers who cannot lawfully be bound by a limitation.
+13. Separate connected-counsel engagement terms, conflicts, scope, legal fees, informed AI consent, and non-engagement notice.
+14. Versioned assent records tied to exports and material workflow events.
+
+The product must enforce these boundaries in code. Terms alone do not neutralize a workflow that performs regulated patent practice, creates reasonable reliance, or makes unsubstantiated lawyer-equivalence claims.
+
 ### Phase 1 — recommended
 
 **“Patent drafting and research copilot for registered patent practitioners and legal teams.”**

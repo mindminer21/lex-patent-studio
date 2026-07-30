@@ -4,7 +4,7 @@
 **Status:** Concept proposal for founder review
 **Working name:** Lex Patent Studio
 **Product category:** Subscription + metered-usage AI workspace for patent drafting, prosecution analysis, portfolio strategy, and research
-**Important positioning:** A patent-work-product copilot and drafting platform with a separate connected-counsel engagement path—not itself a law firm, not a substitute for counsel in the self-service lane, and not a public “clone of Grok.”
+**Important positioning:** Two separately branded products on one controlled agent platform: Lex Patent Studio for supervised patent professionals and Invention Atlas for non-lawyer invention documentation and counsel readiness. Neither is a public “clone of Grok,” and the non-lawyer lane is not a law firm, legal advice, or a substitute for counsel.
 
 ---
 
@@ -17,7 +17,20 @@ Build **Lex Patent Studio** as a multi-model, source-grounded patent workbench w
 3. **Optional premium workflow fees** for high-value jobs whose cost is not captured well by tokens alone—large prior-art reviews, document assembly, citation verification, portfolio maps, and human attorney review.
 4. **Connected patent counsel services** through a prominent “Meet with Patent Counsel to Evaluate, Prepare & File” pathway. The initial connected lawyer is Jeff; later, the platform can add vetted patent attorneys under separate engagement, conflicts, professional-responsibility, and fee arrangements.
 
-The best first market is **patent professionals and sophisticated inventors working with counsel**. Begin with a professional productivity product plus a tightly gated Jeff-led counsel pathway for inventors/founders who want evaluation, preparation, and filing. Expand broader self-service and the connected-lawyer network only after the product has strong source citations, jurisdiction controls, conflict/engagement safeguards, filing verification, reliability evaluation, and carefully reviewed legal boundaries.
+The best first market is **patent professionals**. Launch the professional product as **Lex Patent Studio**, marketed to law-firm leaders and in-house counsel as **“Your next patent associate”**: a supervised, source-grounded drafting and analysis system that augments—not replaces—the responsible practitioner.
+
+Launch any non-lawyer experience under a **different public brand, domain, visual identity, onboarding flow, terms, analytics property, and customer communications**. This proposal uses **Invention Atlas** as a working name for the founder/investor/R&D product. It is positioned as an invention-documentation and counsel-readiness workspace for VCs, early-stage companies, R&D departments, and founders—not as a lawyer or law firm. Its generated materials remain drafts, and users must affirmatively agree that (1) outputs are not legal advice and (2) patent-related draft documents must be reviewed and approved by qualified patent counsel before filing, reliance, disclosure, transaction use, or other legal action.
+
+The products may share an underlying agent platform, model gateway, source corpus, evaluation harness, and document engine. They must not share confusing public positioning or bypass lane-specific permissions, prompts, output controls, acceptance records, or legal boundaries.
+
+## 1.1 Two-brand architecture
+
+| Product | Audience | Public promise | Hard boundary |
+|---|---|---|---|
+| **Lex Patent Studio** | Law-firm leaders, patent attorneys/agents, and in-house counsel | **Your next patent associate.** Source-grounded drafting, prosecution analysis, and portfolio work under practitioner supervision. | The responsible practitioner independently reviews all work and controls legal judgment, client communications, signatures, deadlines, and filings. |
+| **Invention Atlas** *(working name)* | VCs, founders, early-stage companies, R&D departments, and innovation teams | Organize invention facts, create counsel-ready working drafts, and prepare better patent conversations. | Not a law firm; no legal advice or representation; drafts are not filing-ready; qualified patent counsel review and approval are required before legal reliance or use. |
+
+Do not market the non-lawyer product as “your patent associate,” “AI patent lawyer,” “lawyer-quality,” “file without counsel,” or a substitute for an attorney. Do not let a shared login, shared billing page, or shared customer-support identity blur which entity and terms govern the user’s session.
 
 ## Core differentiation
 
@@ -40,7 +53,7 @@ The best first market is **patent professionals and sophisticated inventors work
 
 1. Solo patent attorneys and agents.
 2. Small IP boutiques.
-3. In-house patent teams and technical founders who already have counsel.
+3. In-house patent teams and corporate legal departments.
 4. Patent search, licensing, and diligence professionals.
 
 These users understand the limits of generated work, can verify legal outputs, and attach meaningful economic value to time saved.
@@ -208,7 +221,21 @@ Do not take a percentage of counsel's legal fee or commingle legal retainers wit
 
 ## 3.1 Recommended positioning
 
-**Promise:** “Turn invention facts and patent records into structured, source-grounded patent work product—using the model you choose.”
+### Lex Patent Studio — professional product
+
+**Primary headline:** “Your next patent associate.”
+
+**Supporting promise:** “Turn invention facts, prosecution records, and primary authorities into structured, source-grounded patent work product—under the review and control of your responsible practitioner.”
+
+The phrase is a marketing metaphor, not an assertion that the software is a licensed person, employee, attorney, agent, or autonomous legal-service provider. Substantiate performance claims with workflow-specific evaluations; do not claim human-attorney equivalence.
+
+### Invention Atlas — non-lawyer product
+
+**Primary headline:** “Turn invention work into counsel-ready materials.”
+
+**Supporting promise:** “Organize technical facts, contributors, disclosure history, and draft documents so qualified patent counsel can review the record and advise you.”
+
+The non-lawyer product must use education, organization, issue spotting, and user-directed drafting—not individualized legal conclusions or autonomous filing strategy.
 
 Avoid public claims such as:
 
@@ -257,9 +284,28 @@ The platform can automate intake, scheduling, fact extraction, draft assembly, r
 
 Have ethics/product counsel review the entity structure, ownership, marketing, fee flows, referral arrangements, conflicts procedure, prospective-client confidentiality, engagement documents, disclaimers, privacy policy, provider terms, malpractice coverage, and jurisdiction coverage before public release.
 
-## 3.4 Legal/ethics issue map
+## 3.4 Non-lawyer clickwrap and output controls
 
-The companion issue-spotting memo is `/Users/jeff_macmini/Library/Mobile Documents/com~apple~CloudDocs/Farva/ai-patent-saas-us-legal-ethics-risk-memo.md`. Its principal implications for this proposal are:
+Before a non-lawyer can enter invention facts, run a legal-adjacent workflow, export a patent document, or request filing support, require unchecked-box clickwrap that records the exact terms version, user, organization, timestamp, and product lane. The acceptance should cover, in plain language:
+
+1. The software operator is not acting as the user’s lawyer and the self-service product does not provide legal advice.
+2. Account creation, payment, chat, uploading, document generation, or support contact does not create an attorney-client relationship.
+3. Outputs are automated working drafts that may be inaccurate, incomplete, outdated, unsuitable for a jurisdiction, or harmful if relied on without review.
+4. The user—not the software—selects inputs and remains responsible for accuracy, completeness, deadlines, disclosure decisions, inventorship/ownership facts, and use of outputs.
+5. Patent-related documents must be reviewed and approved by qualified patent counsel before filing, legal reliance, disclosure, fundraising/diligence use, or other consequential action.
+6. The service does not monitor deadlines, guarantee patentability, clearance, validity, enforceability, ownership, noninfringement, allowance, or any outcome.
+7. Self-service communications are not promised to be privileged or confidential as attorney-client communications; sensitive, export-controlled, classified, and third-party-confidential material is restricted as described in the data policy.
+8. Counsel access is separate: representation begins only after conflict and eligibility review, express attorney acceptance, and a signed engagement letter identifying the law firm and scope.
+9. The user has authority to upload the materials and will not misuse the service.
+10. The Terms include appropriately drafted warranty disclaimers, liability limitations, exclusions of consequential damages, indemnity for user misuse, dispute procedures, governing law, severability, survival, and consumer-law savings clauses—but only to the extent permitted by applicable law.
+
+Repeat a short version at the chat header, workflow start, generated output, export screen, and counsel handoff. Store the full acknowledgement with every exported document’s provenance. A disclaimer is a control, not a cure: it does not legitimize unauthorized practice, deceptive marketing, negligence, professional misconduct, or a product flow that functionally gives individualized legal advice.
+
+This structure is informed by the categories used in LegalZoom’s public Terms of Use—self-help software/not-a-law-firm boundary, no individualized legal conclusions, no attorney-client relationship, attorney-consultation separation, “as is/as available” warranties, liability limits, indemnity, and dispute terms—but the language must be independently drafted for this product and reviewed for launch jurisdictions. Do not copy LegalZoom’s text or assume its clauses fit this operator, patent practice, AI outputs, or current consumer-law limits.
+
+## 3.5 Legal/ethics issue map
+
+The companion issue-spotting memo is [`docs/legal-ethics-risk-memo.md`](legal-ethics-risk-memo.md). Its principal implications for this proposal are:
 
 - **Unauthorized patent practice:** 37 CFR 11.5 expressly reaches consulting/advising in contemplation of filing and drafting specifications, claims, amendments, and replies. Keep individualized inventor-facing strategy inside the conflict-checked, accepted counsel engagement.
 - **Prospective-client duties:** warnings and disclaimers help but are not dispositive. Treat counsel requests as restricted prospective-client information under a limited intake and retention regime.

@@ -4,16 +4,18 @@
 
 Turn this repository into a high-fidelity, responsive product concept for Lex Patent Studio while preserving its actual Next.js/React/TypeScript stack and the legal/product boundaries in the accompanying documents.
 
-## Audience
+## Audience and brand boundary
 
-- Primary: registered patent practitioners, small IP boutiques, and in-house patent teams.
-- Secondary: sophisticated inventors and founders who may use educational/organizational tools and then engage connected patent counsel.
+- **Lex Patent Studio (this repository):** registered patent practitioners, law-firm leaders, in-house legal teams, and supervised patent operations professionals.
+- **Invention Atlas (isolated prototype routes):** VCs, founders, early-stage companies, R&D departments, and innovation teams. The `/venture` and `/self-service-terms` routes are design proofs. Do not merge them into Lex navigation or identity; production requires a separate domain/deployment, identity, onboarding, terms, support, billing, analytics, prompts, and permissions.
+
+Lex may include a separately gated connected-counsel administration context, but a counsel request, upload, scheduling action, or payment is not an engagement.
 
 ## Product architecture
 
 Lex has two visibly separate lanes:
 
-1. **Self-service patent workspace**
+1. **Lex professional patent workspace**
    - Public patent and primary-authority research
    - Invention fact ledger
    - Claim strategy and source mapping
@@ -22,8 +24,9 @@ Lex has two visibly separate lanes:
    - Citation verification
    - DOCX/PDF exports
    - Subscription plus metered model usage
+   - “Your next patent associate” as a supervised-workflow metaphor, never a claim of personhood or autonomous legal judgment
 
-2. **Connected patent counsel**
+2. **Connected-counsel administration**
    - “Meet with Patent Counsel — Evaluate, Prepare & File”
    - Limited conflict intake before substantive disclosure
    - Attorney accept/decline
