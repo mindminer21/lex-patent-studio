@@ -4,7 +4,7 @@
 **Status:** Concept proposal for founder review
 **Working name:** Lex Patent Studio
 **Product category:** Subscription + metered-usage AI workspace for patent drafting, prosecution analysis, portfolio strategy, and research
-**Important positioning:** Two separately branded products on one controlled agent platform: Lex Patent Studio for supervised patent professionals and Invention Atlas for non-lawyer invention documentation and counsel readiness. Neither is a public “clone of Grok,” and the non-lawyer lane is not a law firm, legal advice, or a substitute for counsel.
+**Important positioning:** Two separately branded products on one controlled agent platform: Lex Patent Studio for supervised patent professionals and wepatent for non-lawyer invention documentation and counsel readiness. Neither is a public “clone of Grok,” and the non-lawyer lane is not a law firm, legal advice, or a substitute for counsel.
 
 ---
 
@@ -19,7 +19,7 @@ Build **Lex Patent Studio** as a multi-model, source-grounded patent workbench w
 
 The best first market is **patent professionals**. Launch the professional product as **Lex Patent Studio**, marketed to law-firm leaders and in-house counsel as **“Your next patent associate”**: a supervised, source-grounded drafting and analysis system that augments—not replaces—the responsible practitioner.
 
-Launch any non-lawyer experience under a **different public brand, domain, visual identity, onboarding flow, terms, analytics property, and customer communications**. This proposal uses **Invention Atlas** as a working name for the founder/investor/R&D product. It is positioned as an invention-documentation and counsel-readiness workspace for VCs, early-stage companies, R&D departments, and founders—not as a lawyer or law firm. Its generated materials remain drafts, and users must affirmatively agree that (1) outputs are not legal advice and (2) patent-related draft documents must be reviewed and approved by qualified patent counsel before filing, reliance, disclosure, transaction use, or other legal action.
+Launch the non-lawyer experience as **wepatent** under a **different public brand, domain, visual identity, onboarding flow, terms, analytics property, and customer communications**. It is positioned as an invention-documentation and counsel-readiness workspace for VCs, early-stage companies, R&D departments, and founders—not as a lawyer or law firm. Its generated materials remain drafts, and users must affirmatively agree that (1) outputs are not legal advice and (2) patent-related draft documents must be reviewed and approved by qualified patent counsel before filing, reliance, disclosure, transaction use, or other legal action.
 
 The products may share an underlying agent platform, model gateway, source corpus, evaluation harness, and document engine. They must not share confusing public positioning or bypass lane-specific permissions, prompts, output controls, acceptance records, or legal boundaries.
 
@@ -28,7 +28,7 @@ The products may share an underlying agent platform, model gateway, source corpu
 | Product | Audience | Public promise | Hard boundary |
 |---|---|---|---|
 | **Lex Patent Studio** | Law-firm leaders, patent attorneys/agents, and in-house counsel | **Your next patent associate.** Source-grounded drafting, prosecution analysis, and portfolio work under practitioner supervision. | The responsible practitioner independently reviews all work and controls legal judgment, client communications, signatures, deadlines, and filings. |
-| **Invention Atlas** *(working name)* | VCs, founders, early-stage companies, R&D departments, and innovation teams | Organize invention facts, create counsel-ready working drafts, and prepare better patent conversations. | Not a law firm; no legal advice or representation; drafts are not filing-ready; qualified patent counsel review and approval are required before legal reliance or use. |
+| **wepatent** | VCs, founders, early-stage companies, R&D departments, and innovation teams | Organize invention facts, create counsel-ready working drafts, and prepare better patent conversations. | Not a law firm; no legal advice or representation; drafts are not filing-ready; qualified patent counsel review and approval are required before legal reliance or use. |
 
 Do not market the non-lawyer product as “your patent associate,” “AI patent lawyer,” “lawyer-quality,” “file without counsel,” or a substitute for an attorney. Do not let a shared login, shared billing page, or shared customer-support identity blur which entity and terms govern the user’s session.
 
@@ -229,7 +229,7 @@ Do not take a percentage of counsel's legal fee or commingle legal retainers wit
 
 The phrase is a marketing metaphor, not an assertion that the software is a licensed person, employee, attorney, agent, or autonomous legal-service provider. Substantiate performance claims with workflow-specific evaluations; do not claim human-attorney equivalence.
 
-### Invention Atlas — non-lawyer product
+### wepatent — non-lawyer product
 
 **Primary headline:** “Turn invention work into counsel-ready materials.”
 

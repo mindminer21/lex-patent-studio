@@ -29,7 +29,7 @@ export default function SelfServiceConsent() {
           </label>
         ))}
       </div>
-      <p className="consent-legal">By continuing, you also agree to the versioned <a href="/self-service-terms">Self-Service Terms</a>, including AI limitations, warranty disclaimers, liability limits, user responsibilities, and dispute provisions, subject to applicable law.</p>
+      <p className="consent-legal">By continuing, you also agree to the versioned <a href="/wepatent/terms">Self-Service Terms</a>, including AI limitations, warranty disclaimers, liability limits, user responsibilities, and dispute provisions, subject to applicable law.</p>
       <button className="button venture-button" type="button" disabled={!ready}>Continue to invention intake</button>
       <p className="prototype-note" role="status">Prototype only: this control demonstrates the required clickwrap. No intake is submitted or stored.</p>
     </section>

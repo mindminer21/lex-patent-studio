@@ -11,12 +11,13 @@ Clone or import the repository and inspect it before designing. Work in the repo
 Read these files first:
 
 1. `README.md`
-2. `docs/DESIGN-HANDOFF.md`
-3. `docs/business-and-product-proposal.md`
-4. `docs/legal-ethics-risk-memo.md`
-5. `src/app/page.tsx`
-6. `src/app/globals.css`
-7. `src/app/layout.tsx`
+2. `docs/PRD-wepatent.md`
+3. `docs/DESIGN-HANDOFF.md`
+4. `docs/business-and-product-proposal.md`
+5. `docs/legal-ethics-risk-memo.md`
+6. `src/app/page.tsx`
+7. `src/app/globals.css`
+8. `src/app/layout.tsx`
 
 ## Objective
 
@@ -25,9 +26,9 @@ Design and implement a production-quality frontend concept for **Lex Patent Stud
 ## Brand architecture and assignment boundary
 
 1. **Lex Patent Studio** — the product implemented in this repository. Practitioner-only positioning: **“Your next patent associate.”** The metaphor must be qualified by clear supervision language; Lex is not a person, attorney, agent, or autonomous legal-service provider.
-2. **Invention Atlas** *(working name; isolated prototype routes are present in this repository)* — a separately branded/domain-bound product for VCs, founders, early-stage companies, and R&D teams. It organizes invention facts and counsel-ready drafts but does not provide legal advice or filing-ready work product. The shared repository is a design convenience only; production must use separate deployment, domain, public identity, onboarding, terms, support, billing descriptor, and analytics property.
+2. **wepatent** — a separately branded/domain-bound product for VCs, founders, early-stage companies, and R&D teams. It organizes invention facts and counsel-ready drafts but does not provide legal advice or filing-ready work product. The shared repository is a design convenience only; production must use separate deployment, domain, public identity, onboarding, terms, support, billing descriptor, and analytics property.
 
-The products may share development infrastructure, but must not share confusing public branding, navigation, onboarding, terms, support identity, billing descriptors, analytics properties, prompts, or output permissions. **Do not add non-lawyer signup or founder self-service flows to Lex routes or navigation.** Keep the existing Invention Atlas prototype isolated under `/venture` and `/self-service-terms`, suitable for later extraction to its own domain. A separate connected-counsel module may appear in Lex only with explicit conflict, engagement, and attorney-control states.
+The products may share development infrastructure, but must not share confusing public branding, navigation, onboarding, terms, support identity, billing descriptors, analytics properties, prompts, or output permissions. **Do not add non-lawyer signup or founder self-service flows to Lex routes or navigation.** Keep the existing wepatent prototype isolated under `/wepatent` and `/wepatent/terms`, suitable for later extraction to its own domain. A separate connected-counsel module may appear in Lex only with explicit conflict, engagement, and attorney-control states.
 
 Within Lex, make these two operating contexts unmistakably different:
 
@@ -47,7 +48,7 @@ This is a frontend design implementation and realistic product prototype—not p
 
 ### Separate product and routes—not a Lex audience
 
-VCs, founders, early-stage companies, R&D departments, and innovation teams belong in the separately branded **Invention Atlas** experience. The existing `/venture` and `/self-service-terms` routes are isolated prototype surfaces. Do not add that audience to Lex onboarding/navigation or visually merge the two brands.
+VCs, founders, early-stage companies, R&D departments, and innovation teams belong in the separately branded **wepatent** experience. The existing `/wepatent` and `/wepatent/terms` routes are isolated prototype surfaces. Do not add that audience to Lex onboarding/navigation or visually merge the two brands.
 
 ## Surface decisions
 
@@ -70,7 +71,7 @@ Implement at least these responsive routes or route-equivalent prototype surface
 - Demonstrate the three-pane workspace with a realistic synthetic matter
 - Explain source-grounding, supervision, and multi-model choice
 - Explain practitioner control and the separately gated connected-counsel administration context
-- Do not add founder/non-lawyer self-service signup to Lex; preserve that experience only in the isolated Invention Atlas prototype routes
+- Do not add founder/non-lawyer self-service signup to Lex; preserve that experience only in the isolated wepatent prototype routes
 - Pricing overview
 - Trust/data-handling section without unsupported compliance badges
 - Final conversion CTA
@@ -134,7 +135,7 @@ The interface must make clear:
 - Use the effective-dated rate table in `docs/business-and-product-proposal.md`; label it as a snapshot rather than a permanent promise
 - Separate sections for platform/model charges, connected-counsel legal fees, and government/third-party filing costs
 
-### 5. `/venture` and `/self-service-terms` — Isolated Invention Atlas prototype
+### 5. `/wepatent` and `/wepatent/terms` — Isolated wepatent prototype
 
 Preserve and refine these as a visually and legally separate product proof:
 
@@ -194,7 +195,7 @@ Preserve and reinforce these boundaries from the repository documents:
 
 - Never call Lex an “AI patent lawyer,” “Grok clone,” lawyer replacement, autonomous filing service, licensed person, employee, attorney, or agent.
 - “Your next patent associate” is a qualified marketing metaphor only; pair it with responsible-practitioner supervision and do not claim human-attorney equivalence.
-- Keep Invention Atlas separate in brand, navigation, domain/deployment intent, onboarding, terms, support, billing, analytics, and permissions; preserve it only in the isolated `/venture` and `/self-service-terms` prototype routes.
+- Keep wepatent separate in brand, navigation, domain/deployment intent, onboarding, terms, support, billing, analytics, and permissions; preserve it only in the isolated `/wepatent` and `/wepatent/terms` prototype routes.
 - Never promise patentability, allowance, filing success, deadline accuracy, or “USPTO compliant” output without substantiation.
 - Self-service output is draft work product and is not legal representation.
 - Connected legal services begin only after conflict clearance, attorney acceptance, and signed engagement.

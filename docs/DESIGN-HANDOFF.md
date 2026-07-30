@@ -7,7 +7,7 @@ Turn this repository into a high-fidelity, responsive product concept for Lex Pa
 ## Audience and brand boundary
 
 - **Lex Patent Studio (this repository):** registered patent practitioners, law-firm leaders, in-house legal teams, and supervised patent operations professionals.
-- **Invention Atlas (isolated prototype routes):** VCs, founders, early-stage companies, R&D departments, and innovation teams. The `/venture` and `/self-service-terms` routes are design proofs. Do not merge them into Lex navigation or identity; production requires a separate domain/deployment, identity, onboarding, terms, support, billing, analytics, prompts, and permissions.
+- **wepatent (isolated prototype routes):** VCs, founders, early-stage companies, R&D departments, and innovation teams. The `/wepatent` and `/wepatent/terms` routes are design proofs. Do not merge them into Lex navigation or identity; production requires a separate domain/deployment, identity, onboarding, terms, support, billing, analytics, prompts, and permissions.
 
 Lex may include a separately gated connected-counsel administration context, but a counsel request, upload, scheduling action, or payment is not an engagement.
 

@@ -123,7 +123,7 @@ h1 { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(3.5rem, 6.
 .pricing-note { max-width: 760px; color: var(--muted); line-height: 1.6; margin-top: 30px; }
 footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 0.8rem; }
 
-/* Invention Atlas is intentionally visually separate from Lex Patent Studio. */
+/* wepatent is intentionally visually separate from Lex Patent Studio. */
 .venture-site, .terms-page {
   --venture-ink: #17253d;
   --venture-blue: #155bd7;
@@ -146,13 +146,13 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .venture-hero { min-height: 650px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr); gap: 8vw; align-items: center; padding: 84px 7vw 94px; background: linear-gradient(135deg, #f8fbff 52%, var(--venture-sky) 52%); border-bottom: 1px solid var(--venture-line); }
 .venture-hero h1, .terms-page h1 { font-family: Arial, Helvetica, sans-serif; font-size: clamp(3.3rem, 6.4vw, 7rem); line-height: 0.94; letter-spacing: -0.07em; font-weight: 850; max-width: 900px; }
 .venture-lede { max-width: 700px; color: #4c5d75; font-size: 1.18rem; line-height: 1.65; }
-.atlas-card { background: white; border: 2px solid var(--venture-ink); padding: 32px; box-shadow: 14px 14px 0 var(--venture-blue); transform: rotate(1.2deg); }
-.atlas-tag { display: inline-block; padding: 7px 9px; background: var(--venture-warm); border: 1px solid #e1bb67; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
-.atlas-card h2 { margin: 32px 0; font-size: 2rem; letter-spacing: -0.04em; }
-.atlas-card dl { margin: 0; }
-.atlas-card dl > div { display: flex; justify-content: space-between; gap: 22px; padding: 15px 0; border-top: 1px solid var(--venture-line); }
-.atlas-card dt { color: #617087; }
-.atlas-card dd { margin: 0; font-weight: 760; text-align: right; }
+.record-card { background: white; border: 2px solid var(--venture-ink); padding: 32px; box-shadow: 14px 14px 0 var(--venture-blue); transform: rotate(1.2deg); }
+.record-tag { display: inline-block; padding: 7px 9px; background: var(--venture-warm); border: 1px solid #e1bb67; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.record-card h2 { margin: 32px 0; font-size: 2rem; letter-spacing: -0.04em; }
+.record-card dl { margin: 0; }
+.record-card dl > div { display: flex; justify-content: space-between; gap: 22px; padding: 15px 0; border-top: 1px solid var(--venture-line); }
+.record-card dt { color: #617087; }
+.record-card dd { margin: 0; font-weight: 760; text-align: right; }
 .venture-section { padding: 100px 7vw; }
 .venture-section > h2 { max-width: 1000px; font-size: clamp(2.8rem, 5vw, 5.8rem); line-height: 0.98; letter-spacing: -0.06em; }
 .audience-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--venture-ink); margin-top: 56px; }
@@ -198,7 +198,7 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
   .venture-header, .terms-header { grid-template-columns: 1fr auto; }
   .venture-header nav { display: none; }
   .venture-hero { grid-template-columns: 1fr; background: linear-gradient(180deg, #f8fbff 58%, var(--venture-sky) 58%); }
-  .atlas-card { max-width: 680px; }
+  .record-card { max-width: 680px; }
   .audience-grid { grid-template-columns: repeat(2, 1fr); }
   .boundary-grid { grid-template-columns: 1fr; }
 }
@@ -225,7 +225,7 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
   .venture-hero, .venture-section, .boundary-grid > div { padding-left: 20px; padding-right: 20px; }
   .venture-hero { padding-top: 56px; }
   .venture-hero h1 { font-size: clamp(3.1rem, 16vw, 5rem); }
-  .atlas-card { margin-right: 10px; padding: 24px; box-shadow: 9px 9px 0 var(--venture-blue); }
+  .record-card { margin-right: 10px; padding: 24px; box-shadow: 9px 9px 0 var(--venture-blue); }
   .audience-grid { grid-template-columns: 1fr; }
   .audience-grid article { min-height: 220px; border-right: 0; }
   .consent-panel { padding: 24px 18px; }

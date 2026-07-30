@@ -146,7 +146,7 @@ USPTO’s own terms say most government-produced material is public domain but w
 Use the same underlying agent only behind **two separately branded and permissioned products**:
 
 - **Lex Patent Studio** for law firms and in-house legal departments, marketed as **“Your next patent associate.”** The surrounding copy must make clear that the system is a supervised tool and not a licensed person or autonomous legal provider. The responsible practitioner supplies legal judgment, reviews outputs, communicates with the client, and controls filings.
-- **Invention Atlas** *(working name)* for VCs, founders, early-stage companies, and R&D teams. Position it as invention documentation, issue spotting, and counsel-readiness—not legal advice or representation. Require express agreement that outputs are drafts and that qualified patent counsel must review and approve patent documents before filing or consequential legal reliance.
+- **wepatent** for VCs, founders, early-stage companies, and R&D teams. Position it as invention documentation, issue spotting, and counsel-readiness—not legal advice or representation. Require express agreement that outputs are drafts and that qualified patent counsel must review and approve patent documents before filing or consequential legal reliance.
 
 Separate brand names, domains, visual systems, marketing claims, onboarding, clickwrap, email/support identities, billing descriptors, analytics properties, prompt policies, output labels, and permission sets. Common ownership and shared infrastructure may be disclosed where appropriate, but no UI should make a non-lawyer reasonably believe they are using the practitioner product or have retained its founder.
 
