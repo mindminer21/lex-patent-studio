@@ -153,6 +153,20 @@ export const runRequestSchema = z.object({
 });
 export type RunRequest = z.infer<typeof runRequestSchema>;
 
+/** Claim record (PRD §11 claims/claim_versions, §8.2 /claims). */
+export const claimRecordSchema = z.object({
+  id: idSchema,
+  organizationId: idSchema,
+  matterId: idSchema,
+  claimNumber: z.number().int().positive(),
+  /** Full claim text; dependency structure is parsed deterministically. */
+  text: z.string().min(1).max(8000),
+  version: z.number().int().positive(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+});
+export type ClaimRecord = z.infer<typeof claimRecordSchema>;
+
 export const verificationStateSchema = z.enum([
   "unverified",
   "verified",

@@ -25,6 +25,7 @@ import {
 import {
   runRequestSchema,
   type AuditEvent,
+  type ClaimRecord,
   type DeadlineObservation,
   type Matter,
   type MatterFact,
@@ -40,6 +41,7 @@ import {
   DEMO_SESSION,
   DEMO_WALLET_BALANCE_USD,
   SEED_AUDIT_EVENTS,
+  SEED_CLAIMS,
   SEED_DEADLINES,
   SEED_DECISIONS,
   SEED_DOCUMENTS,
@@ -63,6 +65,7 @@ interface LocalStore {
   matters: Matter[];
   facts: MatterFact[];
   sources: MatterSource[];
+  claims: ClaimRecord[];
   runs: WorkflowRun[];
   documents: WorkProductDocument[];
   reviewItems: ReviewItem[];
@@ -82,6 +85,7 @@ function newStore(): LocalStore {
     matters: SEED_MATTERS,
     facts: SEED_FACTS,
     sources: SEED_SOURCES,
+    claims: SEED_CLAIMS,
     runs: SEED_RUNS,
     documents: SEED_DOCUMENTS,
     reviewItems: SEED_REVIEW_ITEMS,
@@ -178,6 +182,14 @@ const localData: DataAdapter = {
     return getLocalStore().sources.filter(
       (s) => s.organizationId === organizationId && s.matterId === matterId,
     );
+  },
+
+  async listClaims(organizationId, matterId) {
+    return getLocalStore()
+      .claims.filter(
+        (c) => c.organizationId === organizationId && c.matterId === matterId,
+      )
+      .sort((a, b) => a.claimNumber - b.claimNumber);
   },
 
   async listRuns(organizationId, matterId) {

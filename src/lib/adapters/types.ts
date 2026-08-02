@@ -1,6 +1,7 @@
 import type { Role } from "@/lib/domain/roles";
 import type {
   AuditEvent,
+  ClaimRecord,
   DeadlineObservation,
   Matter,
   MatterFact,
@@ -45,6 +46,7 @@ export interface DataAdapter {
   getMatter(organizationId: string, matterId: string): Promise<Matter | null>;
   listFacts(organizationId: string, matterId: string): Promise<MatterFact[]>;
   listSources(organizationId: string, matterId: string): Promise<MatterSource[]>;
+  listClaims(organizationId: string, matterId: string): Promise<ClaimRecord[]>;
   listRuns(organizationId: string, matterId?: string): Promise<WorkflowRun[]>;
   createRun(
     organizationId: string,

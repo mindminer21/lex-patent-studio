@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   AuditEvent,
+  ClaimRecord,
   DeadlineObservation,
   Matter,
   MatterFact,
@@ -568,6 +569,120 @@ export const SEED_REVIEW_ITEMS: ReviewItem[] = [
     createdAt: T2,
     updatedAt: T2,
   },
+];
+
+/**
+ * Synthetic claim sets. The thermal set is a clean baseline; the optical set
+ * deliberately contains a claim-8 dependency mismatch and a missing
+ * antecedent so the deterministic checkers have something real to report
+ * (matching the seeded review-item flag).
+ */
+const claim = (
+  matterId: string,
+  claimNumber: number,
+  text: string,
+  createdAt = T1,
+): ClaimRecord => ({
+  id: `claim_${matterId.replace("matter_", "")}_${claimNumber}`,
+  organizationId: ORG_ID,
+  matterId,
+  claimNumber,
+  text,
+  version: 1,
+  createdAt,
+  updatedAt: createdAt,
+});
+
+export const SEED_CLAIMS: ClaimRecord[] = [
+  // Thermal matter — drafted claim tree (synthetic).
+  claim(
+    "matter_thermal",
+    1,
+    "A thermal storage apparatus comprising: a manifold plate having a plurality of self-sealing ports; and a plurality of cassette modules, each cassette module containing an encapsulated phase-change composition and being insertable into a respective one of the self-sealing ports.",
+  ),
+  claim(
+    "matter_thermal",
+    2,
+    "The apparatus of claim 1, wherein the encapsulated phase-change composition comprises a salt having a melting point of about 58 °C.",
+  ),
+  claim(
+    "matter_thermal",
+    3,
+    "The apparatus of claim 1, wherein each self-sealing port blind-mates with a cassette module at up to 4 degrees of misalignment.",
+  ),
+  claim(
+    "matter_thermal",
+    4,
+    "The apparatus of any one of claims 1-3, further comprising a sensor configured to measure a state of charge of a cassette module by acoustic time-of-flight.",
+  ),
+  claim(
+    "matter_thermal",
+    5,
+    "A method of storing thermal energy, comprising: inserting a cassette module containing an encapsulated phase-change composition into a manifold plate; and circulating a heat-transfer fluid through the manifold plate.",
+  ),
+  claim(
+    "matter_thermal",
+    6,
+    "The method of claim 5, wherein the inserting is performed without tools.",
+  ),
+  // Optical matter — pending claims as amended (synthetic), with two seeded
+  // defects the deterministic checkers must catch:
+  //  - claim 8 depends on claim 10, which is not in the set (dependency mismatch)
+  //  - claim 7 recites "the retention magnet" with no antecedent
+  claim(
+    "matter_optical",
+    1,
+    "An optical connector comprising: a kinematic seat having three contact points; a ferrule; and a pair of opposed magnets arranged to pull the ferrule into the kinematic seat.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    2,
+    "The connector of claim 1, wherein the kinematic seat defines a repeatable lateral position within 0.4 micrometers.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    3,
+    "The connector of claim 1, wherein the opposed magnets are rare-earth magnets.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    4,
+    "The connector of claim 3, wherein the rare-earth magnets are axially polarized.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    5,
+    "The connector of claim 1, further comprising a housing enclosing the kinematic seat.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    6,
+    "The connector of claim 5, wherein the housing comprises a strain-relief boot.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    7,
+    "The connector of claim 5, wherein the retention magnet is seated in the housing.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    8,
+    "The connector of claim 10, wherein the ferrule is ceramic.",
+    "2026-05-11T10:30:00.000Z",
+  ),
+  claim(
+    "matter_optical",
+    9,
+    "A method of aligning an optical fiber, comprising seating a ferrule against a kinematic seat using a pair of opposed magnets.",
+    "2026-05-11T10:30:00.000Z",
+  ),
 ];
 
 export const SEED_DEADLINES: DeadlineObservation[] = [
