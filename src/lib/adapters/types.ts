@@ -23,6 +23,13 @@ import type {
 } from "@/lib/domain/schemas";
 import type { ReviewDecision } from "@/lib/domain/review";
 import type { ChargeEstimate, ModelCatalogEntry, TokenWorkload } from "@/lib/domain/pricing";
+import type {
+  PlaybookChainVerification,
+  PlaybookEntry,
+  PlaybookPublishInput,
+  StyleProfile,
+  StyleProfileCreateInput,
+} from "@/lib/domain/styles";
 
 /**
  * Typed adapter seams (Round 1 environment contract).
@@ -158,6 +165,26 @@ export interface DataAdapter {
   listExports(organizationId: string, matterId?: string): Promise<ExportRecord[]>;
   getExport(organizationId: string, exportId: string): Promise<ExportRecord | null>;
   listDeadlines(organizationId: string): Promise<DeadlineObservation[]>;
+  /** Style profiles (§5.4): tenant rulesets + the platform neutral default. */
+  listStyleProfiles(organizationId: string): Promise<StyleProfile[]>;
+  createStyleProfile(
+    organizationId: string,
+    input: StyleProfileCreateInput,
+    actor: ActorContext,
+  ): Promise<Result<{ profile: StyleProfile }>>;
+  /**
+   * Playbook entries (§5.4): tenant-isolated, hash-chained publications.
+   * Returned in publication (chain) order with the chain verification.
+   */
+  listPlaybookEntries(organizationId: string): Promise<{
+    entries: PlaybookEntry[];
+    chain: PlaybookChainVerification;
+  }>;
+  publishPlaybookEntry(
+    organizationId: string,
+    input: PlaybookPublishInput,
+    actor: ActorContext,
+  ): Promise<Result<{ entry: PlaybookEntry }>>;
   listAuditEvents(
     organizationId: string,
     filter?: { matterId?: string; limit?: number },

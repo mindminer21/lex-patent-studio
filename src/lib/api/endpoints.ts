@@ -333,6 +333,62 @@ export async function exportDocumentEndpoint(
 }
 
 // ---------------------------------------------------------------------------
+// Style profiles + playbook (§5.4, §12)
+// ---------------------------------------------------------------------------
+
+export async function listStyleProfilesEndpoint(
+  session: Session,
+): Promise<ApiResult> {
+  // Profiles are visible to every professional seat that can see matters —
+  // they label runs; managing them requires styles.manage.
+  if (!can(session.role, "matter.view")) return forbidden();
+  const profiles = await data().listStyleProfiles(session.organizationId);
+  return apiResult(200, { profiles });
+}
+
+export async function createStyleProfileEndpoint(
+  session: Session,
+  body: unknown,
+): Promise<ApiResult> {
+  if (!can(session.role, "styles.manage")) return forbidden();
+  const { styleProfileCreateSchema } = await import("@/lib/domain/styles");
+  const parsed = styleProfileCreateSchema.safeParse(body);
+  if (!parsed.success) return badRequest("Invalid style profile.");
+  const result = await data().createStyleProfile(
+    session.organizationId,
+    parsed.data,
+    { userId: session.userId, role: session.role },
+  );
+  if (!result.ok) return mapAdapterError(result.error);
+  return apiResult(201, { profile: result.profile });
+}
+
+export async function listPlaybookEndpoint(session: Session): Promise<ApiResult> {
+  // Playbook content is internal legal strategy: professional-lane seats
+  // only. Contributor (R&D) seats never read it (PRD §3 boundary).
+  if (!can(session.role, "knowledge.search")) return forbidden();
+  const result = await data().listPlaybookEntries(session.organizationId);
+  return apiResult(200, result);
+}
+
+export async function publishPlaybookEndpoint(
+  session: Session,
+  body: unknown,
+): Promise<ApiResult> {
+  if (!can(session.role, "playbook.publish")) return forbidden();
+  const { playbookPublishSchema } = await import("@/lib/domain/styles");
+  const parsed = playbookPublishSchema.safeParse(body);
+  if (!parsed.success) return badRequest("Invalid playbook entry.");
+  const result = await data().publishPlaybookEntry(
+    session.organizationId,
+    parsed.data,
+    { userId: session.userId, role: session.role },
+  );
+  if (!result.ok) return mapAdapterError(result.error);
+  return apiResult(201, { entry: result.entry });
+}
+
+// ---------------------------------------------------------------------------
 // Knowledge: corpus search + quote verification (FR-5, §12)
 // ---------------------------------------------------------------------------
 

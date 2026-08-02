@@ -232,6 +232,85 @@ export async function exportDocumentAction(
   };
 }
 
+const styleActionSchema = z.object({
+  name: z.string().min(1).max(200),
+  kind: z.enum(["application_drafting", "search_report", "oa_response"]),
+  rulesText: z.string().min(1).max(8000),
+});
+
+export async function createStyleProfileAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const adapters = getAdapters();
+  const session = await adapters.auth.getSession();
+  if (!session) return { ok: false, message: "Not authenticated." };
+
+  const parsed = styleActionSchema.safeParse({
+    name: formData.get("name"),
+    kind: formData.get("kind"),
+    rulesText: formData.get("rulesText"),
+  });
+  if (!parsed.success) return { ok: false, message: "Please complete the profile fields." };
+
+  const rules = parsed.data.rulesText
+    .split("\n")
+    .map((r) => r.trim())
+    .filter((r) => r.length > 0)
+    .slice(0, 24);
+  if (rules.length === 0) {
+    return { ok: false, message: "Enter at least one style rule (one per line)." };
+  }
+
+  const result = await adapters.data.createStyleProfile(
+    session.organizationId,
+    { name: parsed.data.name, kind: parsed.data.kind, rules },
+    { userId: session.userId, role: session.role },
+  );
+  if (!result.ok) return { ok: false, message: result.error };
+
+  revalidatePath("/app/templates");
+  return {
+    ok: true,
+    message: `Style profile ${result.profile.name}@${result.profile.version} created with ${result.profile.rules.length} rule(s). Future runs on matters using it record this version.`,
+  };
+}
+
+const playbookActionSchema = z.object({
+  title: z.string().min(1).max(300),
+  category: z.enum(["approved_argument", "claim_structure", "examiner_note"]),
+  body: z.string().min(1).max(8000),
+});
+
+export async function publishPlaybookAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const adapters = getAdapters();
+  const session = await adapters.auth.getSession();
+  if (!session) return { ok: false, message: "Not authenticated." };
+
+  const parsed = playbookActionSchema.safeParse({
+    title: formData.get("title"),
+    category: formData.get("category"),
+    body: formData.get("body"),
+  });
+  if (!parsed.success) return { ok: false, message: "Please complete the entry fields." };
+
+  const result = await adapters.data.publishPlaybookEntry(
+    session.organizationId,
+    parsed.data,
+    { userId: session.userId, role: session.role },
+  );
+  if (!result.ok) return { ok: false, message: result.error };
+
+  revalidatePath("/app/templates");
+  return {
+    ok: true,
+    message: `Published "${result.entry.title}" — content hash ${result.entry.contentSha256.slice(0, 12)}…, chained to the previous entry. Publications are immutable.`,
+  };
+}
+
 const decideSchema = z.object({
   reviewItemId: z.string().min(1),
   decision: reviewDecisionSchema,

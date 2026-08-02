@@ -43,6 +43,17 @@ import {
   type UploadTarget,
   type WorkflowRun,
 } from "@/lib/domain/schemas";
+import {
+  PLAYBOOK_CHAIN_GENESIS,
+  playbookContentSha256,
+  playbookEntryHash,
+  playbookPublishSchema,
+  styleProfileCreateSchema,
+  styleProfileVersionLabel,
+  verifyPlaybookChain,
+  type PlaybookEntry,
+  type StyleProfile,
+} from "@/lib/domain/styles";
 import { renderUsptoDocx } from "@/lib/export/docx";
 import { buildExportManifest, exportFileName } from "@/lib/export/manifest";
 import { CORPUS_RELEASE, DEMO_SESSION } from "./seed";
@@ -453,6 +464,18 @@ const localData: DataAdapter = {
       };
     }
 
+    // FR-7: a run records workflow version + model + corpus release + style
+    // profile version. Matter-selected profile wins; otherwise the platform
+    // neutral default.
+    const styleProfile =
+      (matter.styleProfileId &&
+        store.styleProfiles.find(
+          (p) => p.organizationId === organizationId && p.id === matter.styleProfileId,
+        )) ||
+      store.styleProfiles.find(
+        (p) => p.organizationId === organizationId && p.platformDefault,
+      );
+
     const run: WorkflowRun = {
       id: newId("run"),
       organizationId,
@@ -466,6 +489,9 @@ const localData: DataAdapter = {
       modelId: model.id,
       modelTier: model.tier,
       corpusRelease: CORPUS_RELEASE,
+      styleProfileVersion: styleProfile
+        ? styleProfileVersionLabel(styleProfile)
+        : undefined,
       deliverableType: req.deliverableType,
       qualityControls: req.qualityControls,
       estimatedChargeLowUsd: estimate.lowChargeUsd,
@@ -697,6 +723,108 @@ const localData: DataAdapter = {
         (e) => e.organizationId === organizationId && e.id === exportId,
       ) ?? null
     );
+  },
+
+  async listStyleProfiles(organizationId) {
+    return getLocalStore()
+      .styleProfiles.filter((p) => p.organizationId === organizationId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  },
+
+  async createStyleProfile(organizationId, input, actor) {
+    if (!can(actor.role, "styles.manage")) {
+      return { ok: false, error: `Role "${actor.role}" may not manage style profiles.` };
+    }
+    const parsed = styleProfileCreateSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: "Invalid style profile input." };
+
+    const store = getLocalStore();
+    const priorVersions = store.styleProfiles.filter(
+      (p) => p.organizationId === organizationId && p.name === parsed.data.name,
+    );
+    if (priorVersions.some((p) => p.platformDefault)) {
+      return {
+        ok: false,
+        error: "The platform default profile cannot be replaced; create a new named profile.",
+      };
+    }
+    const profile: StyleProfile = {
+      id: newId("style"),
+      organizationId,
+      name: parsed.data.name,
+      kind: parsed.data.kind,
+      rules: parsed.data.rules,
+      version: priorVersions.length + 1,
+      platformDefault: false,
+      createdBy: actor.userId,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+    store.styleProfiles.push(profile);
+    appendAudit(store, {
+      organizationId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "styles.manage",
+      subjectType: "style_profile",
+      subjectId: profile.id,
+      detail: `Created style profile ${styleProfileVersionLabel(profile)} (${profile.kind}, ${profile.rules.length} rule(s)).`,
+    });
+    return { ok: true, profile };
+  },
+
+  async listPlaybookEntries(organizationId) {
+    const entries = getLocalStore()
+      .playbookEntries.filter((e) => e.organizationId === organizationId)
+      .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+    // Chain verification runs on EVERY read — tampering is always visible.
+    return { entries, chain: verifyPlaybookChain(entries) };
+  },
+
+  async publishPlaybookEntry(organizationId, input, actor) {
+    // §5.4 publication pipeline: reviewer identity, timestamp, immutable
+    // content hash, chained to the tenant's previous entry.
+    if (!can(actor.role, "playbook.publish")) {
+      return { ok: false, error: `Role "${actor.role}" may not publish playbook entries.` };
+    }
+    const parsed = playbookPublishSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: "Invalid playbook entry." };
+
+    const store = getLocalStore();
+    const tenantEntries = store.playbookEntries
+      .filter((e) => e.organizationId === organizationId)
+      .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+    const prevEntryHash =
+      tenantEntries.at(-1)?.entryHash ?? PLAYBOOK_CHAIN_GENESIS;
+
+    const base = {
+      id: newId("pb"),
+      organizationId,
+      title: parsed.data.title,
+      category: parsed.data.category,
+      body: parsed.data.body,
+      publishedBy: actor.userId,
+      publishedByRole: actor.role,
+      publishedAt: nowIso(),
+      prevEntryHash,
+    };
+    const contentSha256 = playbookContentSha256(base);
+    const entry: PlaybookEntry = {
+      ...base,
+      contentSha256,
+      entryHash: playbookEntryHash({ ...base, contentSha256 }),
+    };
+    store.playbookEntries.push(entry);
+    appendAudit(store, {
+      organizationId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "playbook.publish",
+      subjectType: "playbook_entry",
+      subjectId: entry.id,
+      detail: `Published "${entry.title}" (${entry.category}) — content sha256 ${contentSha256.slice(0, 12)}…, chained to ${prevEntryHash === PLAYBOOK_CHAIN_GENESIS ? "genesis" : prevEntryHash.slice(0, 12) + "…"}.`,
+    });
+    return { ok: true, entry };
   },
 
   async listDeadlines(organizationId) {

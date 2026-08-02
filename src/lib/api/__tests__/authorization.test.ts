@@ -8,8 +8,12 @@ import {
   decideReviewEndpoint,
   estimateRunEndpoint,
   exportDocumentEndpoint,
+  createStyleProfileEndpoint,
   getRunEndpoint,
   knowledgeSearchEndpoint,
+  listPlaybookEndpoint,
+  listStyleProfilesEndpoint,
+  publishPlaybookEndpoint,
   listDocumentsEndpoint,
   listFactsEndpoint,
   listMattersEndpoint,
@@ -188,6 +192,37 @@ const CASES: MatrixCase[] = [
         corpusDocumentId: "corp_usc_112",
         quote:
           "particularly pointing out and distinctly claiming the subject matter",
+      }),
+  },
+  {
+    name: "GET /api/style-profiles",
+    allowed: VIEW_SET,
+    call: (s) => listStyleProfilesEndpoint(s),
+  },
+  {
+    name: "POST /api/style-profiles",
+    allowed: PRACTITIONER_SET,
+    call: (s) =>
+      createStyleProfileEndpoint(s, {
+        name: `matrix-style-${s.role}`,
+        kind: "application_drafting",
+        rules: ["Synthetic matrix rule for authorization testing."],
+      }),
+  },
+  {
+    // Playbook is internal legal strategy: contributor seats never read it.
+    name: "GET /api/playbook",
+    allowed: [...PRACTITIONER_SET, "agent_operator", "viewer"],
+    call: (s) => listPlaybookEndpoint(s),
+  },
+  {
+    name: "POST /api/playbook",
+    allowed: PRACTITIONER_SET,
+    call: (s) =>
+      publishPlaybookEndpoint(s, {
+        title: `Matrix entry (${s.role})`,
+        category: "examiner_note",
+        body: "Synthetic playbook body for authorization-matrix testing only.",
       }),
   },
 ];

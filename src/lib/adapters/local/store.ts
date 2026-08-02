@@ -17,8 +17,11 @@ import type {
   WorkProductDocument,
 } from "@/lib/domain/schemas";
 import type { RunState } from "@/lib/domain/run-state";
+import type { PlaybookEntry, StyleProfile } from "@/lib/domain/styles";
 import {
   DEMO_WALLET_BALANCE_USD,
+  SEED_PLAYBOOK_ENTRIES,
+  SEED_STYLE_PROFILES,
   SEED_AUDIT_EVENTS,
   SEED_CLAIMS,
   SEED_DEADLINES,
@@ -76,6 +79,8 @@ export interface LocalStore {
   reviewItems: ReviewItem[];
   decisions: ReviewDecisionRecord[];
   deadlines: DeadlineObservation[];
+  styleProfiles: StyleProfile[];
+  playbookEntries: PlaybookEntry[];
   auditEvents: AuditEvent[];
   uploadTargets: UploadTarget[];
   exports: ExportRecord[];
@@ -103,6 +108,8 @@ function newStore(): LocalStore {
     reviewItems: SEED_REVIEW_ITEMS,
     decisions: SEED_DECISIONS,
     deadlines: SEED_DEADLINES,
+    styleProfiles: SEED_STYLE_PROFILES,
+    playbookEntries: SEED_PLAYBOOK_ENTRIES,
     auditEvents: SEED_AUDIT_EVENTS,
     uploadTargets: [],
     exports: [],

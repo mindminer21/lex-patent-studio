@@ -12,15 +12,10 @@ const NAV = [
   { href: "/app/matters", label: "Matters" },
   { href: "/app/review-queue", label: "Review queue" },
   { href: "/app/knowledge", label: "Knowledge" },
+  { href: "/app/templates", label: "Templates" },
 ] as const;
 
-const NAV_PLANNED = [
-  "Portfolio",
-  "Templates",
-  "Usage",
-  "Team",
-  "Settings",
-] as const;
+const NAV_PLANNED = ["Portfolio", "Usage", "Team", "Settings"] as const;
 
 export default async function AppLayout({
   children,

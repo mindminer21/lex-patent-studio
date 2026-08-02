@@ -13,6 +13,13 @@ import type {
 } from "@/lib/domain/schemas";
 import type { Session } from "@/lib/adapters/types";
 import { CORPUS_RELEASE } from "@/lib/knowledge";
+import {
+  PLAYBOOK_CHAIN_GENESIS,
+  playbookContentSha256,
+  playbookEntryHash,
+  type PlaybookEntry,
+  type StyleProfile,
+} from "@/lib/domain/styles";
 
 /**
  * SYNTHETIC demo tenant for local mode.
@@ -821,3 +828,89 @@ export const SEED_DECISIONS: ReviewDecisionRecord[] = [
     decidedAt: T2,
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Style profiles + playbook (PRD §5.4). The neutral professional profile is
+// the platform default; the firm profile is a synthetic tenant customization.
+// Playbook entries form a valid hash chain computed with the domain
+// functions so chain verification is real, not asserted.
+// ---------------------------------------------------------------------------
+
+export const SEED_STYLE_PROFILES: StyleProfile[] = [
+  {
+    id: "style_neutral",
+    organizationId: ORG_ID,
+    name: "neutral-professional",
+    kind: "application_drafting",
+    rules: [
+      "Prefer 'configured to' over means-plus-function phrasing unless §112(f) treatment is intended.",
+      "Introduce every claim element in the specification before first claim use.",
+      "One embodiment per paragraph in the detailed description; alternatives follow the primary embodiment.",
+      "State advantages as technical effects tied to structure, never as marketing claims.",
+    ],
+    version: 1,
+    platformDefault: true,
+    createdBy: "platform",
+    createdAt: T0,
+    updatedAt: T0,
+  },
+  {
+    id: "style_meridian_search",
+    organizationId: ORG_ID,
+    name: "meridian-search-report",
+    kind: "search_report",
+    rules: [
+      "Lead with the claim-element table; narrative discussion follows the table.",
+      "Every reference characterization links a pinpoint citation to the reference text.",
+      "Close with a 'gaps in the record' section listing unsearched classifications.",
+    ],
+    version: 1,
+    platformDefault: false,
+    createdBy: "user_demo_reyes",
+    createdAt: T1,
+    updatedAt: T1,
+  },
+];
+
+const seedPlaybookEntry = (
+  id: string,
+  prevEntryHash: string,
+  title: string,
+  category: PlaybookEntry["category"],
+  body: string,
+  publishedAt: string,
+): PlaybookEntry => {
+  const base = {
+    id,
+    organizationId: ORG_ID,
+    title,
+    category,
+    body,
+    publishedBy: "user_demo_reyes",
+    publishedByRole: "practitioner_admin" as const,
+    publishedAt,
+    prevEntryHash,
+  };
+  const contentSha256 = playbookContentSha256(base);
+  const entryHash = playbookEntryHash({ ...base, contentSha256 });
+  return { ...base, contentSha256, entryHash };
+};
+
+const pb1 = seedPlaybookEntry(
+  "pb_seed_1",
+  PLAYBOOK_CHAIN_GENESIS,
+  "Predictable-results rebuttal frame (synthetic)",
+  "approved_argument",
+  "When the examiner combines references under a predictable-results rationale, require an articulated reason the skilled artisan would select THESE elements — attack the selection, not the combination mechanics. Synthetic demonstration content.",
+  T1,
+);
+const pb2 = seedPlaybookEntry(
+  "pb_seed_2",
+  pb1.entryHash,
+  "Cassette-interface claim skeleton (synthetic)",
+  "claim_structure",
+  "Independent claim recites the interface geometry; dependent tier 1 adds the sealing mechanism; dependent tier 2 adds sensing. Keeps the fallback ladder aligned with the planned-retreat hierarchy. Synthetic demonstration content.",
+  T2,
+);
+
+export const SEED_PLAYBOOK_ENTRIES: PlaybookEntry[] = [pb1, pb2];
