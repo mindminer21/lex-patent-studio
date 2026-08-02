@@ -28,6 +28,17 @@ synthetic model gateway, counsel-lane seed identities
    Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
    `CORPUS_SUPABASE_URL`, `CORPUS_SUPABASE_SERVICE_ROLE_KEY`. Run `npx supabase test db`
    against the live stack.
+   **Then apply the reference-data seed**: `supabase/wepatent/seed/0001_reference_data.sql`
+   (idempotent; see `supabase/wepatent/seed/README.md`). Local mode holds these rows in
+   memory, but production FKs (`terms_acceptances.terms_version`,
+   `usage_reservations.rate_version`, `usage_events.model_id`) need them in the database —
+   without the seed, clickwrap acceptance and generation reservations fail. The Lex
+   private project has the same requirement: `supabase/lex/seed/0001_reference_data.sql`
+   (model catalog, prices, workflow definitions; see `supabase/lex/seed/README.md`,
+   including the per-tenant platform-default style profile that must be inserted at
+   organization provisioning). Only OpenAI models are seeded enabled; Anthropic/xAI rows
+   are present but disabled until keys/approval exist. Re-run the seeds whenever the code
+   bumps a terms version, adds a model, or adds an effective-dated rate.
 2. **Stripe**: create the account, the products/prices for the FR-6 plan table, and a webhook
    endpoint pointing at `/api/webhooks/stripe`. Set `STRIPE_SECRET_KEY`,
    `STRIPE_WEBHOOK_SECRET`. Subscription checkout also needs the plan→price map passed to
