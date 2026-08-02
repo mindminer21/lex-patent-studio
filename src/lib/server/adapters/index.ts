@@ -69,6 +69,13 @@ export function getAdapters(): Adapters {
         secretKey: env.STRIPE_SECRET_KEY!,
         appUrl: env.NEXT_PUBLIC_APP_URL,
         getCustomerId: (organizationId) => getAdapters().data.getStripeCustomerId(organizationId),
+        subscriptionPriceIds: Object.fromEntries(
+          Object.entries({
+            solo: env.STRIPE_PRICE_SOLO,
+            professional: env.STRIPE_PRICE_PROFESSIONAL,
+            team: env.STRIPE_PRICE_TEAM,
+          }).filter(([, priceId]) => Boolean(priceId)),
+        ) as Record<string, string>,
       }),
       storage: new SupabaseStorageAdapter({
         url: env.SUPABASE_URL!,

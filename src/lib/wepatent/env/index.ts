@@ -38,6 +38,14 @@ const envSchema = z.object({
   // synthetic events; production rejects it below.
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().default("whsec_wepatent_local_synthetic_not_for_production"),
+  /**
+   * Stripe Price IDs for the self-service subscription plans (FR-6).
+   * Optional: subscription checkout for a plan is unavailable until its
+   * price ID is configured; wallet top-ups do not require them.
+   */
+  STRIPE_PRICE_SOLO: z.string().startsWith("price_").optional(),
+  STRIPE_PRICE_PROFESSIONAL: z.string().startsWith("price_").optional(),
+  STRIPE_PRICE_TEAM: z.string().startsWith("price_").optional(),
 
   // Model providers, server-side gateway only (PRD FR-5).
   OPENAI_API_KEY: z.string().optional(),
@@ -72,6 +80,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     CORPUS_SUPABASE_SERVICE_ROLE_KEY: source.CORPUS_SUPABASE_SERVICE_ROLE_KEY,
     STRIPE_SECRET_KEY: source.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: source.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRICE_SOLO: source.STRIPE_PRICE_SOLO,
+    STRIPE_PRICE_PROFESSIONAL: source.STRIPE_PRICE_PROFESSIONAL,
+    STRIPE_PRICE_TEAM: source.STRIPE_PRICE_TEAM,
     OPENAI_API_KEY: source.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY,
     XAI_API_KEY: source.XAI_API_KEY,
