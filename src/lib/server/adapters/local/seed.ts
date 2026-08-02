@@ -130,6 +130,7 @@ export async function seedSyntheticInvention(data: DataPort, organizationId: Id)
       storagePath: null,
       checksumSha256: null,
       quarantineReason: null,
+      interpretationStatus: null,
     });
   }
 

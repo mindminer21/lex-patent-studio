@@ -6,6 +6,15 @@ import type {
 } from "@/lib/wepatent/domain/counsel-request";
 import type { FactActor, FactCategory, FactProvenance } from "@/lib/wepatent/domain/facts";
 import type { IntakeState } from "@/lib/wepatent/domain/intake";
+import type {
+  PsActor,
+  PsEventKind,
+  PsOrigin,
+  PsPairKind,
+  PsState,
+} from "@/lib/wepatent/domain/ps-ledger";
+import type { CoverageDimension, CoverageStatus } from "@/lib/wepatent/domain/coverage";
+import type { InterpretationStatus } from "@/lib/wepatent/domain/uploads";
 import type { Reservation } from "@/lib/wepatent/domain/usage";
 
 /**
@@ -131,6 +140,12 @@ export interface SourceRecord {
   storagePath: string | null;
   checksumSha256: string | null;
   quarantineReason: string | null;
+  /**
+   * Intake Studio interpretation outcome (PRD §5.2). Null on legacy rows is
+   * equivalent to "not_interpreted". `stored_uninterpreted` is honest and
+   * first-class — never a silent skip or a fake interpretation.
+   */
+  interpretationStatus: InterpretationStatus | null;
 }
 
 export type DraftWorkflow =
@@ -303,7 +318,13 @@ export interface UsageEventRecord {
 /* Round 2 records: jobs, invitations, counsel lane, export artifacts   */
 /* ------------------------------------------------------------------ */
 
-export type JobKind = "generation" | "source_scan" | "source_extraction" | "export_render";
+export type JobKind =
+  | "generation"
+  | "source_scan"
+  | "source_extraction"
+  | "source_interpretation"
+  | "distillation"
+  | "export_render";
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export interface JobRecord {
@@ -415,6 +436,114 @@ export interface AuditEventRecord {
 }
 
 /* ------------------------------------------------------------------ */
+/* Intake Studio records (feature PRD §8)                               */
+/* ------------------------------------------------------------------ */
+
+/** Problem or solution ledger item. AI writes arrive only as `ai_proposed`. */
+export interface PsPairRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  kind: PsPairKind;
+  statement: string;
+  state: PsState;
+  origin: PsOrigin;
+  createdByActor: PsActor;
+  /** Human-readable source anchors, e.g. "source:memo.pdf" or "artifact:<id>". */
+  sourceAnchors: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PsLinkRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  problemId: Id;
+  solutionId: Id;
+  state: PsState;
+  createdAt: string;
+}
+
+/** Append-only ledger mutation log, including AI-proposal rejections. */
+export interface PsEventRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  pairId: Id | null;
+  kind: PsEventKind;
+  actor: string;
+  detail: string;
+  createdAt: string;
+}
+
+/** Working-title proposal history: append-only; the newest row is current. */
+export interface WorkingTitleRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  text: string;
+  state: PsState;
+  createdByActor: PsActor;
+  createdAt: string;
+}
+
+export interface ComponentRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  name: string;
+  description: string;
+  state: PsState;
+  sourceAnchors: string[];
+  createdAt: string;
+}
+
+/** Solution → evidence association (component and/or extraction artifact). */
+export interface AssociationRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  solutionId: Id;
+  componentId: Id | null;
+  extractionArtifactId: Id | null;
+  state: PsState;
+  createdAt: string;
+}
+
+export type ExtractionArtifactType =
+  | "interpretation_summary"
+  | "text_excerpt"
+  | "status_note";
+
+/** Per-source interpretation output with model + cost provenance. */
+export interface ExtractionArtifactRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  sourceId: Id;
+  type: ExtractionArtifactType;
+  content: string;
+  modelId: string | null;
+  /** Reservation the producing model run settled against (cost provenance). */
+  costReservationId: Id | null;
+  createdAt: string;
+}
+
+/** Deterministic coverage snapshot rows; history kept (append-only). */
+export interface EnablementCoverageRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  solutionId: Id;
+  dimension: CoverageDimension;
+  status: CoverageStatus;
+  evidence: string | null;
+  coverageVersion: string;
+  computedAt: string;
+}
+
+/* ------------------------------------------------------------------ */
 /* Ports                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -497,9 +626,57 @@ export interface DataPort {
         | "storagePath"
         | "checksumSha256"
         | "quarantineReason"
+        | "interpretationStatus"
       >
     >,
   ): Promise<SourceRecord | null>;
+
+  // Intake Studio: Problem/Solution ledger (feature PRD §8, FR-INT-5).
+  createPsPair(input: Omit<PsPairRecord, "id" | "createdAt" | "updatedAt">): Promise<PsPairRecord>;
+  getPsPair(organizationId: Id, pairId: Id): Promise<PsPairRecord | null>;
+  listPsPairs(organizationId: Id, inventionId: Id): Promise<PsPairRecord[]>;
+  updatePsPair(
+    organizationId: Id,
+    pairId: Id,
+    patch: Partial<Pick<PsPairRecord, "statement" | "state">>,
+  ): Promise<PsPairRecord | null>;
+  deletePsPair(organizationId: Id, pairId: Id): Promise<void>;
+  createPsLink(input: Omit<PsLinkRecord, "id" | "createdAt">): Promise<PsLinkRecord>;
+  listPsLinks(organizationId: Id, inventionId: Id): Promise<PsLinkRecord[]>;
+  deletePsLink(organizationId: Id, linkId: Id): Promise<void>;
+  appendPsEvent(input: Omit<PsEventRecord, "id" | "createdAt">): Promise<PsEventRecord>;
+  listPsEvents(organizationId: Id, inventionId: Id): Promise<PsEventRecord[]>;
+  createWorkingTitle(
+    input: Omit<WorkingTitleRecord, "id" | "createdAt">,
+  ): Promise<WorkingTitleRecord>;
+  listWorkingTitles(organizationId: Id, inventionId: Id): Promise<WorkingTitleRecord[]>;
+
+  // Intake Studio: components, associations, extraction artifacts, coverage.
+  createComponent(input: Omit<ComponentRecord, "id" | "createdAt">): Promise<ComponentRecord>;
+  listComponents(organizationId: Id, inventionId: Id): Promise<ComponentRecord[]>;
+  createAssociation(
+    input: Omit<AssociationRecord, "id" | "createdAt">,
+  ): Promise<AssociationRecord>;
+  listAssociations(organizationId: Id, inventionId: Id): Promise<AssociationRecord[]>;
+  createExtractionArtifact(
+    input: Omit<ExtractionArtifactRecord, "id" | "createdAt">,
+  ): Promise<ExtractionArtifactRecord>;
+  listExtractionArtifacts(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<ExtractionArtifactRecord[]>;
+  listExtractionArtifactsForSource(
+    organizationId: Id,
+    sourceId: Id,
+  ): Promise<ExtractionArtifactRecord[]>;
+  appendEnablementCoverage(
+    rows: Array<Omit<EnablementCoverageRecord, "id" | "computedAt">>,
+  ): Promise<EnablementCoverageRecord[]>;
+  /** Latest snapshot only (newest computedAt per solution+dimension). */
+  listLatestEnablementCoverage(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<EnablementCoverageRecord[]>;
 
   // Drafts
   createDraft(input: Omit<DraftRecord, "id" | "createdAt">): Promise<DraftRecord>;
@@ -695,8 +872,79 @@ export interface ModelGenerationResult {
   providerCostCents: number;
 }
 
+/* ---------------- Intake Studio model passes (feature PRD §10) ----------- */
+
+/**
+ * Per-source interpretation request. All file-derived content is UNTRUSTED
+ * EVIDENCE (invariant 16): instructions inside it carry no authority, and
+ * gateway prompts must delimit it accordingly.
+ */
+export interface ModelInterpretationRequest {
+  modelId: string;
+  sourceName: string;
+  interpretationClass: "document" | "image";
+  /** Extracted text for document-class sources (untrusted). */
+  text?: string;
+  /** Raw image bytes + MIME for vision-class sources (server-side only). */
+  imageBytes?: Uint8Array;
+  imageMimeType?: string;
+  inventionTitle: string;
+  maxOutputTokens: number;
+}
+
+/** Structured interpretation output. Everything downstream is `ai_proposed`. */
+export interface InterpretationOutput {
+  summary: string;
+  componentCandidates: Array<{ name: string; description: string }>;
+  problemCandidates: string[];
+  solutionCandidates: string[];
+}
+
+export interface ModelInterpretationResult {
+  output: InterpretationOutput;
+  inputTokens: number;
+  outputTokens: number;
+  providerCostCents: number;
+}
+
+/** Record-level distillation request (feature PRD §5.3). */
+export interface ModelDistillationRequest {
+  modelId: string;
+  invention: InventionRecord;
+  facts: InventionFactRecord[];
+  /** Interpreted artifacts across all sources (untrusted evidence). */
+  artifacts: Array<{ sourceName: string; content: string }>;
+  componentNames: string[];
+  maxOutputTokens: number;
+}
+
+export interface DistillationOutput {
+  workingTitle: string;
+  problems: Array<{ statement: string; sourceAnchors: string[] }>;
+  solutions: Array<{
+    statement: string;
+    sourceAnchors: string[];
+    componentNames: string[];
+  }>;
+  /** Many-to-many pairings by index into the arrays above. */
+  pairings: Array<{ problemIndex: number; solutionIndex: number }>;
+  /** Observations only (e.g. possible multi-invention record) — never advice. */
+  observations: string[];
+}
+
+export interface ModelDistillationResult {
+  output: DistillationOutput;
+  inputTokens: number;
+  outputTokens: number;
+  providerCostCents: number;
+}
+
 export interface ModelGatewayPort {
   generate(request: ModelGenerationRequest): Promise<ModelGenerationResult>;
+  /** Intake Studio per-source interpretation pass (FR-INT-3). */
+  interpret(request: ModelInterpretationRequest): Promise<ModelInterpretationResult>;
+  /** Intake Studio record-level distillation pass (FR-INT-4). */
+  distill(request: ModelDistillationRequest): Promise<ModelDistillationResult>;
 }
 
 export type CheckoutRequest =

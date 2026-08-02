@@ -162,6 +162,7 @@ export async function addSourceAction(formData: FormData): Promise<void> {
     storagePath: null,
     checksumSha256: null,
     quarantineReason: null,
+    interpretationStatus: null,
   });
   redirect(`/wepatent/app/inventions/${inventionId}/sources`);
 }

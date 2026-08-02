@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { CounselRequestState } from "@/lib/wepatent/domain/counsel-request";
 import type { FactProvenance } from "@/lib/wepatent/domain/facts";
 import type {
+  AssociationRecord,
   AuditEventRecord,
   BillingOutboxRecord,
+  ComponentRecord,
   ContributorRecord,
   CounselAssignmentRecord,
   CounselAuditEventRecord,
@@ -14,9 +16,11 @@ import type {
   DraftCitationRecord,
   DraftRecord,
   DraftVersionRecord,
+  EnablementCoverageRecord,
   EngagementRecord,
   ExportArtifactRecord,
   ExportRecordEntry,
+  ExtractionArtifactRecord,
   FilingPackageRecord,
   Id,
   IntakeSessionRecord,
@@ -29,6 +33,9 @@ import type {
   LegalMatterRecord,
   MembershipRecord,
   OrganizationRecord,
+  PsEventRecord,
+  PsLinkRecord,
+  PsPairRecord,
   ReservationRecord,
   SourceRecord,
   StripeEventRecord,
@@ -36,6 +43,7 @@ import type {
   UsageEventRecord,
   UserRecord,
   WalletRecord,
+  WorkingTitleRecord,
 } from "../types";
 
 /**
@@ -78,6 +86,15 @@ type Tables = {
   stripeEvents: Map<string, StripeEventRecord>;
   billingOutbox: Map<Id, BillingOutboxRecord>;
   stripeCustomers: Map<Id, string>;
+  // Intake Studio (feature PRD §8)
+  psPairs: Map<Id, PsPairRecord>;
+  psLinks: Map<Id, PsLinkRecord>;
+  psEvents: PsEventRecord[];
+  workingTitles: WorkingTitleRecord[];
+  components: Map<Id, ComponentRecord>;
+  associations: Map<Id, AssociationRecord>;
+  extractionArtifacts: ExtractionArtifactRecord[];
+  enablementCoverage: EnablementCoverageRecord[];
 };
 
 function emptyTables(): Tables {
@@ -114,6 +131,14 @@ function emptyTables(): Tables {
     stripeEvents: new Map(),
     billingOutbox: new Map(),
     stripeCustomers: new Map(),
+    psPairs: new Map(),
+    psLinks: new Map(),
+    psEvents: [],
+    workingTitles: [],
+    components: new Map(),
+    associations: new Map(),
+    extractionArtifacts: [],
+    enablementCoverage: [],
   };
 }
 
@@ -319,6 +344,27 @@ export class LocalDataAdapter implements DataPort {
     for (const id of draftIds) t.drafts.delete(id);
     t.exportArtifacts = t.exportArtifacts.filter((a) => !exportIds.has(a.exportId));
     for (const id of exportIds) t.exports.delete(id);
+    // Intake Studio content rows purge with the invention (FR-3 retention).
+    for (const [id, pair] of t.psPairs) {
+      if (pair.inventionId === inventionId) t.psPairs.delete(id);
+    }
+    for (const [id, link] of t.psLinks) {
+      if (link.inventionId === inventionId) t.psLinks.delete(id);
+    }
+    t.psEvents = t.psEvents.filter((e) => e.inventionId !== inventionId);
+    t.workingTitles = t.workingTitles.filter((w) => w.inventionId !== inventionId);
+    for (const [id, component] of t.components) {
+      if (component.inventionId === inventionId) t.components.delete(id);
+    }
+    for (const [id, association] of t.associations) {
+      if (association.inventionId === inventionId) t.associations.delete(id);
+    }
+    t.extractionArtifacts = t.extractionArtifacts.filter(
+      (a) => a.inventionId !== inventionId,
+    );
+    t.enablementCoverage = t.enablementCoverage.filter(
+      (c) => c.inventionId !== inventionId,
+    );
     t.inventions.delete(inventionId);
   }
 
@@ -418,6 +464,7 @@ export class LocalDataAdapter implements DataPort {
         | "storagePath"
         | "checksumSha256"
         | "quarantineReason"
+        | "interpretationStatus"
       >
     >,
   ): Promise<SourceRecord | null> {
@@ -425,6 +472,175 @@ export class LocalDataAdapter implements DataPort {
     if (!record || record.organizationId !== organizationId) return null;
     Object.assign(record, patch);
     return record;
+  }
+
+  /* ---------------- Intake Studio: P/S ledger (feature PRD §8) ----------- */
+
+  async createPsPair(
+    input: Omit<PsPairRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<PsPairRecord> {
+    const record: PsPairRecord = { ...input, id: randomUUID(), createdAt: now(), updatedAt: now() };
+    tables().psPairs.set(record.id, record);
+    return record;
+  }
+
+  async getPsPair(organizationId: Id, pairId: Id): Promise<PsPairRecord | null> {
+    const record = tables().psPairs.get(pairId);
+    if (!record || record.organizationId !== organizationId) return null;
+    return record;
+  }
+
+  async listPsPairs(organizationId: Id, inventionId: Id): Promise<PsPairRecord[]> {
+    return [...tables().psPairs.values()]
+      .filter((p) => p.organizationId === organizationId && p.inventionId === inventionId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async updatePsPair(
+    organizationId: Id,
+    pairId: Id,
+    patch: Partial<Pick<PsPairRecord, "statement" | "state">>,
+  ): Promise<PsPairRecord | null> {
+    const record = tables().psPairs.get(pairId);
+    if (!record || record.organizationId !== organizationId) return null;
+    Object.assign(record, patch, { updatedAt: now() });
+    return record;
+  }
+
+  async deletePsPair(organizationId: Id, pairId: Id): Promise<void> {
+    const t = tables();
+    const record = t.psPairs.get(pairId);
+    if (!record || record.organizationId !== organizationId) return;
+    t.psPairs.delete(pairId);
+    for (const [id, link] of t.psLinks) {
+      if (link.problemId === pairId || link.solutionId === pairId) t.psLinks.delete(id);
+    }
+    for (const [id, association] of t.associations) {
+      if (association.solutionId === pairId) t.associations.delete(id);
+    }
+  }
+
+  async createPsLink(input: Omit<PsLinkRecord, "id" | "createdAt">): Promise<PsLinkRecord> {
+    const record: PsLinkRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().psLinks.set(record.id, record);
+    return record;
+  }
+
+  async listPsLinks(organizationId: Id, inventionId: Id): Promise<PsLinkRecord[]> {
+    return [...tables().psLinks.values()].filter(
+      (l) => l.organizationId === organizationId && l.inventionId === inventionId,
+    );
+  }
+
+  async deletePsLink(organizationId: Id, linkId: Id): Promise<void> {
+    const record = tables().psLinks.get(linkId);
+    if (!record || record.organizationId !== organizationId) return;
+    tables().psLinks.delete(linkId);
+  }
+
+  async appendPsEvent(input: Omit<PsEventRecord, "id" | "createdAt">): Promise<PsEventRecord> {
+    const record: PsEventRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().psEvents.push(record);
+    return record;
+  }
+
+  async listPsEvents(organizationId: Id, inventionId: Id): Promise<PsEventRecord[]> {
+    return tables().psEvents.filter(
+      (e) => e.organizationId === organizationId && e.inventionId === inventionId,
+    );
+  }
+
+  async createWorkingTitle(
+    input: Omit<WorkingTitleRecord, "id" | "createdAt">,
+  ): Promise<WorkingTitleRecord> {
+    const record: WorkingTitleRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().workingTitles.push(record);
+    return record;
+  }
+
+  async listWorkingTitles(organizationId: Id, inventionId: Id): Promise<WorkingTitleRecord[]> {
+    return tables()
+      .workingTitles.filter(
+        (w) => w.organizationId === organizationId && w.inventionId === inventionId,
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async createComponent(input: Omit<ComponentRecord, "id" | "createdAt">): Promise<ComponentRecord> {
+    const record: ComponentRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().components.set(record.id, record);
+    return record;
+  }
+
+  async listComponents(organizationId: Id, inventionId: Id): Promise<ComponentRecord[]> {
+    return [...tables().components.values()]
+      .filter((c) => c.organizationId === organizationId && c.inventionId === inventionId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async createAssociation(
+    input: Omit<AssociationRecord, "id" | "createdAt">,
+  ): Promise<AssociationRecord> {
+    const record: AssociationRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().associations.set(record.id, record);
+    return record;
+  }
+
+  async listAssociations(organizationId: Id, inventionId: Id): Promise<AssociationRecord[]> {
+    return [...tables().associations.values()].filter(
+      (a) => a.organizationId === organizationId && a.inventionId === inventionId,
+    );
+  }
+
+  async createExtractionArtifact(
+    input: Omit<ExtractionArtifactRecord, "id" | "createdAt">,
+  ): Promise<ExtractionArtifactRecord> {
+    const record: ExtractionArtifactRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().extractionArtifacts.push(record);
+    return record;
+  }
+
+  async listExtractionArtifacts(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<ExtractionArtifactRecord[]> {
+    return tables().extractionArtifacts.filter(
+      (a) => a.organizationId === organizationId && a.inventionId === inventionId,
+    );
+  }
+
+  async listExtractionArtifactsForSource(
+    organizationId: Id,
+    sourceId: Id,
+  ): Promise<ExtractionArtifactRecord[]> {
+    return tables().extractionArtifacts.filter(
+      (a) => a.organizationId === organizationId && a.sourceId === sourceId,
+    );
+  }
+
+  async appendEnablementCoverage(
+    rows: Array<Omit<EnablementCoverageRecord, "id" | "computedAt">>,
+  ): Promise<EnablementCoverageRecord[]> {
+    const computedAt = now();
+    const records = rows.map((row) => ({ ...row, id: randomUUID(), computedAt }));
+    tables().enablementCoverage.push(...records);
+    return records;
+  }
+
+  async listLatestEnablementCoverage(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<EnablementCoverageRecord[]> {
+    const rows = tables().enablementCoverage.filter(
+      (c) => c.organizationId === organizationId && c.inventionId === inventionId,
+    );
+    const latest = new Map<string, EnablementCoverageRecord>();
+    for (const row of rows) {
+      const key = `${row.solutionId}:${row.dimension}`;
+      const existing = latest.get(key);
+      if (!existing || row.computedAt >= existing.computedAt) latest.set(key, row);
+    }
+    return [...latest.values()];
   }
 
   async createDraft(input: Omit<DraftRecord, "id" | "createdAt">): Promise<DraftRecord> {

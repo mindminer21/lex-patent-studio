@@ -6,8 +6,10 @@ import type { CounselRequestState } from "@/lib/wepatent/domain/counsel-request"
 import type { FactProvenance } from "@/lib/wepatent/domain/facts";
 import type { IntakeState } from "@/lib/wepatent/domain/intake";
 import type {
+  AssociationRecord,
   AuditEventRecord,
   BillingOutboxRecord,
+  ComponentRecord,
   ContributorRecord,
   CounselAssignmentRecord,
   CounselAuditEventRecord,
@@ -18,9 +20,11 @@ import type {
   DraftCitationRecord,
   DraftRecord,
   DraftVersionRecord,
+  EnablementCoverageRecord,
   EngagementRecord,
   ExportArtifactRecord,
   ExportRecordEntry,
+  ExtractionArtifactRecord,
   FilingPackageRecord,
   Id,
   IntakeSessionRecord,
@@ -33,6 +37,9 @@ import type {
   LegalMatterRecord,
   MembershipRecord,
   OrganizationRecord,
+  PsEventRecord,
+  PsLinkRecord,
+  PsPairRecord,
   ReservationRecord,
   SourceRecord,
   StripeEventRecord,
@@ -40,6 +47,7 @@ import type {
   UsageEventRecord,
   UserRecord,
   WalletRecord,
+  WorkingTitleRecord,
 } from "../types";
 
 /**
@@ -164,6 +172,10 @@ const mapSource = (row: Row): SourceRecord => ({
   storagePath: sOrNull(row, "storage_path"),
   checksumSha256: sOrNull(row, "checksum_sha256"),
   quarantineReason: sOrNull(row, "quarantine_reason"),
+  interpretationStatus: sOrNull(
+    row,
+    "interpretation_status",
+  ) as SourceRecord["interpretationStatus"],
 });
 
 const mapDraftVersion = (row: Row): DraftVersionRecord => ({
@@ -731,6 +743,7 @@ export class SupabaseDataAdapter implements DataPort {
             storage_path: input.storagePath,
             checksum_sha256: input.checksumSha256,
             quarantine_reason: input.quarantineReason,
+            interpretation_status: input.interpretationStatus,
           })
           .select(),
         "sources.insert",
@@ -776,6 +789,7 @@ export class SupabaseDataAdapter implements DataPort {
         | "storagePath"
         | "checksumSha256"
         | "quarantineReason"
+        | "interpretationStatus"
       >
     >,
   ): Promise<SourceRecord | null> {
@@ -787,6 +801,8 @@ export class SupabaseDataAdapter implements DataPort {
     if (patch.storagePath !== undefined) payload.storage_path = patch.storagePath;
     if (patch.checksumSha256 !== undefined) payload.checksum_sha256 = patch.checksumSha256;
     if (patch.quarantineReason !== undefined) payload.quarantine_reason = patch.quarantineReason;
+    if (patch.interpretationStatus !== undefined)
+      payload.interpretation_status = patch.interpretationStatus;
     const row = await one<Row>(
       this.from("private_sources")
         .update(payload)
@@ -1911,4 +1927,444 @@ export class SupabaseDataAdapter implements DataPort {
       createdAt: s(row, "created_at"),
     }));
   }
+
+  /* ------------- Intake Studio (feature PRD §8, migration 0009) ---------- */
+
+  async createPsPair(
+    input: Omit<PsPairRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<PsPairRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("ps_pairs")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            kind: input.kind,
+            statement: input.statement,
+            state: input.state,
+            origin: input.origin,
+            created_by_actor: input.createdByActor,
+            source_anchors: input.sourceAnchors,
+          })
+          .select(),
+        "ps_pairs.insert",
+      ),
+      "ps_pairs.insert",
+    );
+    return mapPsPair(row);
+  }
+
+  async getPsPair(organizationId: Id, pairId: Id): Promise<PsPairRecord | null> {
+    const row = await one<Row>(
+      this.from("ps_pairs")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("id", pairId),
+      "ps_pairs.get",
+    );
+    return row ? mapPsPair(row) : null;
+  }
+
+  async listPsPairs(organizationId: Id, inventionId: Id): Promise<PsPairRecord[]> {
+    const rows = await many<Row>(
+      this.from("ps_pairs")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "ps_pairs.list",
+    );
+    return rows.map(mapPsPair);
+  }
+
+  async updatePsPair(
+    organizationId: Id,
+    pairId: Id,
+    patch: Partial<Pick<PsPairRecord, "statement" | "state">>,
+  ): Promise<PsPairRecord | null> {
+    const payload: Row = { updated_at: new Date().toISOString() };
+    if (patch.statement !== undefined) payload.statement = patch.statement;
+    if (patch.state !== undefined) payload.state = patch.state;
+    const row = await one<Row>(
+      this.from("ps_pairs")
+        .update(payload)
+        .eq("organization_id", organizationId)
+        .eq("id", pairId)
+        .select(),
+      "ps_pairs.update",
+    );
+    return row ? mapPsPair(row) : null;
+  }
+
+  async deletePsPair(organizationId: Id, pairId: Id): Promise<void> {
+    // Links/associations cascade in the schema (0009).
+    const { error } = await this.from("ps_pairs")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", pairId);
+    if (error) throw new Error(`supabase_adapter:ps_pairs.delete:${error.message}`);
+  }
+
+  async createPsLink(input: Omit<PsLinkRecord, "id" | "createdAt">): Promise<PsLinkRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("ps_links")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            problem_id: input.problemId,
+            solution_id: input.solutionId,
+            state: input.state,
+          })
+          .select(),
+        "ps_links.insert",
+      ),
+      "ps_links.insert",
+    );
+    return {
+      id: s(row, "id"),
+      organizationId: s(row, "organization_id"),
+      inventionId: s(row, "invention_id"),
+      problemId: s(row, "problem_id"),
+      solutionId: s(row, "solution_id"),
+      state: s(row, "state") as PsLinkRecord["state"],
+      createdAt: s(row, "created_at"),
+    };
+  }
+
+  async listPsLinks(organizationId: Id, inventionId: Id): Promise<PsLinkRecord[]> {
+    const rows = await many<Row>(
+      this.from("ps_links")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId),
+      "ps_links.list",
+    );
+    return rows.map((row) => ({
+      id: s(row, "id"),
+      organizationId: s(row, "organization_id"),
+      inventionId: s(row, "invention_id"),
+      problemId: s(row, "problem_id"),
+      solutionId: s(row, "solution_id"),
+      state: s(row, "state") as PsLinkRecord["state"],
+      createdAt: s(row, "created_at"),
+    }));
+  }
+
+  async deletePsLink(organizationId: Id, linkId: Id): Promise<void> {
+    const { error } = await this.from("ps_links")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", linkId);
+    if (error) throw new Error(`supabase_adapter:ps_links.delete:${error.message}`);
+  }
+
+  async appendPsEvent(input: Omit<PsEventRecord, "id" | "createdAt">): Promise<PsEventRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("ps_events")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            pair_id: input.pairId,
+            kind: input.kind,
+            actor: input.actor,
+            detail: input.detail,
+          })
+          .select(),
+        "ps_events.insert",
+      ),
+      "ps_events.insert",
+    );
+    return { ...input, id: s(row, "id"), createdAt: s(row, "created_at") };
+  }
+
+  async listPsEvents(organizationId: Id, inventionId: Id): Promise<PsEventRecord[]> {
+    const rows = await many<Row>(
+      this.from("ps_events")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "ps_events.list",
+    );
+    return rows.map((row) => ({
+      id: s(row, "id"),
+      organizationId: s(row, "organization_id"),
+      inventionId: s(row, "invention_id"),
+      pairId: sOrNull(row, "pair_id"),
+      kind: s(row, "kind") as PsEventRecord["kind"],
+      actor: s(row, "actor"),
+      detail: s(row, "detail"),
+      createdAt: s(row, "created_at"),
+    }));
+  }
+
+  async createWorkingTitle(
+    input: Omit<WorkingTitleRecord, "id" | "createdAt">,
+  ): Promise<WorkingTitleRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("working_titles")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            text: input.text,
+            state: input.state,
+            created_by_actor: input.createdByActor,
+          })
+          .select(),
+        "working_titles.insert",
+      ),
+      "working_titles.insert",
+    );
+    return { ...input, id: s(row, "id"), createdAt: s(row, "created_at") };
+  }
+
+  async listWorkingTitles(organizationId: Id, inventionId: Id): Promise<WorkingTitleRecord[]> {
+    const rows = await many<Row>(
+      this.from("working_titles")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "working_titles.list",
+    );
+    return rows.map((row) => ({
+      id: s(row, "id"),
+      organizationId: s(row, "organization_id"),
+      inventionId: s(row, "invention_id"),
+      text: s(row, "text"),
+      state: s(row, "state") as WorkingTitleRecord["state"],
+      createdByActor: s(row, "created_by_actor") as WorkingTitleRecord["createdByActor"],
+      createdAt: s(row, "created_at"),
+    }));
+  }
+
+  async createComponent(
+    input: Omit<ComponentRecord, "id" | "createdAt">,
+  ): Promise<ComponentRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("components")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            name: input.name,
+            description: input.description,
+            state: input.state,
+            source_anchors: input.sourceAnchors,
+          })
+          .select(),
+        "components.insert",
+      ),
+      "components.insert",
+    );
+    return mapComponent(row);
+  }
+
+  async listComponents(organizationId: Id, inventionId: Id): Promise<ComponentRecord[]> {
+    const rows = await many<Row>(
+      this.from("components")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "components.list",
+    );
+    return rows.map(mapComponent);
+  }
+
+  async createAssociation(
+    input: Omit<AssociationRecord, "id" | "createdAt">,
+  ): Promise<AssociationRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("associations")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            solution_id: input.solutionId,
+            component_id: input.componentId,
+            extraction_artifact_id: input.extractionArtifactId,
+            state: input.state,
+          })
+          .select(),
+        "associations.insert",
+      ),
+      "associations.insert",
+    );
+    return mapAssociation(row);
+  }
+
+  async listAssociations(organizationId: Id, inventionId: Id): Promise<AssociationRecord[]> {
+    const rows = await many<Row>(
+      this.from("associations")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId),
+      "associations.list",
+    );
+    return rows.map(mapAssociation);
+  }
+
+  async createExtractionArtifact(
+    input: Omit<ExtractionArtifactRecord, "id" | "createdAt">,
+  ): Promise<ExtractionArtifactRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("extraction_artifacts")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            source_id: input.sourceId,
+            type: input.type,
+            content: input.content,
+            model_id: input.modelId,
+            cost_reservation_id: input.costReservationId,
+          })
+          .select(),
+        "extraction_artifacts.insert",
+      ),
+      "extraction_artifacts.insert",
+    );
+    return mapExtractionArtifact(row);
+  }
+
+  async listExtractionArtifacts(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<ExtractionArtifactRecord[]> {
+    const rows = await many<Row>(
+      this.from("extraction_artifacts")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "extraction_artifacts.list",
+    );
+    return rows.map(mapExtractionArtifact);
+  }
+
+  async listExtractionArtifactsForSource(
+    organizationId: Id,
+    sourceId: Id,
+  ): Promise<ExtractionArtifactRecord[]> {
+    const rows = await many<Row>(
+      this.from("extraction_artifacts")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("source_id", sourceId)
+        .order("created_at", { ascending: true }),
+      "extraction_artifacts.list_for_source",
+    );
+    return rows.map(mapExtractionArtifact);
+  }
+
+  async appendEnablementCoverage(
+    rows: Array<Omit<EnablementCoverageRecord, "id" | "computedAt">>,
+  ): Promise<EnablementCoverageRecord[]> {
+    if (rows.length === 0) return [];
+    const inserted = await many<Row>(
+      this.from("enablement_coverage")
+        .insert(
+          rows.map((row) => ({
+            organization_id: row.organizationId,
+            invention_id: row.inventionId,
+            solution_id: row.solutionId,
+            dimension: row.dimension,
+            status: row.status,
+            evidence: row.evidence,
+            coverage_version: row.coverageVersion,
+          })),
+        )
+        .select(),
+      "enablement_coverage.insert",
+    );
+    return inserted.map(mapCoverage);
+  }
+
+  async listLatestEnablementCoverage(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<EnablementCoverageRecord[]> {
+    const rows = await many<Row>(
+      this.from("enablement_coverage")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("computed_at", { ascending: true }),
+      "enablement_coverage.list",
+    );
+    const latest = new Map<string, EnablementCoverageRecord>();
+    for (const row of rows.map(mapCoverage)) {
+      latest.set(`${row.solutionId}:${row.dimension}`, row);
+    }
+    return [...latest.values()];
+  }
 }
+
+function stringArray(row: Row, key: string): string[] {
+  const value = row[key];
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+const mapPsPair = (row: Row): PsPairRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  kind: s(row, "kind") as PsPairRecord["kind"],
+  statement: s(row, "statement"),
+  state: s(row, "state") as PsPairRecord["state"],
+  origin: s(row, "origin") as PsPairRecord["origin"],
+  createdByActor: s(row, "created_by_actor") as PsPairRecord["createdByActor"],
+  sourceAnchors: stringArray(row, "source_anchors"),
+  createdAt: s(row, "created_at"),
+  updatedAt: s(row, "updated_at"),
+});
+
+const mapComponent = (row: Row): ComponentRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  name: s(row, "name"),
+  description: s(row, "description"),
+  state: s(row, "state") as ComponentRecord["state"],
+  sourceAnchors: stringArray(row, "source_anchors"),
+  createdAt: s(row, "created_at"),
+});
+
+const mapAssociation = (row: Row): AssociationRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  solutionId: s(row, "solution_id"),
+  componentId: sOrNull(row, "component_id"),
+  extractionArtifactId: sOrNull(row, "extraction_artifact_id"),
+  state: s(row, "state") as AssociationRecord["state"],
+  createdAt: s(row, "created_at"),
+});
+
+const mapExtractionArtifact = (row: Row): ExtractionArtifactRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  sourceId: s(row, "source_id"),
+  type: s(row, "type") as ExtractionArtifactRecord["type"],
+  content: s(row, "content"),
+  modelId: sOrNull(row, "model_id"),
+  costReservationId: sOrNull(row, "cost_reservation_id"),
+  createdAt: s(row, "created_at"),
+});
+
+const mapCoverage = (row: Row): EnablementCoverageRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  solutionId: s(row, "solution_id"),
+  dimension: s(row, "dimension") as EnablementCoverageRecord["dimension"],
+  status: s(row, "status") as EnablementCoverageRecord["status"],
+  evidence: sOrNull(row, "evidence"),
+  coverageVersion: s(row, "coverage_version"),
+  computedAt: s(row, "computed_at"),
+});

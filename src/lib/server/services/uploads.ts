@@ -105,6 +105,7 @@ export async function signUpload(params: {
     storagePath: null,
     checksumSha256: null,
     quarantineReason: null,
+    interpretationStatus: null,
   });
   const expiresAt = Date.now() + TOKEN_TTL_MS;
   const token = signToken({

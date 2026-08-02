@@ -189,6 +189,7 @@ export async function submitIntake(params: {
       storagePath: null,
       checksumSha256: null,
       quarantineReason: null,
+      interpretationStatus: null,
     });
   }
 
