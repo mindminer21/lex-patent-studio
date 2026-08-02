@@ -218,9 +218,10 @@ const CASES: MatrixCase[] = [
       }),
   },
   {
-    // Playbook is internal legal strategy: contributor seats never read it.
+    // Playbook is internal legal strategy: contributor AND viewer seats
+    // never read it (mirrors the playbook_entries RLS policy).
     name: "GET /api/playbook",
-    allowed: [...PRACTITIONER_SET, "agent_operator", "viewer"],
+    allowed: [...PRACTITIONER_SET, "agent_operator"],
     call: (s) => listPlaybookEndpoint(s),
   },
   {

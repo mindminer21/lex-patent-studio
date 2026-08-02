@@ -369,9 +369,10 @@ export async function createStyleProfileEndpoint(
 }
 
 export async function listPlaybookEndpoint(session: Session): Promise<ApiResult> {
-  // Playbook content is internal legal strategy: professional-lane seats
-  // only. Contributor (R&D) seats never read it (PRD §3 boundary).
-  if (!can(session.role, "knowledge.search")) return forbidden();
+  // Playbook content is internal legal strategy: practitioner-class roles
+  // and operators only — mirrors the playbook_entries RLS policy exactly.
+  // Contributor and viewer seats never read it (PRD §3 boundary).
+  if (!can(session.role, "playbook.read")) return forbidden();
   const result = await data().listPlaybookEntries(session.organizationId);
   return apiResult(200, result);
 }

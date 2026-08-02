@@ -22,7 +22,7 @@ export default async function TemplatesPage() {
   const session = await adapters.auth.getSession();
   if (!session) return null;
 
-  const canReadPlaybook = can(session.role, "knowledge.search");
+  const canReadPlaybook = can(session.role, "playbook.read");
   const canManageStyles = can(session.role, "styles.manage");
   const canPublish = can(session.role, "playbook.publish");
 

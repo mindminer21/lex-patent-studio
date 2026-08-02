@@ -63,6 +63,10 @@ export const ACTIONS = [
   // Portfolio, templates, admin
   "portfolio.view",
   "styles.manage",
+  // Playbook content is internal legal strategy: readable by practitioner-
+  // class roles and operators; contributor and viewer seats never read it
+  // (mirrors the playbook_entries RLS policy exactly).
+  "playbook.read",
   "playbook.publish",
   "team.manage",
   "billing.manage",
@@ -94,6 +98,7 @@ const PRACTITIONER_ACTIONS: Action[] = [
   "knowledge.search",
   "portfolio.view",
   "styles.manage",
+  "playbook.read",
   "playbook.publish",
   "audit.view",
 ];
@@ -121,6 +126,7 @@ export const ROLE_POLICY: Record<Role, ReadonlySet<Action>> = {
     "review.decide.tierA",
     "export.draft",
     "knowledge.search",
+    "playbook.read",
     "audit.view",
   ]),
   contributor: new Set<Action>([
