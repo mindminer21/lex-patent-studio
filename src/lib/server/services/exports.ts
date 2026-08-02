@@ -40,6 +40,11 @@ export async function createExport(params: {
   const contributors = await data.listContributors(params.organizationId, params.inventionId);
   const events = await data.listDisclosureEvents(params.organizationId, params.inventionId);
   const sources = await data.listSources(params.organizationId, params.inventionId);
+  // Intake Studio M1: P/S ledger + deterministic coverage summary travel in
+  // the manifest so the package is self-describing (FR-INT-8 export caveat
+  // is rendered by export-render.ts).
+  const { getLedger } = await import("./ps-ledger");
+  const ledger = await getLedger(params.organizationId, params.inventionId);
 
   const manifest: ExportManifest = {
     inventionId: invention.id,
@@ -54,6 +59,12 @@ export async function createExport(params: {
     sourceCount: sources.length,
     generatedAt: new Date().toISOString(),
     notice: EXPORT_NOTICE,
+    psProblemCount: ledger.pairs.filter((pair) => pair.kind === "problem").length,
+    psSolutionCount: ledger.pairs.filter((pair) => pair.kind === "solution").length,
+    psConfirmedCount: ledger.pairs.filter((pair) => pair.state !== "ai_proposed").length,
+    coverageSatisfied: ledger.coverage.aggregate.satisfied,
+    coverageTotal: ledger.coverage.aggregate.total,
+    coverageVersion: ledger.coverage.version,
   };
 
   const checksum = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");

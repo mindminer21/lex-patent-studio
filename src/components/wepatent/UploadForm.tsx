@@ -15,7 +15,7 @@ const KIND_OPTIONS = [
 
 const REJECTION_MESSAGES: Record<string, string> = {
   mime_not_allowed:
-    "That file type is not allowed. Allowed: PDF, PNG, JPEG, plain text/Markdown, DOCX.",
+    "That file type is not allowed. Allowed: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG, PNG, JPEG, TIFF, HEIC, STL, STEP, OBJ, 3MF.",
   extension_mismatch: "The file extension does not match its declared type.",
   too_large: "The file exceeds the size cap for its type.",
   empty_file: "The file is empty.",
@@ -103,12 +103,15 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
   return (
     <form onSubmit={handleSubmit} className="wp-form" data-testid="upload-form">
       <div className="field">
-        <label htmlFor="upload-file">File (PDF, PNG, JPEG, TXT/MD, DOCX)</label>
+        <label htmlFor="upload-file">
+          File (documents: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG · images: PNG, JPEG, TIFF, HEIC ·
+          3D models: STL, STEP, OBJ, 3MF)
+        </label>
         <input
           id="upload-file"
           ref={fileRef}
           type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx"
+          accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf"
           required
         />
       </div>

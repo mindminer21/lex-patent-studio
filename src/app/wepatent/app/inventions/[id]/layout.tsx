@@ -6,6 +6,7 @@ import { requireOnboarded } from "@/lib/server/session";
 
 const TABS: Array<[string, string]> = [
   ["", "Overview"],
+  ["/studio", "Studio"],
   ["/facts", "Facts"],
   ["/contributors", "Contributors"],
   ["/timeline", "Timeline"],

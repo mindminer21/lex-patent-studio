@@ -10,7 +10,12 @@ import {
   TextRun,
 } from "docx";
 import { PDFDocument, StandardFonts } from "pdf-lib";
+import {
+  COVERAGE_DIMENSION_LABELS,
+  COVERAGE_DIMENSIONS,
+} from "@/lib/wepatent/domain/coverage";
 import { getAdapters } from "../adapters";
+import type { LedgerView } from "./ps-ledger";
 import type {
   ContributorRecord,
   DisclosureEventRecord,
@@ -47,8 +52,10 @@ export function buildExportSections(input: {
   events: DisclosureEventRecord[];
   sources: SourceRecord[];
   draftVersion: DraftVersionRecord | null;
+  /** Intake Studio M1: P/S ledger + coverage (optional for older exports). */
+  ledger?: LedgerView | null;
 }): ExportSectionContent[] {
-  const { record, facts, contributors, events, sources, draftVersion } = input;
+  const { record, facts, contributors, events, sources, draftVersion, ledger } = input;
   const manifest = record.manifest;
   const sections: ExportSectionContent[] = [];
 
@@ -107,6 +114,86 @@ export function buildExportSections(input: {
             )
           : ["No sources registered."],
     });
+  }
+
+  if (manifest.sections.includes("ps_ledger") && ledger) {
+    const componentById = new Map(ledger.components.map((component) => [component.id, component]));
+    const pairById = new Map(ledger.pairs.map((pair) => [pair.id, pair]));
+    const lines: string[] = [
+      ledger.currentTitle
+        ? `Working title (${ledger.currentTitle.state}): ${ledger.currentTitle.text}`
+        : "No working title recorded.",
+      "Item states: ai_proposed = unreviewed AI proposal · user_confirmed / user_edited = human-reviewed.",
+      "",
+    ];
+    for (const pair of ledger.pairs) {
+      lines.push(`[${pair.kind} · ${pair.state} · origin ${pair.origin}] ${pair.statement}`);
+      if (pair.sourceAnchors.length > 0) {
+        lines.push(`  Evidence anchors: ${pair.sourceAnchors.join(" · ")}`);
+      }
+      if (pair.kind === "solution") {
+        const componentNames = ledger.associations
+          .filter((association) => association.solutionId === pair.id)
+          .map((association) =>
+            association.componentId
+              ? componentById.get(association.componentId)?.name
+              : null,
+          )
+          .filter((name): name is string => Boolean(name));
+        if (componentNames.length > 0) {
+          lines.push(`  Associated components: ${componentNames.join(", ")}`);
+        }
+      }
+    }
+    if (ledger.pairs.length === 0) lines.push("No problem/solution items recorded.");
+    if (ledger.links.length > 0) {
+      lines.push("");
+      lines.push("Problem–solution pairings:");
+      for (const link of ledger.links) {
+        const problem = pairById.get(link.problemId);
+        const solution = pairById.get(link.solutionId);
+        if (problem && solution) {
+          lines.push(
+            `  "${problem.statement.slice(0, 120)}" ↔ "${solution.statement.slice(0, 120)}" (${link.state})`,
+          );
+        }
+      }
+    }
+    if (ledger.components.length > 0) {
+      lines.push("");
+      lines.push("Component inventory:");
+      for (const component of ledger.components) {
+        lines.push(
+          `  ${component.name} (${component.state})${component.description ? ` — ${component.description}` : ""}`,
+        );
+      }
+    }
+    sections.push({ heading: "Problem/Solution ledger", lines });
+  }
+
+  if (manifest.sections.includes("coverage") && ledger) {
+    const lines: string[] = [
+      `Enablement coverage of this record: ${ledger.coverage.aggregate.satisfied} of ${ledger.coverage.aggregate.total} checks satisfied (${ledger.coverage.version}).`,
+      "This report is computed by a deterministic checklist over the recorded material — never by a model.",
+      "It measures coverage of the record, NOT legal sufficiency. Qualified patent counsel must assess enablement and written-description support (35 U.S.C. § 112(a)).",
+      "",
+    ];
+    ledger.coverage.perSolution.forEach((coverage, index) => {
+      const solution = ledger.pairs.find((pair) => pair.id === coverage.solutionId);
+      lines.push(
+        `Solution ${index + 1} (${coverage.satisfiedCount}/${coverage.totalCount}): ${solution ? solution.statement.slice(0, 160) : coverage.solutionId}`,
+      );
+      for (const dimension of COVERAGE_DIMENSIONS) {
+        const entry = coverage.dimensions[dimension];
+        lines.push(
+          `  - ${COVERAGE_DIMENSION_LABELS[dimension]}: ${entry.status}${entry.evidence ? ` (${entry.evidence})` : ""}`,
+        );
+      }
+    });
+    if (ledger.coverage.perSolution.length === 0) {
+      lines.push("No solutions recorded yet; coverage cannot be assessed.");
+    }
+    sections.push({ heading: "Enablement coverage report (record coverage, not a legal opinion)", lines });
   }
 
   if (draftVersion) {
@@ -253,6 +340,12 @@ export async function renderExportArtifacts(
   const draftVersion = record.draftVersionId
     ? await data.getDraftVersion(organizationId, record.draftVersionId)
     : null;
+  const { getLedger } = await import("./ps-ledger");
+  const ledger =
+    record.manifest.sections.includes("ps_ledger") ||
+    record.manifest.sections.includes("coverage")
+      ? await getLedger(organizationId, record.inventionId)
+      : null;
 
   const sections = buildExportSections({
     record,
@@ -261,6 +354,7 @@ export async function renderExportArtifacts(
     events,
     sources,
     draftVersion,
+    ledger,
   });
 
   const files: Array<{ name: string; contentType: string; bytes: Uint8Array }> = [

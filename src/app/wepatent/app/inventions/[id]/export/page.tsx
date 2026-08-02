@@ -70,10 +70,17 @@ export default async function ExportPage({
             <input type="hidden" name="inventionId" value={id} />
             <fieldset>
               <legend>Included sections</legend>
-              {["facts", "contributors", "timeline", "sources"].map((section) => (
+              {[
+                ["facts", "Facts"],
+                ["contributors", "Contributors"],
+                ["timeline", "Timeline"],
+                ["sources", "Sources"],
+                ["ps_ledger", "Problem/Solution ledger"],
+                ["coverage", "Enablement coverage report"],
+              ].map(([section, label]) => (
                 <label className="acknowledgement" key={section}>
                   <input type="checkbox" name={`section_${section}`} defaultChecked />
-                  <span>{section[0].toUpperCase() + section.slice(1)}</span>
+                  <span>{label}</span>
                 </label>
               ))}
             </fieldset>

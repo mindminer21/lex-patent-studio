@@ -134,16 +134,21 @@ export default async function DashboardPage({
       <div className="wp-card" style={{ marginTop: 22 }}>
         <div className="wp-topbar" style={{ marginBottom: 10 }}>
           <h2>Invention records</h2>
-          <Link className="button venture-button button-small" href="/wepatent/app/inventions/new">
-            New invention record
-          </Link>
+          <div style={{ textAlign: "right" }}>
+            <Link className="button venture-button button-small" href="/wepatent/app/inventions/start">
+              New invention
+            </Link>
+            <span className="hint" style={{ display: "block", marginTop: 4 }}>
+              Start a patent-ready disclosure
+            </span>
+          </div>
         </div>
         {factSummaries.length === 0 ? (
           <div className="wp-empty">
             <h2>No invention records yet</h2>
-            <p>Create your first invention record to start organizing facts for counsel.</p>
-            <Link className="button venture-button" href="/wepatent/app/inventions/new">
-              Create an invention record
+            <p>Start a patent-ready disclosure: upload files, answer questions, or both.</p>
+            <Link className="button venture-button" href="/wepatent/app/inventions/start">
+              New invention
             </Link>
           </div>
         ) : (

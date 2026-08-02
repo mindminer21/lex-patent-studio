@@ -209,6 +209,13 @@ export interface ExportManifest {
   sourceCount: number;
   generatedAt: string;
   notice: string;
+  /** Intake Studio M1 additions (optional for pre-M1 exports). */
+  psProblemCount?: number;
+  psSolutionCount?: number;
+  psConfirmedCount?: number;
+  coverageSatisfied?: number;
+  coverageTotal?: number;
+  coverageVersion?: string;
 }
 
 export interface CounselRequestRecord {

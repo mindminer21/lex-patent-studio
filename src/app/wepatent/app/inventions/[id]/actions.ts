@@ -225,9 +225,14 @@ export async function createExportAction(formData: FormData): Promise<void> {
   const context = await requireOnboarded();
   const inventionId = String(formData.get("inventionId") ?? "");
   const draftVersionId = String(formData.get("draftVersionId") ?? "") || null;
-  const sections = ["facts", "contributors", "timeline", "sources"].filter(
-    (section) => formData.get(`section_${section}`) === "on",
-  );
+  const sections = [
+    "facts",
+    "contributors",
+    "timeline",
+    "sources",
+    "ps_ledger",
+    "coverage",
+  ].filter((section) => formData.get(`section_${section}`) === "on");
   const result = await createExport({
     organizationId: context.organization.id,
     userId: context.user.id,
