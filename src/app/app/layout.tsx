@@ -42,7 +42,7 @@ export default async function AppLayout({
           supervision. All outputs are drafts for professional review.
         </p>
         {session && (
-          <span className="ml-auto shrink-0 text-right text-[0.78rem] leading-tight">
+          <span className="ml-auto min-w-0 max-w-full text-right text-[0.78rem] leading-tight">
             <strong>{session.displayName}</strong>
             <br />
             <span className="text-[var(--muted)]">
@@ -74,7 +74,7 @@ export default async function AppLayout({
         <div className="min-w-0 flex-1">
           <nav
             aria-label="Workspace (mobile)"
-            className="flex gap-4 border-b border-[var(--line)] px-4 py-2 md:hidden"
+            className="flex flex-wrap gap-x-4 gap-y-0 border-b border-[var(--line)] px-4 py-2 md:hidden"
           >
             {NAV.map((item) => (
               <Link

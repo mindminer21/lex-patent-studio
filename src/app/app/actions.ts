@@ -379,6 +379,8 @@ export async function decideReviewAction(
   revalidatePath("/app/review-queue");
   revalidatePath("/app");
   revalidatePath(`/app/matters/${result.item.matterId}`);
+  revalidatePath(`/app/matters/${result.item.matterId}/reviews`);
+  revalidatePath(`/app/matters/${result.item.matterId}/documents`);
   return {
     ok: true,
     message: `Recorded: ${parsed.data.decision.replace("_", " ")} on "${result.item.documentTitle}" (doc hash ${result.record.documentVersionHash}).`,

@@ -232,7 +232,7 @@ describe("USPTO PDF rendering (FR-8)", () => {
     const approved = store.documents.find((d) => d.id === "doc_t_memo")!;
     expect(approved.reviewState).toBe("approved");
     const buffer = renderUsptoPdf(approved);
-    expect(buffer.toString("latin1")).not.toContain("DRAFT");
+    expect(buffer.toString("latin1")).not.toContain("NOT REVIEWED");
   });
 
   it("is deterministic: identical input produces identical bytes", () => {

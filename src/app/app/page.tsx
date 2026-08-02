@@ -147,6 +147,7 @@ export default async function AppHome() {
             the same disclaimer — this screen is never a docket.
           </p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full border-collapse bg-[var(--white)] text-[0.88rem]">
             <thead>
               <tr className="border-b border-[var(--ink)] text-left text-[0.72rem] uppercase tracking-[0.1em]">
@@ -169,6 +170,7 @@ export default async function AppHome() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>
