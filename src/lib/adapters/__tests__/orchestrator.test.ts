@@ -469,6 +469,51 @@ describe("grounded chat (§8.2 /chat)", () => {
   });
 });
 
+describe("check-failure dismissal rule (§9.2 acceptance criterion)", () => {
+  beforeEach(() => resetLocalStore());
+
+  it("approving an item with check failures WITHOUT a note is refused", async () => {
+    // rev_o_matrix seeds with 1 deterministic check failure (Tier C).
+    const refused = await localAdapters.data.decideReviewItem(
+      ORG_ID,
+      "rev_o_matrix",
+      "approve",
+      { userId: DEMO_SESSION.userId, role: "practitioner" },
+    );
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/dismissal reason/i);
+  });
+
+  it("approving with a recorded reason succeeds and the reason lands in the audit log", async () => {
+    const approved = await localAdapters.data.decideReviewItem(
+      ORG_ID,
+      "rev_o_matrix",
+      "approve",
+      {
+        userId: DEMO_SESSION.userId,
+        role: "practitioner",
+        note: "Claim-8 dependency mismatch is an OA typo; confirmed against the pending set.",
+      },
+    );
+    expect(approved.ok).toBe(true);
+    const audit = await localAdapters.data.listAuditEvents(ORG_ID, {
+      matterId: "matter_optical",
+    });
+    const event = audit.find((e) => e.action === "review.approve");
+    expect(event?.detail).toContain("OA typo");
+  });
+
+  it("rejecting or requesting changes never requires a dismissal note", async () => {
+    const rejected = await localAdapters.data.decideReviewItem(
+      ORG_ID,
+      "rev_o_matrix",
+      "request_changes",
+      { userId: DEMO_SESSION.userId, role: "practitioner" },
+    );
+    expect(rejected.ok).toBe(true);
+  });
+});
+
 describe("fact ledger events", () => {
   beforeEach(() => resetLocalStore());
 

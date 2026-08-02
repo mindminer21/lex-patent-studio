@@ -618,6 +618,25 @@ export class PgDataAdapter implements DataAdapter {
     if (!rows[0]) return { ok: false, error: "Review item not found." };
     const item = PgDataAdapter.reviewRow(rows[0]);
 
+    // §9.2: check failures cannot be dismissed silently — approval over
+    // failures requires a recorded reason. Failure count comes from the
+    // run's undismissed deterministic_check_results.
+    if (item.runId) {
+      const failures = await this.pool.query(
+        `select count(*)::int as n from deterministic_check_results
+          where run_id = $1 and passed = false and dismissed_by is null`,
+        [item.runId],
+      );
+      const failureCount = Number(failures.rows[0].n);
+      item.deterministicCheckFailures = failureCount;
+      if (decision === "approve" && failureCount > 0 && !actor.note?.trim()) {
+        return {
+          ok: false,
+          error: `This item has ${failureCount} deterministic check failure(s). Approving it requires a recorded dismissal reason — add a decision note explaining why the failures are acceptable.`,
+        };
+      }
+    }
+
     // The single Invariant-16 gate (same domain gate as local mode).
     const result = applyReviewDecision({
       current: item.state,

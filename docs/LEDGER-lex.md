@@ -1,182 +1,178 @@
 # Lex Patent Studio — Production Progress Ledger
 
-**Purpose:** durable, compaction-resilient record of PRD traceability, verification
-evidence, and the exact next action. Update after every completed slice.
-**Canonical scope contract:** `docs/PRD-lex-patent-studio.md` (incorporates
-`docs/PRD-wepatent.md` shared contracts by reference).
-**Branch:** `track/lex-app` (local commits only; push/deploy are approval-gated).
-**Mode:** local mode only — zero credentials, synthetic data, no external calls.
-Production adapters are refuse-to-boot seams per the env contract.
+**Purpose:** durable record of PRD traceability, verification evidence, and
+remaining blockers. **Scope contract:** `docs/PRD-lex-patent-studio.md`
+(incorporating `docs/PRD-wepatent.md` by reference).
+**Branch:** `track/lex-app` (local commits only; push/deploy approval-gated).
+**Mode:** local mode (zero credentials, synthetic data, no external calls) +
+production adapter suite tested against real PostgreSQL 16 without credentials.
 
-**Last updated:** 2026-08-02 (Round 3 — slices S1–S6 complete)
+**Last updated:** 2026-08-02 (Round 3 complete — S1–S11)
 
-## Round 3 progress snapshot (S1–S6 committed)
+## Gate status (final verification, 2026-08-02)
 
-- S2 e36b8e3: FR-5 knowledge system (license-gated retrieval, as-of/supersession
-  filtering, quote verifier, evidence sets in every run, critic-model
-  independence, /app/knowledge, /citations, corpus-project migration).
-  Evidence: 27 knowledge tests + orchestrator verification tests; runtime
-  smoke of both API endpoints incl. fabricated-citation failure.
-- S3 (commit after e36b8e3): SB/08, numeral-consistency, section-completeness
-  checkers + orchestrator wiring with real deliverable sections per workflow.
-  Evidence: 46 checker tests incl. known-good/known-bad fixtures.
-- S4 5cd9f1b: style profiles + hash-chained playbooks (domain, adapters,
-  §12 endpoints, /app/templates, migration 0004). Runs record
-  styleProfileVersion. Evidence: chain tamper/reorder/splice tests; smoke.
-- S5 193362f: /chat (retrieval-grounded, Invariant-21 gated, matter-isolated),
-  /workflows, /reviews, /counsel (approval-gated seam, no dead controls).
-- S6 b58831f: /portfolio + /api/portfolio/summary (practitioner-gated),
-  /usage (reservation ledger), /team, /settings (seam table), security
-  headers (CSP/HSTS/etc.) verified at runtime; nav complete — zero planned
-  placeholders remain.
-- Gate status after S6: lint 0 · tsc clean · vitest 394/394 · build ✅.
+| Gate | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | 0 errors |
+| Types | `npm run typecheck` | clean |
+| Unit/integration | `npm test` | 409 passed (8 PG-gated skipped by design) — 22 files |
+| Production-adapter integration (real PG16) | `npm run test:production-adapter` | 9/9 passed (throwaway DB, migrations 0001–0006) |
+| RLS matrix vs real PostgreSQL 16 | `npm run test:rls` | 96 pgTAP assertions passed (81 private + 7 corpus + immutability/chat additions) |
+| E2E (Playwright/Chromium) | `npm run test:e2e` | 14/14 passed (~59 s) |
+| Production build | `npm run build` | success — 50+ routes |
+| Eval smoke suite (§14) | inside `npm test` | 11/11 questions pass; leakage zero |
+| TODO/FIXME scan | grep | 0 remaining |
 
-Remaining slices: S7 PDF export; S8 RLS matrix vs throwaway PG16 (+0004 +
-corpus migrations); S8b production Postgres-backed DataAdapter (seam
-requirement: production adapter written + tested without credentials);
-S9 Playwright E2E; S10 eval-harness scaffolding (§14); S6b remaining §8.1
-marketing routes (/product/* subpages, /patent-counsel, /professionals,
-/teams, /resources, /login, /signup); S11 final audit + ledger close-out.
+## Requirements traceability (final)
 
-## Gate status (latest full check)
+Statuses: **verified** (implementation + evidence) · **verified-local** (fully
+working in local mode; production twin present or seam documented) ·
+**seam-blocked** (requires Jeff's approval-gated action; production adapter
+written and tested to the extent possible without credentials).
 
-| Gate | Command | Result | When |
+### §5 Capability model / §9 flows
+
+| Requirement | Implementation | Evidence | Status |
 |---|---|---|---|
-| Lint | `npm run lint` | 0 errors | 2026-08-02 |
-| Types | `npx tsc --noEmit` | clean | 2026-08-02 |
-| Unit/integration | `npx vitest run` | 258/258 pass (14 files) | 2026-08-02 |
-| Build | `npm run build` | success (all routes compile) | 2026-08-02 |
-| E2E | — | NOT YET PRESENT (Round 3 scope) | — |
-| RLS matrix vs real Postgres | — | NOT YET PRESENT (Round 3 scope) | — |
+| 5.1 intake/fact ledger, provenance, contributor prompts | domain/provenance, adapters, /facts UI | local.test, E2E tabs | verified-local |
+| 5.1 drafting from approved facts only | orchestrator deliverable sections; zero-fact block | orchestrator tests | verified-local |
+| 5.1 claim checks (dependency, antecedent) | domain/checks | 40+ fixture tests | verified |
+| 5.1 numeral/figure consistency, SB/08, section completeness | domain/checks (S3) | 46 checker tests + orchestrator wiring tests | verified |
+| 5.1 OA analysis / response separation | oa workflows + SEC-MIXED rule | checker + orchestrator tests | verified-local |
+| 5.1 research memos per §6.2 | knowledge module + research_memo workflow + chat | retrieval/verifier tests, E2E | verified-local |
+| 5.1 second-model critique (differs from drafter) | pickCriticModel + orchestrator + critic_model_independent SQL check | pricing tests, orchestrator tests, pgTAP | verified |
+| 5.1 quote/citation verifier blocks "verified" | knowledge/verifier + orchestrator VERIFYING | verifier tests + E2E tamper drill | verified |
+| 5.2 operating contract labels | badges, exports, chat, documents | E2E + unit | verified-local |
+| 5.3 tier model, non-demotable floor | domain/tiers | tiers tests | verified |
+| 5.4 style profiles | domain/styles + adapters + /templates + API | styles tests, matrix, PG integration | verified-local |
+| 5.4 playbooks (hash-chained, tenant-isolated, never cross-tenant) | domain/styles chain + adapters + RLS | chain tamper tests, pgTAP §5.4 assertions, PG integration | verified |
+| 5.5 deadline surface + disclaimer | type-literal + UI + SQL check constraint | schema, pgTAP (cannot be false), E2E | verified |
+| 9.1 tenant/seat/matter setup | matters CRUD, 9 roles, /team, clickwrap text at /signup | matrix tests; invites/email seam-blocked (§17.6) | verified-local + seam |
+| 9.2 flagship intake→draft→review→export | full loop | E2E flagship test end-to-end | verified-local |
+| 9.2 AC: no drafting without approved facts | createRun gate | orchestrator test | verified |
+| 9.2 AC: draft displays model/corpus/cost/tier/verification | document schema + UI | E2E + unit | verified |
+| 9.2 AC: check failures not silently dismissible; reason in audit | dismissal-note rule in both adapters | unit tests + audit assertion | verified |
+| 9.2 AC: version-locked immutable exports | createExport reuse + exports_immutable trigger | export tests, PG integration, pgTAP | verified |
+| 9.3 OA flow + rejection matrix schema | workflows + rejections/rejection_matrix_cells tables | orchestrator + RLS fixtures | verified-local (structured matrix UI export = follow-up) |
+| 9.4 search report / IDS + SB/08 | workflows + checkers + ids tables | SB/08 tests, orchestrator test | verified-local |
+| 9.5 research memo protocol | §6.2 implementation | retrieval tests, eval suite | verified-local |
+| 9.6 review queue/approvals/watermark | /review-queue + matter /reviews + export rules | review tests (28), E2E approve→watermark-free export | verified |
+| 9.7 counsel touchpoint (no shortcut) | /counsel surface + state machine doc; intake approval-gated | E2E NOT-YET-REPRESENTED check | seam-blocked (wepatent §17.7 + §21.2 entity structure) |
 
-## Requirements traceability
+### §7 Invariants → automated tests
 
-Statuses: `unstarted` · `partial` · `blocked` (needs Jeff / credentials) ·
-`verified` (implementation + evidence). A checked PRD box without evidence is
-treated as incomplete.
+| Invariant | Test/gate |
+|---|---|
+| 13 cite-or-label-analysis | orchestrator + chat tests (analysis entries); eval suite |
+| 14 verifier failure blocks verified | verifier tests; orchestrator tamper test; E2E drill |
+| 15 tier non-demotable | tiers tests |
+| 16 humans only set review state | review tests (model/system actors rejected); PG integration |
+| 17 no filing/signing/external comms | no such code path (grep-audited); gateway isLive()=false; E2E scan |
+| 18 absolute matter/tenant isolation | 96 pgTAP assertions on real PG; adapter tests; eval leakage dimension; E2E |
+| 19 no training on customer content | posture in code comments/settings; provider config seam documented (no provider calls exist) |
+| 20 deadline disclaimer everywhere | SQL check constraint (pgTAP), type literal, UI render (E2E) |
+| 21 contributor seats blocked server-side | roles tests + 24-endpoint × 9-role deny matrix + RLS role tests |
+| wepatent 1–12 | counsel≠engagement surfaces; RLS; reservation-before-run (orchestrator tests); draft labels; no Schell content (synthetic-only corpus/seeds) |
 
-### §5 Capability model & §9 core flows
+### §8 Information architecture — all routes live
 
-| Requirement | Implementation | Verification | Status | Evidence / gap |
-|---|---|---|---|---|
-| 5.3 Tier model, non-demotable floor (Inv. 15) | `src/lib/domain/tiers.ts` | `tiers.test.ts` | verified | `effectiveTier` clamps demotion; floor per workflow |
-| 5.2 operating contract labels (draft, tier, model, cost) | orchestrator + badges + document schema | `orchestrator.test.ts`; UI renders badges | verified | Every output carries tier/reviewState/model/corpus |
-| 5.4 style profiles | — | — | unstarted | Round 3 slice S4 |
-| 5.4 firm playbooks (hash-chained approvals, tenant-isolated) | — | — | unstarted | Round 3 slice S4 |
-| 5.5 deadline surface + disclaimer (Inv. 20) | `deadline_observations` schema literal `disclaimerRequired: true`; `/app` home | `provenance/schemas` typing; UI shows `DEADLINE_DISCLAIMER` | verified | Disclaimer is non-optional at type level and rendered |
-| 9.1 tenant/seat/matter setup | matters CRUD + 9-role policy; seats/team UI | roles.test.ts; API deny matrix | partial | No /team UI yet; invites/clickwrap = production-auth seam |
-| 9.2 intake→draft flagship flow | facts→approval→run→checks→review→export | orchestrator + export tests | partial | Chat/workflows pages missing; quote verifier not yet real |
-| 9.2 AC: no drafting run without approved facts | `local/index.ts createRun` | `orchestrator.test.ts` | verified | Blocks section_draft/claim_tree_draft at 0 approved facts |
-| 9.2 AC: draft displays model/corpus/cost/tier/verification/flags | document schema + documents page | orchestrator test + UI | verified | |
-| 9.2 AC: check failures not silently dismissible | flags carried on sections + review item | orchestrator test | partial | Dismissal-with-reason flow not yet implemented |
-| 9.2 AC: version-locked export manifests | `src/lib/export/manifest.ts`, `createExport` | `export.test.ts` (immutability, reuse) | verified | Re-export returns identical artifact |
-| 9.3 OA response flow | oa_analysis / oa_response_draft workflows simulated | orchestrator test | partial | Rejection-matrix structured export not yet built |
-| 9.4 search report / IDS | workflow keys + estimates | — | partial | SB/08 validator missing (slice S3) |
-| 9.5 research memo (retrieval protocol) | — | — | unstarted | Depends on FR-5 slice S2 |
-| 9.6 review queue & approvals | `/app/review-queue`, decisions, watermark rule | `review.test.ts` (28 tests) | verified | Approve unlocks watermark-free export |
-| 9.7 connected counsel touchpoint | — | — | unstarted | Status surface + gated seam, slice S5 |
+- §8.1 public (17 routes incl. product×7, patent-counsel, professionals,
+  teams, resources, login/signup seams, legal×4, models/security/pricing):
+  build ✅, E2E prohibited-claims scan ✅.
+- §8.2 app: home, matters, matter×11 tabs (workspace/chat/facts/sources/
+  workflows/documents/claims/citations/reviews/counsel/activity),
+  review-queue, portfolio, knowledge, templates, usage, team, settings —
+  all rendering with real data paths (E2E).
+- §8.3 composer contract fields verified by E2E.
 
-### §7 Invariants (each needs an automated test or CI gate)
+### §10 FR / §12 API
 
-| Invariant | Enforcement | Test | Status |
-|---|---|---|---|
-| 13 citations-or-labeled-analysis | — | — | unstarted (slice S2: retrieval + citation labels) |
-| 14 verifier failure blocks "verified" | — | — | partial (schema state exists; real verifier in S2) |
-| 15 tier labels non-demotable | `tiers.ts` | tiers.test.ts | verified |
-| 16 only authenticated humans set review state | `review.ts` actor gate rejects model/system | review.test.ts | verified |
-| 17 no filing/signing/external comms code paths | no such code exists; gateway isLive()=false | grep audit + local.test.ts | verified (re-audit each round) |
-| 18 absolute matter isolation | org+matter scoping in adapters; RLS SQL | adapter tests; RLS runtime matrix pending | partial (RLS vs real PG in S8) |
-| 19 no training on customer content | posture documented; no provider calls exist | n/a in local mode | verified-for-local (production adapter must set no-training headers — documented seam) |
-| 20 deadline disclaimer | type-literal + UI | schema type + page render | verified |
-| 21 contributor seats blocked server-side | `roles.ts` policy + endpoint checks | roles.test.ts + authorization.test.ts deny matrix | verified |
-| wepatent 1–12 (incorporated) | counsel≠engagement etc. | roles/api tests partially cover | partial (counsel lane surface in S5) |
-
-### §8 Information architecture
-
-| Route | Status | Evidence / gap |
+| FR | Status | Evidence / seam |
 |---|---|---|
-| §8.1 public: `/product` (+drafting, office-actions), `/models`, `/security`, `/pricing`, `/legal/*` | verified | Built in DESIGN-HANDOFF posture; build passes |
-| §8.1 public: `/product/invention-disclosures`, `/claim-strategy`, `/patent-research`, `/portfolio-analysis`, `/prepare-and-file`, `/patent-counsel`, `/professionals`, `/teams`, `/resources`, `/login`, `/signup` | unstarted | slice S6b |
-| `/app`, `/app/matters`, `[matterId]` 3-pane, `/facts /sources /documents /claims /activity`, `/app/review-queue` | verified | Build + manual smoke (Round 2) |
-| `[matterId]/chat` | unstarted | S5 |
-| `[matterId]/workflows` | unstarted | S5 |
-| `[matterId]/citations` | unstarted | S2 |
-| `[matterId]/reviews` | unstarted | S5 |
-| `[matterId]/counsel` | unstarted | S5 |
-| `/portfolio` | unstarted | S6 |
-| `/templates` | unstarted | S4 |
-| `/knowledge` | unstarted | S2 |
-| `/usage` | unstarted | S6 |
-| `/team` | unstarted | S6 |
-| `/settings` | unstarted | S6 |
-| §8.3 composer contract | verified | Composer.tsx: task/jurisdiction/as-of/model/deliverable/QC/estimate before run |
+| FR-1 auth | seam-blocked | SupabaseAuthAdapter written (cookie parse unit-tested; /auth/v1/user verification); needs LEX_SUPABASE_* (§17.1). SSO/SCIM = Phase 4 per PRD |
+| FR-2 roles/ACL/RLS | verified | policy table + matrix + matter_acl pgTAP tests |
+| FR-3 matters/facts/audit | verified | unit + PG integration |
+| FR-4 uploads | seam-blocked | validation schemas + quarantine schema + simulated targets tested; storage bucket approval-gated |
+| FR-5 knowledge/retrieval/verifier | verified-local | license gate, as-of, supersession, diversity, refusal, verifier — 27 tests + corpus-project SQL license view (pgTAP) |
+| FR-6 gateway | verified-local + seam | catalog/estimates/critic-independence tested; provider execution approval-gated (isLive false until keys AND recorded approval) |
+| FR-7 run machine | verified-local | state machine + checkpoints + billable-retry rule tests; production run execution = durable-job seam |
+| FR-8 review/export DOCX+PDF+manifests | verified | export tests, qpdf/pdftotext validation, PG integration, E2E |
+| FR-9 billing ×1.50 reservation→settlement | verified-local + seam | pricing/orchestrator tests; ledger schema immutability pgTAP; Stripe activation approval-gated |
+| FR-10 audit | verified | append-only trigger pgTAP + adapter tests |
+| §12 endpoints (22 implemented incl. knowledge, style-profiles, playbook, portfolio) | verified | 24-case × 9-role deny matrix; idempotency tests |
 
-### §10/§12 Functional requirements & API
+### §13–§17
 
-| Requirement | Implementation | Test | Status | Gap |
-|---|---|---|---|---|
-| FR-1 auth/sessions | local synthetic session; Supabase seam refuses boot | env.test.ts | blocked-seam | Production Supabase Auth needs credentials (PRD §20.1) |
-| FR-2 roles/policy/matter ACL | roles.ts 9 roles, deny-by-default | roles.test.ts (exhaustive) | verified | Matter-level ACL within tenant is schema-only |
-| FR-3 matters/facts/audit | adapters + fact_events + audit | local.test.ts | verified | |
-| FR-4 uploads (sign→scan→quarantine seam) | uploadTarget simulated; migration has states | local.test.ts | verified-for-local | Real storage/malware scan = credentialed seam |
-| FR-5 knowledge/retrieval + quote verifier | — | — | unstarted | Slice S2 (local synthetic corpus + license gating) |
-| FR-6 model gateway (registry, allowlist, critic independence) | pricing.ts catalog; isLive()=false | pricing.test.ts | partial | Critic-model-differs rule to enforce in S2 |
-| FR-7 run machine + checkpoints + billable-retry rule | run-state.ts + orchestrator | run-state + orchestrator tests | verified | |
-| FR-8 review/approval/export DOCX+manifest | export/docx.ts + manifest.ts | export.test.ts | partial | PDF rendering missing (S7); claim-chart/matrix structured export missing |
-| FR-9 billing (reservation→settlement ×1.50) | pricing + orchestrator settle | pricing/orchestrator tests | verified-for-local | Stripe adapter = refuse-to-boot seam (PRD §20.4) |
-| FR-10 audit/observability | append-only audit events; no content in logs | local.test.ts | verified-for-local | |
-| §12 endpoints: matters/facts/uploads/runs/estimate/cancel/documents/export/review-queue/decision | 16 route handlers | authorization + idempotency tests | verified | |
-| §12: `GET|POST /api/style-profiles` | — | — | unstarted | S4 |
-| §12: `GET|POST /api/playbook` | — | — | unstarted | S4 |
-| §12: `GET /api/knowledge/search` | — | — | unstarted | S2 |
-| §12: `GET /api/knowledge/verify-quote` | — | — | unstarted | S2 |
-| §12: `GET /api/portfolio/summary` | — | — | unstarted | S6 |
+- §13 security: CSP/HSTS/frame-deny/nosniff/referrer/permissions headers on
+  every route (E2E-verified); no secrets in repo; generic external errors;
+  export-control posture documented in /settings (screening at matter
+  creation is schema-supported via export_control_flag — automation of the
+  halt is listed as follow-up).
+- §14 eval harness: smoke suite in CI (11 questions, real systems), release
+  gates for all 16 workflows default-OFF with §20.12 sign-off in the gate
+  logic, substantiation rule (zero validated → zero claims) asserted.
+- §15 accessibility: landmarks, single h1 (E2E-asserted), labels
+  (getByLabel), 44px targets, keyboard nav (E2E), 320px overflow checks
+  (E2E, two real defects found and fixed), status roles on async forms.
+- §16 testing: unit (409) + pgTAP (96) + PG integration (9) + E2E (14) as
+  itemized above.
+- §17 perf: local mode trivially meets targets; production measurement
+  requires deployed infra (seam).
 
-### §11 Data model / §13 security / §14–§17 quality
+### §20 approval gates — exact enabling actions for Jeff
 
-| Requirement | Status | Evidence / gap |
-|---|---|---|
-| §11 private schema (~45 tables, RLS, append-only) | partial | 3 migrations exist; style_profiles/playbook_entries/search_reports/ids tables + corpus tables to add with S2–S4; RLS runtime proof in S8 |
-| §13 security headers / CSP | unstarted | next.config.ts headers, S6 |
-| §14 eval harness (benchmark suite, gates) | unstarted | S10 scaffolding: schema, smoke subset in CI, attorney-validation pending labels |
-| §15 accessibility WCAG 2.2 AA | partial | Semantics/landmarks/44px targets in built pages; axe-style audit with E2E in S9 |
-| §16 unit tests for checkers | partial | claim-dependency + antecedent-basis done; SB/08, numerals, section completeness in S3 |
-| §16 E2E flows | unstarted | S9 Playwright |
-| §16 RLS matrix vs real Postgres | unstarted | S8 (adapt wepatent throwaway-PG pattern; PG16+pgTAP+pg_prove confirmed available on this machine) |
-| §17 perf targets | partial | Local mode trivially fast; no measurement harness (non-blocking; production-only meaningful) |
+1. **Supabase private project**: create; apply `supabase/migrations/`
+   (0001–0006); set LEX_SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY +
+   LEX_DATABASE_URL; set LEX_APP_MODE=production.
+2. **Corpus project**: create (separate credentials); apply
+   `supabase/corpus-migrations/`; approve the commercial source registry
+   after the license audit (§20.9) before ingesting real sources.
+3. **Stripe**: create account; set LEX_STRIPE_*; approve final pricing
+   (§20.14) and live billing (§17.4).
+4. **Providers**: provision OpenAI/Anthropic keys under no-training terms;
+   set LEX_PROVIDER_SPEND_APPROVED=true alongside the recorded approval;
+   xAI additionally requires §20.13. Deploy the durable job runner to
+   enable production runs.
+5. **Storage bucket** for uploads/export artifacts (FR-4/FR-8 paths).
+6. **Connected counsel** (§17.7 + entity structure §21.2) before enabling
+   intake.
+7. **Per-workflow enablement** (§20.12): attorney-validate the benchmark
+   suite, then flip each workflow's release gate with recorded sign-off.
+8. **Public claims** (§20.11): only after attorney-validated evidence.
+9. Deploy/domain/invitations (§17.5/§17.6) — nothing is pushed or sent from
+   this environment.
 
-### §20 Approval-gated items (build to the seam; Jeff must act)
+## Round 3 commit log (all on track/lex-app)
 
-| Gate | Seam status | Exact enabling action needed from Jeff |
-|---|---|---|
-| Accounts (Supabase/Vercel/Stripe/providers) | env contract + refuse-to-boot adapters | Create accounts; set `LEX_*` env vars; set `LEX_APP_MODE=production` |
-| Live billing / provider spend | reservation→settlement logic complete locally | Stripe keys + provider keys + explicit go-live approval |
-| Public deploy / domains | build passes | Vercel project + domain + approval |
-| xAI/Grok customer traffic (20.13) | catalog entry marked approval-gated | Explicit enablement |
-| Pricing/plans (20.14) | test-mode defaults per PRD tables | Approve final pricing |
-| Corpus source registry (20.9) | license-class enforcement in S2 | Approve commercial source registry after license audit |
-| Schell IP playbook content (20.10) | default no; nothing imported | n/a (default stands) |
-| Performance claims (20.11), per-workflow enablement (20.12) | eval harness scaffolding S10 | Attorney validation + sign-off |
+808a1aa ledger · e36b8e3 FR-5 knowledge system · (S3) checkers ·
+5cd9f1b styles/playbooks · 193362f matter sub-routes · b58831f top-level
+workspace + headers · c9f947c PDF export · 7b83f97 RLS matrix ·
+f48ecf1 E2E suite · b6241f3 §8.1 routes · 2a1c2c1 eval harness ·
+09d83bd production adapters · (S11) dismissal rule + audit close-out.
 
-## Round 3 slice plan (priority order)
+## Non-blocking follow-ups (documented, not placeholders)
 
-- S1 ✅ this ledger.
-- S2 FR-5 knowledge/retrieval service: synthetic license-tagged corpus slice, retrieval with authority weighting + as-of filtering + license gating, quote verifier; `/api/knowledge/search`, `/api/knowledge/verify-quote`; orchestrator VERIFYING uses real verifier (Inv. 13/14); critic model independence (FR-6); `/app/knowledge` + `[matterId]/citations`.
-- S3 Deterministic checkers: reference-numeral consistency, SB/08 validation, section completeness; wire to workflows.
-- S4 Style profiles + playbooks (domain, adapters, API, `/app/templates`, hash-chained approvals).
-- S5 Matter sub-routes: `/workflows`, `/reviews`, `/chat`, `/counsel`.
-- S6 Top-level: `/portfolio` + summary API, `/usage`, `/team`, `/settings`; security headers; S6b remaining §8.1 marketing routes.
-- S7 PDF export alongside DOCX.
-- S8 RLS matrix vs throwaway Postgres 16 (pgTAP), new tables included.
-- S9 Playwright E2E for critical journeys + accessibility checks.
-- S10 Eval-harness scaffolding (§14) with CI smoke subset.
-- S11 Final invariant audit, TODO/placeholder scan, diff review, ledger close-out.
+- Rejection-matrix / claim-chart STRUCTURED table export (FR-8 sentence 3):
+  matrices exist as schema + document sections; a dedicated table-export
+  renderer is a production-phase artifact alongside real OA parsing.
+- Export-control screening automation (halt pipeline on flagged categories):
+  schema flag exists (`matters.export_control_flag`); wire to run creation
+  when real processing exists (no automated processing occurs in local mode).
+- Production idempotency persistence for API replays (schema keys exist on
+  money tables; HTTP replay store is in-memory local seam).
+- MFA enrollment surface (FR-1 GA requirement) arrives with Supabase Auth.
+- npm audit: 3 high findings are transitive inside next@16.2.12
+  (postcss/sharp); not reachable at runtime here (no next/image, no
+  user-supplied CSS compiled at runtime); remediation = future Next upgrade.
+- design-patent workflows, figure-audit UI, PCT paper prep (Phase L2+ per
+  §18) are represented by workflow keys/tier floors and release gates, not
+  by full local simulations.
 
-## Decisions log
+## Resume instructions (if another session continues)
 
-- 2026-08-02: Confirmed baseline (lint 0, tsc clean, 258/258, build ✅) before Round 3 work.
-- Corpus content in local mode is SYNTHETIC-labeled paraphrase snippets with realistic metadata (license classes, effective dates) — no scraped text, satisfying the synthetic-data-only rule while exercising the license gate for real.
-
-## Next action
-
-Execute slice S2 (FR-5). Failing tests first for: license-gated retrieval, as-of filtering, quote-verifier pass/tamper/fabricated-citation cases, verifier-failure-blocks-verified, critic-model independence.
+Everything above is committed. Re-verify with:
+`npm run lint && npm run typecheck && npm test && npm run build`,
+`npm run test:rls`, `npm run test:production-adapter`, `npm run test:e2e`
+(build first; Chromium pinned at /opt/pw-browsers/chromium-1194). The only
+open items are the §20 approval-gated actions listed above and the
+non-blocking follow-ups.

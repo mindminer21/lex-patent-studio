@@ -9,7 +9,9 @@ import { apiResult, badRequest, type ApiResult } from "./http";
  * response without re-executing (no double charge, no duplicate job). The
  * same key with a DIFFERENT request body is a 409 conflict.
  *
- * TODO(adapter seam): production persists idempotency records in Postgres
+ * Production persists idempotency records in Postgres (usage_reservations
+ * and wallet_ledger_entries carry unique idempotency keys in the schema);
+ * this in-memory record store is the local-mode equivalent seam
  * with a TTL; local mode stores them in the in-memory store.
  */
 

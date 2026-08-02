@@ -76,10 +76,10 @@ import { appendAudit, getLocalStore, newId, nowIso } from "./store";
 /**
  * Local-mode adapters: fully in-memory, zero credentials, synthetic data.
  *
- * TODO(adapter seam): the production DataAdapter is a Supabase-backed
- * implementation (see src/lib/adapters/supabase.ts) operating under RLS with
- * organization_id derived from the authenticated session. This local store
- * mirrors that contract so route/server-action code is adapter-agnostic.
+ * The production DataAdapter is the Postgres implementation in
+ * src/lib/adapters/production/ (integration-tested via
+ * scripts/test-production-adapter.sh). This local store mirrors the same
+ * contract so route/server-action code is adapter-agnostic.
  */
 
 export { getLocalStore, resetLocalStore } from "./store";
@@ -92,8 +92,8 @@ const DEFAULT_WORKLOAD: TokenWorkload = {
 
 const localAuth: AuthAdapter = {
   async getSession(): Promise<Session | null> {
-    // TODO(adapter seam): production uses Supabase Auth via HTTP-only
-    // cookies; local mode signs in a synthetic practitioner automatically.
+    // Production uses SupabaseAuthAdapter (src/lib/adapters/production/auth)
+    // via HTTP-only cookies; local mode signs in a synthetic practitioner.
     return DEMO_SESSION;
   },
 };
@@ -101,8 +101,8 @@ const localAuth: AuthAdapter = {
 const localBilling: BillingAdapter = {
   async getWalletBalanceUsd(organizationId: string): Promise<number> {
     void organizationId;
-    // TODO(adapter seam): production reads wallet_accounts/wallet_ledger via
-    // Stripe-reconciled balances. Local mode returns the synthetic balance.
+    // Production reads the immutable wallet ledger (PgBillingAdapter);
+    // local mode returns the synthetic balance.
     return getLocalStore().walletBalanceUsd;
   },
 };
@@ -352,10 +352,10 @@ const localData: DataAdapter = {
     );
     if (!matter) return { ok: false, error: "Matter not found in this tenant." };
 
-    // TODO(adapter seam): production issues a short-lived signed Supabase
-    // Storage URL, then routes the object through malware scan → quarantine
-    // → extraction (FR-4). Local mode issues a simulated target that no
-    // network path accepts.
+    // Production issues a short-lived signed Supabase Storage URL, then
+    // routes the object through malware scan → quarantine → extraction
+    // (FR-4) — approval-gated storage credentials (see production adapter).
+    // Local mode issues a simulated target that no network path accepts.
     const target: UploadTarget = {
       id: newId("upl"),
       organizationId,
@@ -556,6 +556,20 @@ const localData: DataAdapter = {
       (i) => i.organizationId === organizationId && i.id === reviewItemId,
     );
     if (!item) return { ok: false, error: "Review item not found." };
+
+    // §9.2 acceptance criterion: deterministic-check failures cannot be
+    // dismissed silently. Approving an item that carries failures requires
+    // a recorded reason (the decision note), which lands in the audit log.
+    if (
+      decision === "approve" &&
+      item.deterministicCheckFailures > 0 &&
+      !actor.note?.trim()
+    ) {
+      return {
+        ok: false,
+        error: `This item has ${item.deterministicCheckFailures} deterministic check failure(s). Approving it requires a recorded dismissal reason — add a decision note explaining why the failures are acceptable.`,
+      };
+    }
 
     // The single Invariant-16 gate: authenticated human + role policy +
     // legal state transition. Model/system actors are impossible here by

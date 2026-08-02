@@ -39,9 +39,11 @@ import type {
  *
  * Local mode implements every interface in-memory with synthetic data and no
  * credentials. Production implementations (Supabase / Stripe / provider
- * gateway) are stubbed with TODO seams and refuse to operate — no code path
- * in this repository calls a live paid API, files, signs, or creates
- * external accounts.
+ * gateway) live in src/lib/adapters/production: the data layer is fully
+ * implemented over Postgres and integration-tested; run execution, signed
+ * uploads, Stripe activation, and provider calls refuse until their
+ * approval gates clear — no code path in this repository calls a live paid
+ * API, files, signs, or creates external accounts.
  */
 
 export interface Session {
@@ -216,8 +218,8 @@ export interface ModelGatewayAdapter {
   estimate(modelId: string, workload: TokenWorkload): ChargeEstimate;
   /**
    * Execute a generation stage. The local adapter simulates stage
-   * progression with synthetic output; production adapters are TODO seams
-   * and MUST NOT be reachable until provider enablement is approved.
+   * progression with synthetic output; the production gateway stays
+   * isLive()=false until provider keys AND recorded spend approval exist.
    */
   isLive(): boolean;
 }
