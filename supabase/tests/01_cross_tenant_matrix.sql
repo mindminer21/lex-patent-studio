@@ -1,7 +1,7 @@
 -- RLS allow/deny matrix — absolute cross-tenant isolation (PRD Invariant 18,
 -- FR-2, §16). Runs as pgTAP in a rolled-back transaction against the fixture.
 begin;
-select plan(52);
+select plan(54);
 
 -- ===========================================================================
 -- Ana (practitioner_admin, org A) sees org A and NOTHING of org B.
@@ -69,6 +69,10 @@ select is((select count(*) from public.wallet_accounts where organization_id = '
 select is((select count(*) from public.wallet_ledger_entries where organization_id = '0b000000-0000-4000-8000-00000000000b'), 0::bigint, 'A cannot see org B ledger');
 select is((select count(*) from public.usage_reservations where organization_id = '0b000000-0000-4000-8000-00000000000b'), 0::bigint, 'A cannot see org B reservations');
 select is((select count(*) from public.usage_events where organization_id = '0b000000-0000-4000-8000-00000000000b'), 0::bigint, 'A cannot see org B usage events');
+
+-- Chat (matter-isolated conversations)
+select is((select count(*) from public.chat_messages where organization_id = '0a000000-0000-4000-8000-00000000000a'), 1::bigint, 'A sees own chat thread');
+select is((select count(*) from public.chat_messages where organization_id = '0b000000-0000-4000-8000-00000000000b'), 0::bigint, 'A cannot see org B chat');
 
 -- Audit
 select is((select count(*) from public.audit_events where organization_id = '0b000000-0000-4000-8000-00000000000b'), 0::bigint, 'A cannot see org B audit events');

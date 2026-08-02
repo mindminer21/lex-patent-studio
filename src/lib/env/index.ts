@@ -35,6 +35,10 @@ const envSchema = z
     LEX_SUPABASE_URL: z.string().url().optional(),
     LEX_SUPABASE_ANON_KEY: z.string().min(20).optional(),
     LEX_SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
+    /** Direct Postgres connection string (Supabase database URL). The
+     *  production data adapter runs on SQL so it is testable against a plain
+     *  PostgreSQL 16 server without any Supabase credentials. */
+    LEX_DATABASE_URL: z.string().min(10).optional(),
 
     // ---- Public knowledge-corpus project (separate credentials, PRD §6.3) ----
     LEX_CORPUS_SUPABASE_URL: z.string().url().optional(),
@@ -55,6 +59,7 @@ const envSchema = z
         "LEX_SUPABASE_URL",
         "LEX_SUPABASE_ANON_KEY",
         "LEX_SUPABASE_SERVICE_ROLE_KEY",
+        "LEX_DATABASE_URL",
         "LEX_STRIPE_SECRET_KEY",
         "LEX_STRIPE_WEBHOOK_SECRET",
       ];

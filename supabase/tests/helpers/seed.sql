@@ -384,3 +384,11 @@ insert into public.audit_events
   ('0b000000-0000-4000-8000-00000000000b', '1b000000-0000-4000-8000-000000000001',
    'b0000000-0000-4000-8000-000000000001', 'owner', 'matter.create',
    'matter', '1b000000-0000-4000-8000-000000000001');
+
+-- Chat messages (migration 0005)
+insert into public.chat_messages
+  (organization_id, matter_id, author, author_user_id, body) values
+  ('0a000000-0000-4000-8000-00000000000a', '1a000000-0000-4000-8000-000000000001',
+   'user', 'a0000000-0000-4000-8000-000000000001', 'Synthetic chat question A'),
+  ('0b000000-0000-4000-8000-00000000000b', '1b000000-0000-4000-8000-000000000001',
+   'user', 'b0000000-0000-4000-8000-000000000001', 'Synthetic chat question B');

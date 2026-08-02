@@ -2,7 +2,7 @@
 -- Invariant 20; FR-6 critic independence). These hold even for the service
 -- role — immutability is a trigger, not a policy.
 begin;
-select plan(10);
+select plan(11);
 
 select tests.clear_auth();
 
@@ -43,6 +43,12 @@ select throws_like(
   $$update public.export_manifests set manifest = '{"tampered":true}'
     where organization_id = '0a000000-0000-4000-8000-00000000000a'$$,
   '%append-only%', 'export manifests cannot be altered');
+
+-- Exports are immutable once created (§9.2, migration 0006).
+select throws_like(
+  $$update public.exports set watermark = null
+    where organization_id = '0a000000-0000-4000-8000-00000000000a'$$,
+  '%append-only%', 'export rows cannot be altered after creation');
 
 -- Invariant 20: the deadline disclaimer flag cannot be turned off.
 select throws_ok(
