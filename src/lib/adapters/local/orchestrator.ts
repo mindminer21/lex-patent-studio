@@ -2,8 +2,13 @@ import { createHash } from "node:crypto";
 import {
   checkAntecedentBasis,
   checkClaimDependencies,
+  checkNumeralConsistency,
+  checkSb08,
+  checkSectionCompleteness,
   summarizeFindings,
   type CheckFinding,
+  type CompletenessProfileKey,
+  type Sb08Row,
 } from "@/lib/domain/checks";
 import { isDraftableProvenance } from "@/lib/domain/provenance";
 import { pickCriticModel } from "@/lib/domain/pricing";
@@ -429,6 +434,138 @@ function buildEvidenceCitations(
   return citations;
 }
 
+interface CheckResultLike {
+  checker: string;
+  checkerVersion: string;
+  passed: boolean;
+  findings: CheckFinding[];
+}
+
+type DocSection = WorkProductDocument["sections"][number];
+type FactLike = { id: string; category: string; text: string };
+type ClaimLike = { claimNumber: number; text: string };
+
+const S = (heading: string, body: string, flags: string[] = []): DocSection => ({
+  heading,
+  body,
+  flags,
+});
+
+const factsFor = (facts: FactLike[], categories: string[]): string =>
+  facts
+    .filter((f) => categories.includes(f.category))
+    .map((f) => `${f.text} [${f.id}]`)
+    .join(" ") || "No approved facts in this category — flagged as a gap, not filled.";
+
+/**
+ * Deliverable body per workflow. Bodies draw ONLY on approved facts; the
+ * section-completeness checker runs over exactly these sections.
+ */
+function buildDeliverableSections(
+  run: WorkflowRun,
+  approved: FactLike[],
+  claims: ClaimLike[],
+): DocSection[] {
+  const sim = "[SIMULATED — local mode, no model call]";
+  switch (run.workflowKey) {
+    case "section_draft":
+      return [
+        S("Background", `${sim} ${factsFor(approved, ["problem"])}`),
+        S("Summary", `${sim} ${factsFor(approved, ["solution", "advantage"])}`),
+        S(
+          "Detailed description",
+          `${sim} ${factsFor(approved, ["component", "step", "alternative"])}`,
+        ),
+        S(
+          "Abstract",
+          `${sim} Condensed statement of the approved solution facts for filing-format purposes (150-word limit enforced at export).`,
+        ),
+      ];
+    case "research_memo":
+      return [
+        S(
+          "Question presented",
+          `${sim} Question derived from the approved date/problem facts: ${factsFor(approved, ["date", "problem"])}`,
+        ),
+        S(
+          "Short answer (analysis)",
+          `${sim} Labeled analysis grounded in the verified evidence set below; where the record is insufficient the memo says so instead of guessing.`,
+        ),
+        S(
+          "Source trail",
+          `${sim} Full authority list with verification states appears in "Authority relied upon (evidence set)" — every quotation passed or failed the verifier explicitly.`,
+        ),
+      ];
+    case "oa_response_draft":
+      return [
+        S(
+          "Amendments to the claims",
+          `${sim} Claim 1 (currently amended): markup follows MPEP conventions — underline additions, [[double-bracket]] deletions. Amendment text carries no advocacy; it is mechanically separate from the remarks section.`,
+        ),
+        S(
+          "Remarks",
+          `${sim} Response positions keyed to the rejection matrix; each contention cites the evidence set and estoppel-sensitive statements are flagged for practitioner judgment.`,
+        ),
+      ];
+    case "oa_analysis":
+      return [
+        S(
+          "Rejection matrix (simulated)",
+          `${sim} Claim × statute × reference grid over the matter's ${claims.length} pending claim(s); every cell links to OA page and reference passage in production.`,
+        ),
+        S(
+          "Response-path options (Tier C decision support)",
+          `${sim} Options with tradeoff and estoppel flags only — the practitioner decides; Lex never styles a recommendation as the decision.`,
+        ),
+      ];
+    case "ids_packet":
+      return [
+        S(
+          "Citations extracted (SB/08 rows)",
+          `${sim} Rows derived from the matter's prior-art and reference sources; SB/08 field validation results above list every missing or malformed field.`,
+        ),
+      ];
+    default:
+      return [
+        S(
+          `${run.deliverableType} (simulated body)`,
+          `${sim} Deterministic placeholder body for "${run.deliverableType}" via the ${run.workflowKey} workflow, drawn from approved facts only.`,
+        ),
+      ];
+  }
+}
+
+/**
+ * Derive SB/08 rows from the matter's sources. Missing bibliographic fields
+ * produce REAL findings — an IDS prepared from unextracted references must
+ * flag its gaps rather than autofill them.
+ */
+function buildSb08Rows(store: LocalStore, run: WorkflowRun): Sb08Row[] {
+  const sources = store.sources.filter(
+    (s) => s.organizationId === run.organizationId && s.matterId === run.matterId,
+  );
+  const rows: Sb08Row[] = [];
+  let rowNumber = 0;
+  for (const source of sources) {
+    if (source.kind === "prior_art_patent") {
+      rowNumber += 1;
+      const numberMatch = source.title.match(/US\s?([\d,]{7,10})/i);
+      const dateMatch = source.title.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+      rows.push({
+        row: rowNumber,
+        kind: "us_patent",
+        citeNumber: numberMatch?.[1],
+        date: dateMatch?.[1],
+        name: undefined, // patentee extraction pending (real gap → real finding)
+      });
+    } else if (source.kind === "reference_document" || source.kind === "search_result") {
+      rowNumber += 1;
+      rows.push({ row: rowNumber, kind: "npl", description: source.title });
+    }
+  }
+  return rows;
+}
+
 /**
  * Build the deterministic synthetic work product for a completed run and
  * register it plus its review-queue item. Model/system actors NEVER set
@@ -455,30 +592,71 @@ function finalizeRunOutputs(store: LocalStore, run: WorkflowRun, atIso: string):
 
   let checkErrorCount = 0;
   const unresolvedFlags: string[] = [];
+  const checkResults: CheckResultLike[] = [];
 
   const isClaimWorkflow =
     run.workflowKey === "claim_tree_draft" || run.workflowKey === "dependent_claim_draft";
 
+  // Deliverable body sections BEFORE the checker stage so the section-
+  // completeness checker runs over what the draft actually contains.
+  const deliverableSections = buildDeliverableSections(run, approved, claims);
+  const claimInputs = claims.map((c) => ({ number: c.claimNumber, text: c.text }));
+
   if (isClaimWorkflow || run.workflowKey === "oa_analysis" || run.workflowKey === "oa_response_draft") {
     // Run the REAL deterministic checkers over the matter's claim set.
-    const claimInputs = claims.map((c) => ({ number: c.claimNumber, text: c.text }));
-    const dep = checkClaimDependencies(claimInputs);
-    const ab = checkAntecedentBasis(claimInputs);
-    const depSummary = summarizeFindings(dep.findings);
-    const abSummary = summarizeFindings(ab.findings);
-    checkErrorCount = depSummary.errors + abSummary.errors;
+    checkResults.push(checkClaimDependencies(claimInputs));
+    checkResults.push(checkAntecedentBasis(claimInputs));
+  }
 
-    sections.push({
-      heading: "Deterministic check results",
-      body: `Claim-dependency check (${dep.checker}@${dep.checkerVersion}): ${dep.passed ? "PASS" : "FAIL"} — ${depSummary.errors} error(s), ${depSummary.warnings} warning(s). Antecedent-basis check (${ab.checker}@${ab.checkerVersion}): ${ab.passed ? "PASS" : "FAIL"} — ${abSummary.errors} error(s), ${abSummary.warnings} warning(s). Failures annotate the draft and cannot be dismissed without a recorded reason.`,
-      flags: [...findingFlags(dep.findings), ...findingFlags(ab.findings)],
-    });
-    unresolvedFlags.push(
-      ...[...dep.findings, ...ab.findings]
-        .filter((f) => f.severity === "error")
-        .map((f) => `[${f.code}] claim ${f.claimNumber}: ${f.message}`),
+  // SB/08 field validation over rows derived from the matter's sources.
+  if (run.workflowKey === "ids_packet") {
+    checkResults.push(checkSb08(buildSb08Rows(store, run), run.asOfDate));
+  }
+
+  // Section completeness per deliverable profile.
+  const completenessProfile: CompletenessProfileKey | undefined =
+    run.workflowKey === "section_draft"
+      ? "utility_specification"
+      : run.workflowKey === "research_memo"
+        ? "research_memo"
+        : run.workflowKey === "oa_response_draft"
+          ? "oa_response"
+          : undefined;
+  if (completenessProfile) {
+    checkResults.push(
+      checkSectionCompleteness(deliverableSections, completenessProfile),
     );
   }
+
+  // Reference-numeral / figure-callout consistency for drafting workflows.
+  if (run.workflowKey === "section_draft" || isClaimWorkflow) {
+    checkResults.push(checkNumeralConsistency(deliverableSections, claimInputs));
+  }
+
+  if (checkResults.length > 0) {
+    const parts: string[] = [];
+    const flags: string[] = [];
+    for (const result of checkResults) {
+      const summary = summarizeFindings(result.findings);
+      checkErrorCount += summary.errors;
+      parts.push(
+        `${result.checker}@${result.checkerVersion}: ${result.passed ? "PASS" : "FAIL"} — ${summary.errors} error(s), ${summary.warnings} warning(s).`,
+      );
+      flags.push(...findingFlags(result.findings));
+      unresolvedFlags.push(
+        ...result.findings
+          .filter((f) => f.severity === "error")
+          .map((f) => `[${f.code}] ${f.message}`),
+      );
+    }
+    sections.push({
+      heading: "Deterministic check results",
+      body: `${parts.join(" ")} Failures annotate the draft and cannot be dismissed without a recorded reason.`,
+      flags,
+    });
+  }
+
+  sections.push(...deliverableSections);
 
   if (approved.length > 0) {
     sections.push({

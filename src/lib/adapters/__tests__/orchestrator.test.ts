@@ -352,6 +352,63 @@ describe("evidence set, quote verification, and critic independence (FR-5/FR-6, 
   });
 });
 
+describe("deterministic checker stages per workflow (FR-7, §5.1)", () => {
+  beforeEach(() => resetLocalStore());
+
+  async function completedDocument(request: Partial<RunRequest> = {}) {
+    const run = await createRun(request);
+    const store = getLocalStore();
+    const start = Date.parse(store.runPlans.find((p) => p.runId === run.id)!.startedAt);
+    advanceRun(store, run.id, start + TOTAL_PIPELINE_MS + 1_000);
+    const doc = store.documents.find((d) => d.runId === run.id);
+    if (!doc) throw new Error("no document produced");
+    const item = store.reviewItems.find((i) => i.runId === run.id)!;
+    return { run, doc, item, store };
+  }
+
+  it("ids_packet runs SB/08 validation over source-derived rows with real findings", async () => {
+    const { doc, item } = await completedDocument({
+      workflowKey: "ids_packet",
+      deliverableType: "IDS packet (SB/08 fields)",
+    });
+    const checkSection = doc.sections.find((s) => s.heading === "Deterministic check results");
+    expect(checkSection).toBeDefined();
+    expect(checkSection!.body).toContain("sb08-validation@");
+    // Seed prior-art sources lack extracted dates/patentee → genuine findings.
+    expect(item.deterministicCheckFailures).toBeGreaterThan(0);
+    expect(item.unresolvedFlags.join(" ")).toMatch(/SB08-/);
+  });
+
+  it("section_draft passes section-completeness and numeral checks on its own body", async () => {
+    const { doc } = await completedDocument({
+      workflowKey: "section_draft",
+      deliverableType: "Specification sections",
+    });
+    const headings = doc.sections.map((s) => s.heading);
+    for (const required of ["Background", "Summary", "Detailed description", "Abstract"]) {
+      expect(headings).toContain(required);
+    }
+    const checkSection = doc.sections.find((s) => s.heading === "Deterministic check results")!;
+    expect(checkSection.body).toContain("section-completeness@");
+    expect(checkSection.body).toContain("numeral-consistency@");
+    expect(checkSection.body).not.toMatch(/section-completeness@[\d.]+: FAIL/);
+  });
+
+  it("oa_response_draft keeps amendments and remarks separate and check-clean", async () => {
+    const { doc } = await completedDocument({
+      workflowKey: "oa_response_draft",
+      deliverableType: "Response shell",
+      matterId: "matter_optical",
+    });
+    const headings = doc.sections.map((s) => s.heading);
+    expect(headings).toContain("Amendments to the claims");
+    expect(headings).toContain("Remarks");
+    const checkSection = doc.sections.find((s) => s.heading === "Deterministic check results")!;
+    // SEC-MIXED must not fire on the separated sections.
+    expect(checkSection.flags.join(" ")).not.toContain("SEC-MIXED");
+  });
+});
+
 describe("fact ledger events", () => {
   beforeEach(() => resetLocalStore());
 
