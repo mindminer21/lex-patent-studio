@@ -67,7 +67,7 @@ test("export API creates a version-locked manifest and 404s for foreign inventio
   // The seeded synthetic invention is on the dashboard.
   await page.goto("/wepatent/app");
   const href = await page
-    .locator('a[href^="/wepatent/app/inventions/"]:not([href$="/new"])')
+    .locator('a[href^="/wepatent/app/inventions/"]:not([href$="/new"]):not([href$="/start"])')
     .first()
     .getAttribute("href");
   const inventionId = href!.split("/").pop()!;

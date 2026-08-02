@@ -363,3 +363,16 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 @media (max-width: 980px) {
   .wp-studio { grid-template-columns: minmax(0, 1fr); }
 }
+.wp-studio .wp-card { min-width: 0; }
+.wp-studio input, .wp-studio textarea, .wp-studio select { max-width: 100%; box-sizing: border-box; }
+/* Grid items refuse to shrink below min-content unless told otherwise; the
+   file input's intrinsic width otherwise forces horizontal overflow at
+   320px (parent §12 responsive requirement). */
+.wp-form, .wp-form .field, .field { min-width: 0; }
+.field input, .field select, .field textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 640px) {
+  .wp-badge { white-space: normal; }
+}
+/* Studio cards wrap their content (overflow-wrap above) instead of becoming
+   keyboard-unreachable scroll regions (axe scrollable-region-focusable). */
+.wp-studio .wp-card { overflow-x: visible; }

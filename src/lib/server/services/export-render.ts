@@ -153,8 +153,10 @@ export function buildExportSections(input: {
         const problem = pairById.get(link.problemId);
         const solution = pairById.get(link.solutionId);
         if (problem && solution) {
+          // Note: keep this line WinAnsi-safe — the PDF renderer's standard
+          // Helvetica cannot encode characters like "↔".
           lines.push(
-            `  "${problem.statement.slice(0, 120)}" ↔ "${solution.statement.slice(0, 120)}" (${link.state})`,
+            `  "${problem.statement.slice(0, 120)}" <-> "${solution.statement.slice(0, 120)}" (${link.state})`,
           );
         }
       }
@@ -280,7 +282,11 @@ async function renderPdf(sections: ExportSectionContent[]): Promise<Uint8Array> 
   let page = pdf.addPage([pageWidth, pageHeight]);
   let y = pageHeight - margin;
 
-  const write = (text: string, options: { bold?: boolean; size?: number }) => {
+  const write = (rawText: string, options: { bold?: boolean; size?: number }) => {
+    // Standard Helvetica encodes WinAnsi only; user/model content can carry
+    // arbitrary Unicode. Replace non-Latin-1 characters instead of crashing
+    // the render job (the DOCX artifact keeps the original text).
+    const text = rawText.replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "?");
     const size = options.size ?? 10;
     const usable = Math.floor((pageWidth - margin * 2) / (size * 0.55));
     for (const line of wrapText(text, usable)) {

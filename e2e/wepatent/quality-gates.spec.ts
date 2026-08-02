@@ -63,7 +63,7 @@ test("public pages: axe clean, no console errors", async ({ page }) => {
 test("authenticated journey pages: axe clean, no console errors", async ({ page }) => {
   const errors = collectConsoleErrors(page);
   await onboardFreshTenant(page, "a11y");
-  for (const path of ["/wepatent/app", "/wepatent/app/inventions/new", "/wepatent/app/billing", "/wepatent/app/counsel", "/wepatent/app/settings"]) {
+  for (const path of ["/wepatent/app", "/wepatent/app/inventions/new", "/wepatent/app/inventions/start", "/wepatent/app/billing", "/wepatent/app/counsel", "/wepatent/app/settings"]) {
     await page.goto(path);
     await expectNoSeriousViolations(page, path);
   }
