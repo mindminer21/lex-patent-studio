@@ -4,18 +4,27 @@ import type { FactProvenance } from "@/lib/domain/facts";
 import type {
   AuditEventRecord,
   ContributorRecord,
+  CounselAssignmentRecord,
+  CounselAuditEventRecord,
   CounselRequestEventRecord,
   CounselRequestRecord,
   DataPort,
   DisclosureEventRecord,
   DraftRecord,
   DraftVersionRecord,
+  EngagementRecord,
+  ExportArtifactRecord,
   ExportRecordEntry,
+  FilingPackageRecord,
   Id,
   IntakeSessionRecord,
+  InvitationRecord,
   InventionFactRecord,
   InventionRecord,
+  JobKind,
+  JobRecord,
   LedgerEntryRecord,
+  LegalMatterRecord,
   MembershipRecord,
   OrganizationRecord,
   ReservationRecord,
@@ -54,6 +63,14 @@ type Tables = {
   reservations: Map<Id, ReservationRecord>;
   usageEvents: UsageEventRecord[];
   auditEvents: AuditEventRecord[];
+  jobs: Map<Id, JobRecord>;
+  invitations: Map<Id, InvitationRecord>;
+  engagements: Map<Id, EngagementRecord>;
+  legalMatters: Map<Id, LegalMatterRecord>;
+  filingPackages: Map<Id, FilingPackageRecord>;
+  counselAssignments: Map<Id, CounselAssignmentRecord>;
+  counselAuditEvents: CounselAuditEventRecord[];
+  exportArtifacts: ExportArtifactRecord[];
 };
 
 function emptyTables(): Tables {
@@ -78,6 +95,14 @@ function emptyTables(): Tables {
     reservations: new Map(),
     usageEvents: [],
     auditEvents: [],
+    jobs: new Map(),
+    invitations: new Map(),
+    engagements: new Map(),
+    legalMatters: new Map(),
+    filingPackages: new Map(),
+    counselAssignments: new Map(),
+    counselAuditEvents: [],
+    exportArtifacts: [],
   };
 }
 
@@ -308,6 +333,34 @@ export class LocalDataAdapter implements DataPort {
     );
   }
 
+  async getSource(organizationId: Id, sourceId: Id): Promise<SourceRecord | null> {
+    const record = tables().sources.get(sourceId);
+    if (!record || record.organizationId !== organizationId) return null;
+    return record;
+  }
+
+  async updateSource(
+    organizationId: Id,
+    sourceId: Id,
+    patch: Partial<
+      Pick<
+        SourceRecord,
+        | "status"
+        | "originalFilename"
+        | "mimeType"
+        | "byteSize"
+        | "storagePath"
+        | "checksumSha256"
+        | "quarantineReason"
+      >
+    >,
+  ): Promise<SourceRecord | null> {
+    const record = tables().sources.get(sourceId);
+    if (!record || record.organizationId !== organizationId) return null;
+    Object.assign(record, patch);
+    return record;
+  }
+
   async createDraft(input: Omit<DraftRecord, "id" | "createdAt">): Promise<DraftRecord> {
     const record: DraftRecord = { ...input, id: randomUUID(), createdAt: now() };
     tables().drafts.set(record.id, record);
@@ -369,6 +422,139 @@ export class LocalDataAdapter implements DataPort {
     );
   }
 
+  async getExport(organizationId: Id, exportId: Id): Promise<ExportRecordEntry | null> {
+    const record = tables().exports.get(exportId);
+    if (!record || record.organizationId !== organizationId) return null;
+    return record;
+  }
+
+  async appendExportArtifact(
+    input: Omit<ExportArtifactRecord, "id" | "createdAt">,
+  ): Promise<ExportArtifactRecord> {
+    const record: ExportArtifactRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().exportArtifacts.push(record);
+    return record;
+  }
+
+  async listExportArtifacts(
+    organizationId: Id,
+    exportId: Id,
+  ): Promise<ExportArtifactRecord[]> {
+    return tables().exportArtifacts.filter(
+      (a) => a.organizationId === organizationId && a.exportId === exportId,
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Durable jobs
+  // ------------------------------------------------------------------
+  async createJob(
+    input: Pick<JobRecord, "organizationId" | "kind" | "idempotencyKey" | "payload">,
+  ): Promise<JobRecord> {
+    const record: JobRecord = {
+      ...input,
+      id: randomUUID(),
+      status: "queued",
+      result: {},
+      errorSummary: null,
+      attempts: 0,
+      createdAt: now(),
+      startedAt: null,
+      finishedAt: null,
+    };
+    tables().jobs.set(record.id, record);
+    return record;
+  }
+
+  async getJob(organizationId: Id, jobId: Id): Promise<JobRecord | null> {
+    const record = tables().jobs.get(jobId);
+    if (!record || record.organizationId !== organizationId) return null;
+    return record;
+  }
+
+  async findJobByKey(
+    organizationId: Id,
+    kind: JobKind,
+    idempotencyKey: string,
+  ): Promise<JobRecord | null> {
+    for (const job of tables().jobs.values()) {
+      if (
+        job.organizationId === organizationId &&
+        job.kind === kind &&
+        job.idempotencyKey === idempotencyKey
+      ) {
+        return job;
+      }
+    }
+    return null;
+  }
+
+  async updateJob(
+    organizationId: Id,
+    jobId: Id,
+    patch: Partial<
+      Pick<JobRecord, "status" | "result" | "errorSummary" | "attempts" | "startedAt" | "finishedAt">
+    >,
+  ): Promise<JobRecord | null> {
+    const record = tables().jobs.get(jobId);
+    if (!record || record.organizationId !== organizationId) return null;
+    Object.assign(record, patch);
+    return record;
+  }
+
+  async listJobs(organizationId: Id): Promise<JobRecord[]> {
+    return [...tables().jobs.values()].filter((j) => j.organizationId === organizationId);
+  }
+
+  // ------------------------------------------------------------------
+  // Invitations
+  // ------------------------------------------------------------------
+  async createInvitation(
+    input: Omit<InvitationRecord, "id" | "createdAt" | "acceptedAt" | "acceptedBy" | "revokedAt">,
+  ): Promise<InvitationRecord> {
+    const record: InvitationRecord = {
+      ...input,
+      id: randomUUID(),
+      acceptedAt: null,
+      acceptedBy: null,
+      revokedAt: null,
+      createdAt: now(),
+    };
+    tables().invitations.set(record.id, record);
+    return record;
+  }
+
+  async listInvitations(organizationId: Id): Promise<InvitationRecord[]> {
+    return [...tables().invitations.values()].filter(
+      (i) => i.organizationId === organizationId,
+    );
+  }
+
+  async getInvitationByTokenHash(tokenHash: string): Promise<InvitationRecord | null> {
+    for (const invitation of tables().invitations.values()) {
+      if (invitation.tokenHash === tokenHash) return invitation;
+    }
+    return null;
+  }
+
+  async updateInvitation(
+    invitationId: Id,
+    patch: Partial<Pick<InvitationRecord, "acceptedAt" | "acceptedBy" | "revokedAt">>,
+  ): Promise<InvitationRecord | null> {
+    const record = tables().invitations.get(invitationId);
+    if (!record) return null;
+    Object.assign(record, patch);
+    return record;
+  }
+
+  async createMembership(
+    input: Omit<MembershipRecord, "id" | "createdAt">,
+  ): Promise<MembershipRecord> {
+    const record: MembershipRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().memberships.push(record);
+    return record;
+  }
+
   async createCounselRequest(
     input: Omit<CounselRequestRecord, "id" | "state" | "createdAt" | "updatedAt">,
   ): Promise<CounselRequestRecord> {
@@ -425,6 +611,100 @@ export class LocalDataAdapter implements DataPort {
     return tables().counselRequestEvents.filter(
       (e) => e.organizationId === organizationId && e.requestId === requestId,
     );
+  }
+
+  // ------------------------------------------------------------------
+  // Connected-counsel administration lane (PRD §6.3)
+  // ------------------------------------------------------------------
+  async getCounselAssignment(userId: Id): Promise<CounselAssignmentRecord | null> {
+    return tables().counselAssignments.get(userId) ?? null;
+  }
+
+  async setCounselAssignment(
+    record: CounselAssignmentRecord,
+  ): Promise<CounselAssignmentRecord> {
+    tables().counselAssignments.set(record.userId, { ...record });
+    return record;
+  }
+
+  async listCounselRequestsAllOrgs(): Promise<CounselRequestRecord[]> {
+    return [...tables().counselRequests.values()];
+  }
+
+  async getCounselRequestAnyOrg(requestId: Id): Promise<CounselRequestRecord | null> {
+    return tables().counselRequests.get(requestId) ?? null;
+  }
+
+  async createEngagement(
+    input: Omit<EngagementRecord, "id" | "offeredAt">,
+  ): Promise<EngagementRecord> {
+    const record: EngagementRecord = { ...input, id: randomUUID(), offeredAt: now() };
+    tables().engagements.set(record.id, record);
+    return record;
+  }
+
+  async getEngagement(engagementId: Id): Promise<EngagementRecord | null> {
+    return tables().engagements.get(engagementId) ?? null;
+  }
+
+  async getEngagementByRequest(requestId: Id): Promise<EngagementRecord | null> {
+    for (const engagement of tables().engagements.values()) {
+      if (engagement.requestId === requestId) return engagement;
+    }
+    return null;
+  }
+
+  async updateEngagement(
+    engagementId: Id,
+    patch: Partial<Pick<EngagementRecord, "signedDocumentRef" | "signedAt">>,
+  ): Promise<EngagementRecord | null> {
+    const record = tables().engagements.get(engagementId);
+    if (!record) return null;
+    Object.assign(record, patch);
+    return record;
+  }
+
+  async createLegalMatter(
+    input: Omit<LegalMatterRecord, "id" | "openedAt">,
+  ): Promise<LegalMatterRecord> {
+    const record: LegalMatterRecord = { ...input, id: randomUUID(), openedAt: now() };
+    tables().legalMatters.set(record.id, record);
+    return record;
+  }
+
+  async getLegalMatter(matterId: Id): Promise<LegalMatterRecord | null> {
+    return tables().legalMatters.get(matterId) ?? null;
+  }
+
+  async getLegalMatterByEngagement(engagementId: Id): Promise<LegalMatterRecord | null> {
+    for (const matter of tables().legalMatters.values()) {
+      if (matter.engagementId === engagementId) return matter;
+    }
+    return null;
+  }
+
+  async createFilingPackage(
+    input: Omit<FilingPackageRecord, "id" | "createdAt">,
+  ): Promise<FilingPackageRecord> {
+    const record: FilingPackageRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().filingPackages.set(record.id, record);
+    return record;
+  }
+
+  async listFilingPackages(matterId: Id): Promise<FilingPackageRecord[]> {
+    return [...tables().filingPackages.values()].filter((p) => p.matterId === matterId);
+  }
+
+  async appendCounselAuditEvent(
+    input: Omit<CounselAuditEventRecord, "id" | "createdAt">,
+  ): Promise<CounselAuditEventRecord> {
+    const record: CounselAuditEventRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().counselAuditEvents.push(record);
+    return record;
+  }
+
+  async listCounselAuditEvents(): Promise<CounselAuditEventRecord[]> {
+    return [...tables().counselAuditEvents];
   }
 
   async getWallet(organizationId: Id): Promise<WalletRecord | null> {

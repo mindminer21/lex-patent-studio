@@ -4,6 +4,12 @@
 
 create extension if not exists pgcrypto;
 
+-- The tenancy helpers below are `language sql` and reference
+-- public.organization_memberships, which is created in migration 0002.
+-- PostgreSQL validates SQL function bodies at CREATE time by default, so
+-- body validation must be deferred to first execution here.
+set check_function_bodies = off;
+
 create schema if not exists app;
 
 -- ---------------------------------------------------------------------------

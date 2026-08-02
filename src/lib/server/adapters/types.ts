@@ -106,7 +106,13 @@ export interface DisclosureEventRecord {
   underNda: boolean;
 }
 
-export type SourceStatus = "registered" | "quarantined" | "scanned" | "extracted";
+export type SourceStatus =
+  | "registered"
+  | "uploaded"
+  | "quarantined"
+  | "scanned"
+  | "extracted"
+  | "rejected";
 
 export interface SourceRecord {
   id: Id;
@@ -118,6 +124,13 @@ export interface SourceRecord {
   status: SourceStatus;
   synthetic: boolean;
   createdAt: string;
+  /** FR-4 upload pipeline metadata; null for metadata-only registrations. */
+  originalFilename: string | null;
+  mimeType: string | null;
+  byteSize: number | null;
+  storagePath: string | null;
+  checksumSha256: string | null;
+  quarantineReason: string | null;
 }
 
 export type DraftWorkflow =
@@ -147,6 +160,12 @@ export interface DraftVersionRecord {
   actualCustomerChargeCents: number;
   unresolvedFactCount: number;
   sourceStatusSummary: string;
+  /**
+   * Reservation this version settled against — makes retry deduplication
+   * exact: the same idempotency key maps to the same reservation, which
+   * maps to at most one stored version (PRD §7.4).
+   */
+  reservationId: Id | null;
   /** Always "working_draft" — the platform can never mark a draft approved. */
   label: "working_draft";
   createdAt: string;
@@ -246,6 +265,105 @@ export interface UsageEventRecord {
   createdAt: string;
 }
 
+/* ------------------------------------------------------------------ */
+/* Round 2 records: jobs, invitations, counsel lane, export artifacts   */
+/* ------------------------------------------------------------------ */
+
+export type JobKind = "generation" | "source_scan" | "source_extraction" | "export_render";
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface JobRecord {
+  id: Id;
+  organizationId: Id;
+  kind: JobKind;
+  status: JobStatus;
+  idempotencyKey: string;
+  payload: Record<string, string | number | boolean | null>;
+  result: Record<string, string | number | boolean | null>;
+  errorSummary: string | null;
+  attempts: number;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface InvitationRecord {
+  id: Id;
+  organizationId: Id;
+  email: string;
+  /** Ordinary org roles only — counsel roles can never be invited (FR-2). */
+  role: Role;
+  tokenHash: string;
+  invitedBy: Id;
+  expiresAt: string;
+  acceptedAt: string | null;
+  acceptedBy: Id | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface EngagementRecord {
+  id: Id;
+  organizationId: Id;
+  requestId: Id;
+  lawFirmName: string;
+  scopeSummary: string;
+  signedDocumentRef: string | null;
+  offeredAt: string;
+  signedAt: string | null;
+}
+
+export interface LegalMatterRecord {
+  id: Id;
+  organizationId: Id;
+  engagementId: Id;
+  matterReference: string;
+  openedAt: string;
+}
+
+export type FilingPackageStatus = "in_preparation" | "counsel_review" | "counsel_approved";
+
+export interface FilingPackageRecord {
+  id: Id;
+  organizationId: Id;
+  matterId: Id;
+  description: string;
+  /** No "submitted" status exists — wepatent never files (PRD §5.5). */
+  status: FilingPackageStatus;
+  createdAt: string;
+}
+
+export type CounselRole = "counsel_intake" | "counsel_attorney";
+
+export interface CounselAssignmentRecord {
+  userId: Id;
+  role: CounselRole;
+  lawFirmName: string;
+  createdAt: string;
+}
+
+export interface CounselAuditEventRecord {
+  id: Id;
+  counselUserId: Id;
+  organizationId: Id | null;
+  requestId: Id | null;
+  action: string;
+  meta: Record<string, string | number | boolean | null>;
+  createdAt: string;
+}
+
+export interface ExportArtifactRecord {
+  id: Id;
+  organizationId: Id;
+  exportId: Id;
+  name: string;
+  contentType: string;
+  byteSize: number;
+  sha256: string;
+  storagePath: string;
+  createdAt: string;
+}
+
 export interface AuditEventRecord {
   id: Id;
   organizationId: Id | null;
@@ -312,6 +430,23 @@ export interface DataPort {
 
   createSource(input: Omit<SourceRecord, "id" | "createdAt">): Promise<SourceRecord>;
   listSources(organizationId: Id, inventionId: Id): Promise<SourceRecord[]>;
+  getSource(organizationId: Id, sourceId: Id): Promise<SourceRecord | null>;
+  updateSource(
+    organizationId: Id,
+    sourceId: Id,
+    patch: Partial<
+      Pick<
+        SourceRecord,
+        | "status"
+        | "originalFilename"
+        | "mimeType"
+        | "byteSize"
+        | "storagePath"
+        | "checksumSha256"
+        | "quarantineReason"
+      >
+    >,
+  ): Promise<SourceRecord | null>;
 
   // Drafts
   createDraft(input: Omit<DraftRecord, "id" | "createdAt">): Promise<DraftRecord>;
@@ -328,6 +463,38 @@ export interface DataPort {
     input: Omit<ExportRecordEntry, "id" | "createdAt">,
   ): Promise<ExportRecordEntry>;
   listExports(organizationId: Id, inventionId: Id): Promise<ExportRecordEntry[]>;
+  getExport(organizationId: Id, exportId: Id): Promise<ExportRecordEntry | null>;
+  appendExportArtifact(
+    input: Omit<ExportArtifactRecord, "id" | "createdAt">,
+  ): Promise<ExportArtifactRecord>;
+  listExportArtifacts(organizationId: Id, exportId: Id): Promise<ExportArtifactRecord[]>;
+
+  // Durable jobs (PRD §14): queued/running/succeeded/failed/cancelled.
+  createJob(
+    input: Pick<JobRecord, "organizationId" | "kind" | "idempotencyKey" | "payload">,
+  ): Promise<JobRecord>;
+  getJob(organizationId: Id, jobId: Id): Promise<JobRecord | null>;
+  findJobByKey(organizationId: Id, kind: JobKind, idempotencyKey: string): Promise<JobRecord | null>;
+  updateJob(
+    organizationId: Id,
+    jobId: Id,
+    patch: Partial<
+      Pick<JobRecord, "status" | "result" | "errorSummary" | "attempts" | "startedAt" | "finishedAt">
+    >,
+  ): Promise<JobRecord | null>;
+  listJobs(organizationId: Id): Promise<JobRecord[]>;
+
+  // Invitations (PRD §7.1): idempotent, expiring.
+  createInvitation(
+    input: Omit<InvitationRecord, "id" | "createdAt" | "acceptedAt" | "acceptedBy" | "revokedAt">,
+  ): Promise<InvitationRecord>;
+  listInvitations(organizationId: Id): Promise<InvitationRecord[]>;
+  getInvitationByTokenHash(tokenHash: string): Promise<InvitationRecord | null>;
+  updateInvitation(
+    invitationId: Id,
+    patch: Partial<Pick<InvitationRecord, "acceptedAt" | "acceptedBy" | "revokedAt">>,
+  ): Promise<InvitationRecord | null>;
+  createMembership(input: Omit<MembershipRecord, "id" | "createdAt">): Promise<MembershipRecord>;
 
   // Counsel requests
   createCounselRequest(
@@ -347,6 +514,32 @@ export interface DataPort {
     organizationId: Id,
     requestId: Id,
   ): Promise<CounselRequestEventRecord[]>;
+
+  // Connected-counsel administration lane (PRD §6.3). These cross-org
+  // reads are restricted to counsel-role callers at the service boundary;
+  // in production the counsel lane runs on its own audit policy.
+  getCounselAssignment(userId: Id): Promise<CounselAssignmentRecord | null>;
+  setCounselAssignment(record: CounselAssignmentRecord): Promise<CounselAssignmentRecord>;
+  listCounselRequestsAllOrgs(): Promise<CounselRequestRecord[]>;
+  getCounselRequestAnyOrg(requestId: Id): Promise<CounselRequestRecord | null>;
+  createEngagement(input: Omit<EngagementRecord, "id" | "offeredAt">): Promise<EngagementRecord>;
+  getEngagement(engagementId: Id): Promise<EngagementRecord | null>;
+  getEngagementByRequest(requestId: Id): Promise<EngagementRecord | null>;
+  updateEngagement(
+    engagementId: Id,
+    patch: Partial<Pick<EngagementRecord, "signedDocumentRef" | "signedAt">>,
+  ): Promise<EngagementRecord | null>;
+  createLegalMatter(input: Omit<LegalMatterRecord, "id" | "openedAt">): Promise<LegalMatterRecord>;
+  getLegalMatter(matterId: Id): Promise<LegalMatterRecord | null>;
+  getLegalMatterByEngagement(engagementId: Id): Promise<LegalMatterRecord | null>;
+  createFilingPackage(
+    input: Omit<FilingPackageRecord, "id" | "createdAt">,
+  ): Promise<FilingPackageRecord>;
+  listFilingPackages(matterId: Id): Promise<FilingPackageRecord[]>;
+  appendCounselAuditEvent(
+    input: Omit<CounselAuditEventRecord, "id" | "createdAt">,
+  ): Promise<CounselAuditEventRecord>;
+  listCounselAuditEvents(): Promise<CounselAuditEventRecord[]>;
 
   // Wallet, reservations, usage
   getWallet(organizationId: Id): Promise<WalletRecord | null>;
@@ -395,8 +588,20 @@ export interface BillingPort {
   createPortalSession(organizationId: Id): Promise<{ url: string }>;
 }
 
+/**
+ * Private blob storage seam (FR-4). Local mode writes under a gitignored
+ * `.local-storage/` directory; production is Supabase Storage (private
+ * bucket, signed URLs) behind the same interface.
+ */
+export interface StoragePort {
+  put(path: string, bytes: Uint8Array): Promise<void>;
+  get(path: string): Promise<Uint8Array | null>;
+  delete(path: string): Promise<void>;
+}
+
 export interface Adapters {
   data: DataPort;
   modelGateway: ModelGatewayPort;
   billing: BillingPort;
+  storage: StoragePort;
 }

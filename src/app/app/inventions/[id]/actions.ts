@@ -155,6 +155,12 @@ export async function addSourceAction(formData: FormData): Promise<void> {
     note: parsed.data.note,
     status: "registered",
     synthetic: false,
+    originalFilename: null,
+    mimeType: null,
+    byteSize: null,
+    storagePath: null,
+    checksumSha256: null,
+    quarantineReason: null,
   });
   redirect(`/app/inventions/${inventionId}/sources`);
 }

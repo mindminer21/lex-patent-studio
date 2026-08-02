@@ -4,11 +4,19 @@ import { env } from "@/lib/env";
 import type { Adapters, BillingPort } from "./types";
 import { LocalDataAdapter } from "./local/store";
 import { LocalModelGateway } from "./local/model-gateway";
+import { LocalStorageAdapter } from "./local/storage";
+import {
+  ProviderModelGateway,
+  StripeBillingAdapter,
+  SupabaseDataAdapter,
+  SupabaseStorageAdapter,
+} from "./production";
 
 /**
  * Adapter selection by environment contract. Local mode is fully
- * credential-independent; production mode requires the approval-gated
- * external accounts and is intentionally not wired yet (PRD §17).
+ * credential-independent. Production mode wires the SupabaseDataAdapter
+ * against the private application project; billing, model gateway, and
+ * storage remain approval-gated stubs that throw on use (PRD §17).
  */
 class LocalBillingAdapter implements BillingPort {
   async createCheckoutSession(): Promise<{ url: string }> {
@@ -26,17 +34,25 @@ let cached: Adapters | null = null;
 export function getAdapters(): Adapters {
   if (cached) return cached;
   if (env.APP_MODE === "production") {
-    // TODO(production, approval-gated per PRD §17): instantiate
-    // SupabaseDataAdapter, StripeBillingAdapter, and ProviderModelGateway
-    // from ./production once accounts and credentials are approved.
-    throw new Error(
-      "APP_MODE=production is not yet enabled: production adapters are approval-gated (PRD §17).",
-    );
+    // loadEnv() has already fail-fasted unless every production variable is
+    // present (src/lib/env). Data-plane traffic goes to Supabase; billing
+    // and provider generation throw until approved (PRD §17).
+    cached = {
+      data: new SupabaseDataAdapter({
+        url: env.SUPABASE_URL!,
+        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!,
+      }),
+      modelGateway: new ProviderModelGateway(),
+      billing: new StripeBillingAdapter(),
+      storage: new SupabaseStorageAdapter(),
+    };
+    return cached;
   }
   cached = {
     data: new LocalDataAdapter(),
     modelGateway: new LocalModelGateway(),
     billing: new LocalBillingAdapter(),
+    storage: new LocalStorageAdapter(),
   };
   return cached;
 }

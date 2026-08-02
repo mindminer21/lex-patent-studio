@@ -124,6 +124,12 @@ export async function seedSyntheticInvention(data: DataPort, organizationId: Id)
       note,
       status,
       synthetic: true,
+      originalFilename: null,
+      mimeType: null,
+      byteSize: null,
+      storagePath: null,
+      checksumSha256: null,
+      quarantineReason: null,
     });
   }
 

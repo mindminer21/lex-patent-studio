@@ -183,6 +183,12 @@ export async function submitIntake(params: {
       note: source.note ?? "",
       status: "registered",
       synthetic: false,
+      originalFilename: null,
+      mimeType: null,
+      byteSize: null,
+      storagePath: null,
+      checksumSha256: null,
+      quarantineReason: null,
     });
   }
 

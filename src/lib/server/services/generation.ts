@@ -214,6 +214,7 @@ export async function runGeneration(params: {
     actualCustomerChargeCents: settled.customerChargeCents,
     unresolvedFactCount,
     sourceStatusSummary: `${extractedCount} of ${sources.length} sources extracted`,
+    reservationId: reservationRecord.id,
   });
 
   await data.appendAuditEvent({
@@ -231,22 +232,23 @@ export async function runGeneration(params: {
   return { ok: true, version, draftId: draft.id };
 }
 
+/**
+ * Exact retry deduplication: every stored version records the reservation it
+ * settled against, so a duplicate idempotency key resolves to at most one
+ * version (PRD §7.4 — "a retry cannot double-charge or produce an untracked
+ * duplicate").
+ */
 async function findVersionByReservation(
   organizationId: Id,
   reservationId: Id,
 ): Promise<{ version: DraftVersionRecord; draftId: Id } | null> {
   const { data } = getAdapters();
-  const usageEvents = await data.listUsageEvents(organizationId);
-  const event = usageEvents.find((entry) => entry.reservationId === reservationId);
-  if (!event) return null;
   const inventions = await data.listInventions(organizationId);
   for (const invention of inventions) {
     const drafts = await data.listDrafts(organizationId, invention.id);
     for (const draft of drafts) {
       const versions = await data.listDraftVersions(organizationId, draft.id);
-      const match = versions.find(
-        (v) => Math.abs(Date.parse(v.createdAt) - Date.parse(event.createdAt)) < 5_000,
-      );
+      const match = versions.find((v) => v.reservationId === reservationId);
       if (match) return { version: match, draftId: draft.id };
     }
   }
