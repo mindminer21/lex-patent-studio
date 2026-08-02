@@ -243,6 +243,11 @@ export interface LedgerEntryRecord {
   /** Signed cents. Credits positive, charges negative. */
   amountCents: number;
   reservationId: Id | null;
+  /**
+   * Stripe event/session reference for money that arrived via Stripe.
+   * Used to make webhook-driven credits idempotent (FR-6).
+   */
+  stripeReference?: string | null;
   note: string;
   createdAt: string;
 }
@@ -251,6 +256,35 @@ export type ReservationRecord = Reservation & {
   organizationId: Id;
   createdAt: string;
 };
+
+/**
+ * Verified Stripe webhook events (FR-6). The Stripe event id is the primary
+ * key, which makes webhook redelivery idempotent by construction.
+ */
+export interface StripeEventRecord {
+  /** Stripe event id, e.g. "evt_...". */
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  signatureVerified: boolean;
+  processedAt: string | null;
+  receivedAt: string;
+}
+
+export type BillingOutboxStatus = "pending" | "processing" | "done" | "failed";
+
+/** Billing outbox (FR-6): webhook effects applied through a durable queue. */
+export interface BillingOutboxRecord {
+  id: Id;
+  organizationId: Id | null;
+  stripeEventId: string | null;
+  action: string;
+  payload: Record<string, string | number | boolean | null>;
+  status: BillingOutboxStatus;
+  attempts: number;
+  createdAt: string;
+  processedAt: string | null;
+}
 
 export interface UsageEventRecord {
   id: Id;
@@ -559,6 +593,26 @@ export interface DataPort {
   ): Promise<UsageEventRecord>;
   listUsageEvents(organizationId: Id): Promise<UsageEventRecord[]>;
 
+  // Stripe webhook events + billing outbox (FR-6). insertStripeEvent is the
+  // idempotency gate: `created: false` means the event id was seen before.
+  insertStripeEvent(
+    input: Omit<StripeEventRecord, "processedAt" | "receivedAt">,
+  ): Promise<{ record: StripeEventRecord; created: boolean }>;
+  markStripeEventProcessed(id: string): Promise<void>;
+  appendBillingOutbox(
+    input: Omit<BillingOutboxRecord, "id" | "createdAt" | "processedAt" | "attempts" | "status">,
+  ): Promise<BillingOutboxRecord>;
+  listPendingBillingOutbox(): Promise<BillingOutboxRecord[]>;
+  updateBillingOutbox(
+    id: Id,
+    patch: Partial<Pick<BillingOutboxRecord, "status" | "attempts" | "processedAt">>,
+  ): Promise<BillingOutboxRecord | null>;
+
+  // Stripe customer mapping (FR-6): set from checkout.session.completed and
+  // required by the Customer Portal seam.
+  getStripeCustomerId(organizationId: Id): Promise<string | null>;
+  setStripeCustomerId(organizationId: Id, stripeCustomerId: string): Promise<void>;
+
   // Audit
   appendAuditEvent(input: Omit<AuditEventRecord, "id" | "createdAt">): Promise<AuditEventRecord>;
   listAuditEvents(organizationId: Id): Promise<AuditEventRecord[]>;
@@ -586,9 +640,20 @@ export interface ModelGatewayPort {
   generate(request: ModelGenerationRequest): Promise<ModelGenerationResult>;
 }
 
+export type CheckoutRequest =
+  | { kind: "wallet_top_up"; amountCents: number }
+  | { kind: "subscription"; planId: string };
+
 export interface BillingPort {
-  /** Stripe Checkout/Portal seams — approval-gated, stubbed until Phase 3. */
-  createCheckoutSession(organizationId: Id, planId: string): Promise<{ url: string }>;
+  /**
+   * Stripe Checkout/Portal (FR-6). The production adapter is implemented
+   * against the Stripe REST API; *live activation* is approval-gated
+   * (PRD §17.4) behind the Stripe credentials.
+   */
+  createCheckoutSession(
+    organizationId: Id,
+    request: CheckoutRequest,
+  ): Promise<{ url: string }>;
   createPortalSession(organizationId: Id): Promise<{ url: string }>;
 }
 

@@ -211,6 +211,7 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .field textarea { min-height: 120px; line-height: 1.5; }
 .field .hint { color: #5a687d; font-size: 0.8rem; line-height: 1.5; margin: 0; }
 .form-error { color: #a01212; background: #fdeeee; border: 1px solid #e3a0a0; padding: 10px 12px; font-size: 0.9rem; margin: 0; }
+.form-success { color: #0c5a2b; background: #ecf9f0; border: 1px solid #93cfa8; padding: 10px 12px; font-size: 0.9rem; margin: 0; }
 .form-issues { color: #a01212; background: #fdeeee; border: 1px solid #e3a0a0; padding: 10px 16px 10px 30px; font-size: 0.88rem; margin: 0; }
 
 /* --- wepatent authenticated app shell -------------------------------- */

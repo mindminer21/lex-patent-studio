@@ -3,6 +3,7 @@ import type { CounselRequestState } from "@/lib/domain/counsel-request";
 import type { FactProvenance } from "@/lib/domain/facts";
 import type {
   AuditEventRecord,
+  BillingOutboxRecord,
   ContributorRecord,
   CounselAssignmentRecord,
   CounselAuditEventRecord,
@@ -29,6 +30,7 @@ import type {
   OrganizationRecord,
   ReservationRecord,
   SourceRecord,
+  StripeEventRecord,
   TermsAcceptanceRecord,
   UsageEventRecord,
   UserRecord,
@@ -71,6 +73,9 @@ type Tables = {
   counselAssignments: Map<Id, CounselAssignmentRecord>;
   counselAuditEvents: CounselAuditEventRecord[];
   exportArtifacts: ExportArtifactRecord[];
+  stripeEvents: Map<string, StripeEventRecord>;
+  billingOutbox: Map<Id, BillingOutboxRecord>;
+  stripeCustomers: Map<Id, string>;
 };
 
 function emptyTables(): Tables {
@@ -103,6 +108,9 @@ function emptyTables(): Tables {
     counselAssignments: new Map(),
     counselAuditEvents: [],
     exportArtifacts: [],
+    stripeEvents: new Map(),
+    billingOutbox: new Map(),
+    stripeCustomers: new Map(),
   };
 }
 
@@ -759,6 +767,64 @@ export class LocalDataAdapter implements DataPort {
 
   async listUsageEvents(organizationId: Id): Promise<UsageEventRecord[]> {
     return tables().usageEvents.filter((e) => e.organizationId === organizationId);
+  }
+
+  async insertStripeEvent(
+    input: Omit<StripeEventRecord, "processedAt" | "receivedAt">,
+  ): Promise<{ record: StripeEventRecord; created: boolean }> {
+    const existing = tables().stripeEvents.get(input.id);
+    if (existing) return { record: existing, created: false };
+    const record: StripeEventRecord = {
+      ...input,
+      processedAt: null,
+      receivedAt: now(),
+    };
+    tables().stripeEvents.set(record.id, record);
+    return { record, created: true };
+  }
+
+  async markStripeEventProcessed(id: string): Promise<void> {
+    const record = tables().stripeEvents.get(id);
+    if (record) record.processedAt = now();
+  }
+
+  async appendBillingOutbox(
+    input: Omit<BillingOutboxRecord, "id" | "createdAt" | "processedAt" | "attempts" | "status">,
+  ): Promise<BillingOutboxRecord> {
+    const record: BillingOutboxRecord = {
+      ...input,
+      id: randomUUID(),
+      status: "pending",
+      attempts: 0,
+      createdAt: now(),
+      processedAt: null,
+    };
+    tables().billingOutbox.set(record.id, record);
+    return record;
+  }
+
+  async listPendingBillingOutbox(): Promise<BillingOutboxRecord[]> {
+    return [...tables().billingOutbox.values()]
+      .filter((entry) => entry.status === "pending")
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async updateBillingOutbox(
+    id: Id,
+    patch: Partial<Pick<BillingOutboxRecord, "status" | "attempts" | "processedAt">>,
+  ): Promise<BillingOutboxRecord | null> {
+    const record = tables().billingOutbox.get(id);
+    if (!record) return null;
+    Object.assign(record, patch);
+    return record;
+  }
+
+  async getStripeCustomerId(organizationId: Id): Promise<string | null> {
+    return tables().stripeCustomers.get(organizationId) ?? null;
+  }
+
+  async setStripeCustomerId(organizationId: Id, stripeCustomerId: string): Promise<void> {
+    tables().stripeCustomers.set(organizationId, stripeCustomerId);
   }
 
   async appendAuditEvent(

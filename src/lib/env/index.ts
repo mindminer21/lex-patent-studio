@@ -33,9 +33,11 @@ const envSchema = z.object({
   CORPUS_SUPABASE_URL: z.url().optional(),
   CORPUS_SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
 
-  // Stripe (PRD FR-6).
+  // Stripe (PRD FR-6). The local-mode webhook secret default lets the
+  // simulated checkout exercise the real signature-verification path with
+  // synthetic events; production rejects it below.
   STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().default("whsec_wepatent_local_synthetic_not_for_production"),
 
   // Model providers, server-side gateway only (PRD FR-5).
   OPENAI_API_KEY: z.string().optional(),
@@ -85,6 +87,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     }
     if (parsed.SESSION_SECRET.includes("not-for-production")) {
       throw new Error("APP_MODE=production requires a real SESSION_SECRET");
+    }
+    if (parsed.STRIPE_WEBHOOK_SECRET.includes("not_for_production")) {
+      throw new Error("APP_MODE=production requires a real STRIPE_WEBHOOK_SECRET");
     }
     if (
       parsed.SUPABASE_URL &&

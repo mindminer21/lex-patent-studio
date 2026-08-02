@@ -1,7 +1,8 @@
-import type { BillingPort, StoragePort } from "../types";
+import type { StoragePort } from "../types";
 
 export { SupabaseDataAdapter } from "./supabase-data";
 export { ProviderModelGateway } from "./model-gateway";
+export { StripeBillingAdapter } from "./stripe-billing";
 
 /**
  * Production adapters. All are fully implemented and unit-tested against
@@ -20,16 +21,6 @@ export { ProviderModelGateway } from "./model-gateway";
  */
 const NOT_CONFIGURED =
   "This production adapter is approval-gated and not configured (PRD §17). Run with APP_MODE=local.";
-
-export class StripeBillingAdapter implements BillingPort {
-  async createCheckoutSession(): Promise<{ url: string }> {
-    throw new Error(NOT_CONFIGURED);
-  }
-
-  async createPortalSession(): Promise<{ url: string }> {
-    throw new Error(NOT_CONFIGURED);
-  }
-}
 
 export class SupabaseStorageAdapter implements StoragePort {
   async put(): Promise<void> {

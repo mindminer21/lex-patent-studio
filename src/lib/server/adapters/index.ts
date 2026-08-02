@@ -1,7 +1,7 @@
 import "server-only";
 
 import { env } from "@/lib/env";
-import type { Adapters, BillingPort } from "./types";
+import type { Adapters, BillingPort, CheckoutRequest } from "./types";
 import { LocalDataAdapter } from "./local/store";
 import { LocalModelGateway } from "./local/model-gateway";
 import { LocalStorageAdapter } from "./local/storage";
@@ -18,14 +18,27 @@ import {
  * against the private application project; billing, model gateway, and
  * storage remain approval-gated stubs that throw on use (PRD §17).
  */
+/**
+ * Local billing adapter: no Stripe account exists (PRD §17.4), so checkout
+ * and portal hand off to clearly labeled simulated pages. The simulated
+ * checkout completes by signing a synthetic `checkout.session.completed`
+ * event with the local webhook secret and running it through the SAME
+ * verification/dedupe/outbox pipeline production uses (FR-6 seam).
+ */
 class LocalBillingAdapter implements BillingPort {
-  async createCheckoutSession(): Promise<{ url: string }> {
-    // Local mode has no live billing (PRD §17.4). The UI explains this.
-    throw new Error("billing_not_available_in_local_mode");
+  async createCheckoutSession(
+    _organizationId: string,
+    request: CheckoutRequest,
+  ): Promise<{ url: string }> {
+    const params =
+      request.kind === "wallet_top_up"
+        ? `kind=wallet_top_up&amount=${request.amountCents}`
+        : `kind=subscription&plan=${encodeURIComponent(request.planId)}`;
+    return { url: `/app/billing/simulated-checkout?${params}` };
   }
 
   async createPortalSession(): Promise<{ url: string }> {
-    throw new Error("billing_not_available_in_local_mode");
+    return { url: "/app/billing/simulated-portal" };
   }
 }
 
@@ -50,7 +63,11 @@ export function getAdapters(): Adapters {
         },
         killSwitch: env.MODEL_GATEWAY_KILL_SWITCH === "1",
       }),
-      billing: new StripeBillingAdapter(),
+      billing: new StripeBillingAdapter({
+        secretKey: env.STRIPE_SECRET_KEY!,
+        appUrl: env.NEXT_PUBLIC_APP_URL,
+        getCustomerId: (organizationId) => getAdapters().data.getStripeCustomerId(organizationId),
+      }),
       storage: new SupabaseStorageAdapter(),
     };
     return cached;

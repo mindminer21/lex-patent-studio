@@ -7,6 +7,7 @@ import type { FactProvenance } from "@/lib/domain/facts";
 import type { IntakeState } from "@/lib/domain/intake";
 import type {
   AuditEventRecord,
+  BillingOutboxRecord,
   ContributorRecord,
   CounselAssignmentRecord,
   CounselAuditEventRecord,
@@ -33,6 +34,7 @@ import type {
   OrganizationRecord,
   ReservationRecord,
   SourceRecord,
+  StripeEventRecord,
   TermsAcceptanceRecord,
   UsageEventRecord,
   UserRecord,
@@ -1548,6 +1550,7 @@ export class SupabaseDataAdapter implements DataPort {
             kind: input.kind,
             amount_cents: input.amountCents,
             reservation_id: input.reservationId,
+            stripe_reference: input.stripeReference ?? null,
             note: input.note,
           })
           .select(),
@@ -1572,6 +1575,7 @@ export class SupabaseDataAdapter implements DataPort {
       kind: s(row, "kind") as LedgerEntryRecord["kind"],
       amountCents: n(row, "amount_cents"),
       reservationId: sOrNull(row, "reservation_id"),
+      stripeReference: sOrNull(row, "stripe_reference"),
       note: s(row, "note"),
       createdAt: s(row, "created_at"),
     }));
@@ -1654,6 +1658,135 @@ export class SupabaseDataAdapter implements DataPort {
       outputTokens: n(row, "output_tokens"),
       createdAt: s(row, "created_at"),
     }));
+  }
+
+  // ------------------------------------------------------------------
+  // Stripe webhook events, billing outbox, customer mapping (FR-6)
+  // ------------------------------------------------------------------
+  async insertStripeEvent(
+    input: Omit<StripeEventRecord, "processedAt" | "receivedAt">,
+  ): Promise<{ record: StripeEventRecord; created: boolean }> {
+    // Primary-key conflict = redelivery: return the stored event untouched.
+    const { data, error } = await this.from("stripe_events")
+      .insert({
+        id: input.id,
+        type: input.type,
+        payload: input.payload,
+        signature_verified: input.signatureVerified,
+      })
+      .select();
+    if (error) {
+      if (error.code === "23505") {
+        const existing = must(
+          await one<Row>(
+            this.from("stripe_events").select("*").eq("id", input.id).limit(1),
+            "stripe_events.get",
+          ),
+          "stripe_events.get",
+        );
+        return { record: this.mapStripeEvent(existing), created: false };
+      }
+      throw new Error(`supabase_adapter:stripe_events.insert:${error.message}`);
+    }
+    const row = must((data as Row[] | null)?.[0] ?? null, "stripe_events.insert");
+    return { record: this.mapStripeEvent(row), created: true };
+  }
+
+  private mapStripeEvent(row: Row): StripeEventRecord {
+    return {
+      id: s(row, "id"),
+      type: s(row, "type"),
+      payload: (row.payload ?? {}) as Record<string, unknown>,
+      signatureVerified: b(row, "signature_verified"),
+      processedAt: sOrNull(row, "processed_at"),
+      receivedAt: s(row, "received_at"),
+    };
+  }
+
+  async markStripeEventProcessed(id: string): Promise<void> {
+    const { error } = await this.from("stripe_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw new Error(`supabase_adapter:stripe_events.mark:${error.message}`);
+  }
+
+  async appendBillingOutbox(
+    input: Omit<BillingOutboxRecord, "id" | "createdAt" | "processedAt" | "attempts" | "status">,
+  ): Promise<BillingOutboxRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("billing_outbox")
+          .insert({
+            organization_id: input.organizationId,
+            stripe_event_id: input.stripeEventId,
+            action: input.action,
+            payload: input.payload,
+          })
+          .select(),
+        "billing_outbox.insert",
+      ),
+      "billing_outbox.insert",
+    );
+    return this.mapOutbox(row);
+  }
+
+  private mapOutbox(row: Row): BillingOutboxRecord {
+    return {
+      id: s(row, "id"),
+      organizationId: sOrNull(row, "organization_id"),
+      stripeEventId: sOrNull(row, "stripe_event_id"),
+      action: s(row, "action"),
+      payload: meta(row, "payload"),
+      status: s(row, "status") as BillingOutboxRecord["status"],
+      attempts: n(row, "attempts"),
+      createdAt: s(row, "created_at"),
+      processedAt: sOrNull(row, "processed_at"),
+    };
+  }
+
+  async listPendingBillingOutbox(): Promise<BillingOutboxRecord[]> {
+    const rows = await many<Row>(
+      this.from("billing_outbox")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true }),
+      "billing_outbox.list",
+    );
+    return rows.map((row) => this.mapOutbox(row));
+  }
+
+  async updateBillingOutbox(
+    id: Id,
+    patch: Partial<Pick<BillingOutboxRecord, "status" | "attempts" | "processedAt">>,
+  ): Promise<BillingOutboxRecord | null> {
+    const update: Record<string, unknown> = {};
+    if (patch.status !== undefined) update.status = patch.status;
+    if (patch.attempts !== undefined) update.attempts = patch.attempts;
+    if (patch.processedAt !== undefined) update.processed_at = patch.processedAt;
+    const row = await one<Row>(
+      this.from("billing_outbox").update(update).eq("id", id).select(),
+      "billing_outbox.update",
+    );
+    return row ? this.mapOutbox(row) : null;
+  }
+
+  async getStripeCustomerId(organizationId: Id): Promise<string | null> {
+    const row = await one<Row>(
+      this.from("wallet_accounts")
+        .select("stripe_customer_id")
+        .eq("organization_id", organizationId)
+        .limit(1),
+      "wallet.customer.get",
+    );
+    return row ? sOrNull(row, "stripe_customer_id") : null;
+  }
+
+  async setStripeCustomerId(organizationId: Id, stripeCustomerId: string): Promise<void> {
+    const { error } = await this.from("wallet_accounts").upsert({
+      organization_id: organizationId,
+      stripe_customer_id: stripeCustomerId,
+    });
+    if (error) throw new Error(`supabase_adapter:wallet.customer.set:${error.message}`);
   }
 
   async appendAuditEvent(
