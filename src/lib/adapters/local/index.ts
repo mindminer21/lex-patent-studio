@@ -28,11 +28,13 @@ import {
   type TokenWorkload,
 } from "@/lib/domain/pricing";
 import {
+  chatPostSchema,
   factCreateSchema,
   matterCreateSchema,
   matterPatchSchema,
   runRequestSchema,
   uploadSignSchema,
+  type ChatMessage,
   type ExportRecord,
   type FactEvent,
   type Matter,
@@ -54,6 +56,11 @@ import {
   type PlaybookEntry,
   type StyleProfile,
 } from "@/lib/domain/styles";
+import {
+  getRegistryEntry,
+  searchCorpus,
+  verifyQuote,
+} from "@/lib/knowledge";
 import { renderUsptoDocx } from "@/lib/export/docx";
 import { buildExportManifest, exportFileName } from "@/lib/export/manifest";
 import { CORPUS_RELEASE, DEMO_SESSION } from "./seed";
@@ -723,6 +730,122 @@ const localData: DataAdapter = {
         (e) => e.organizationId === organizationId && e.id === exportId,
       ) ?? null
     );
+  },
+
+  async listChatMessages(organizationId, matterId) {
+    return getLocalStore()
+      .chatMessages.filter(
+        (m) => m.organizationId === organizationId && m.matterId === matterId,
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  },
+
+  async postChatMessage(organizationId, matterId, input, actor) {
+    // Chat is a research surface: contributor seats cannot use it
+    // (Invariant 21 — server-side policy, not UI hiding).
+    if (!canInvokeWorkflow(actor.role, "B")) {
+      return {
+        ok: false,
+        error: `Role "${actor.role}" may not use the grounded chat (research surface).`,
+      };
+    }
+    const parsed = chatPostSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: "Invalid chat message." };
+
+    const store = getLocalStore();
+    const matter = store.matters.find(
+      (m) => m.organizationId === organizationId && m.id === matterId,
+    );
+    if (!matter) return { ok: false, error: "Matter not found in this tenant." };
+    if (matter.lifecycle !== "active") {
+      return { ok: false, error: "Chat requires an active matter." };
+    }
+
+    const asOfDate = parsed.data.asOfDate ?? new Date().toISOString().slice(0, 10);
+    const question: ChatMessage = {
+      id: newId("chat"),
+      organizationId,
+      matterId,
+      author: "user",
+      authorUserId: actor.userId,
+      body: parsed.data.question,
+      citations: [],
+      createdAt: nowIso(),
+    };
+    store.chatMessages.push(question);
+
+    // Grounded reply: REAL retrieval against the license-gated corpus with
+    // matter isolation (only this matter's thread + public corpus; no other
+    // matter's content is reachable from here by construction).
+    const search = searchCorpus({
+      query: parsed.data.question,
+      jurisdiction: "US",
+      asOfDate,
+      limit: 4,
+    });
+
+    const citations: ChatMessage["citations"] = [];
+    search.hits.forEach((hit, i) => {
+      const entry = getRegistryEntry(hit.documentId);
+      const section = entry?.sections.find((s) => s.id === hit.sectionId);
+      if (!entry || !section) return;
+      let quote = section.text.slice(0, 140);
+      const lastSpace = quote.lastIndexOf(" ");
+      if (lastSpace > 40) quote = quote.slice(0, lastSpace);
+      const verification = verifyQuote({
+        corpusDocumentId: hit.documentId,
+        quote,
+      });
+      citations.push({
+        id: `${question.id}_cit_${i + 1}`,
+        kind: "authority",
+        corpusDocumentId: hit.documentId,
+        citation: hit.citation,
+        quote,
+        verification: verification.state,
+        note: hit.authorityNote ?? hit.supersessionNote,
+      });
+    });
+
+    const replyBody = search.insufficiencyWarning
+      ? `${search.insufficiencyWarning} No authority is quoted because none was retrievable — Lex does not guess (§6.2).`
+      : `Grounded on ${citations.length} retrieved authorit${citations.length === 1 ? "y" : "ies"} as of ${asOfDate} (corpus ${CORPUS_RELEASE}). Every quotation below passed the verifier; anything beyond the quoted text is labeled analysis for practitioner evaluation — this workspace never gives advice to an end client. [SIMULATED local mode: retrieval-only reply; no model call, no charge.]`;
+
+    if (!search.insufficiencyWarning) {
+      citations.push({
+        id: `${question.id}_cit_analysis`,
+        kind: "analysis",
+        citation: "Analysis (no authority quoted)",
+        verification: "unverified",
+        note: "Labeled analysis — synthesis across the quoted authorities is drafting judgment, not quotation.",
+      });
+    }
+
+    const reply: ChatMessage = {
+      id: newId("chat"),
+      organizationId,
+      matterId,
+      author: "lex",
+      authorUserId: "system:lex",
+      body: replyBody,
+      citations,
+      asOfDate,
+      corpusRelease: CORPUS_RELEASE,
+      createdAt: nowIso(),
+    };
+    store.chatMessages.push(reply);
+
+    appendAudit(store, {
+      organizationId,
+      matterId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "chat.post",
+      subjectType: "chat_message",
+      subjectId: question.id,
+      detail: `Grounded chat exchange (${citations.filter((c) => c.kind === "authority").length} authority citation(s), as of ${asOfDate}). SIMULATED retrieval-only reply.`,
+    });
+    return { ok: true, question, reply };
   },
 
   async listStyleProfiles(organizationId) {

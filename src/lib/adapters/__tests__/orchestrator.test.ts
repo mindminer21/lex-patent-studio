@@ -409,6 +409,66 @@ describe("deterministic checker stages per workflow (FR-7, §5.1)", () => {
   });
 });
 
+describe("grounded chat (§8.2 /chat)", () => {
+  beforeEach(() => resetLocalStore());
+
+  it("a question produces a retrieval-grounded reply with verified citations", async () => {
+    const result = await localAdapters.data.postChatMessage(
+      ORG_ID,
+      "matter_thermal",
+      { question: "What is the grace period for an inventor-originated disclosure?" },
+      { userId: DEMO_SESSION.userId, role: DEMO_SESSION.role },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const authority = result.reply.citations.filter((c) => c.kind === "authority");
+    expect(authority.length).toBeGreaterThan(0);
+    for (const c of authority) expect(c.verification).toBe("verified");
+    expect(result.reply.citations.some((c) => c.kind === "analysis")).toBe(true);
+    expect(result.reply.authorUserId).toBe("system:lex");
+  });
+
+  it("refuses to guess when the record is insufficient", async () => {
+    const result = await localAdapters.data.postChatMessage(
+      ORG_ID,
+      "matter_thermal",
+      { question: "zymurgy quantum basketweaving jurisprudence" },
+      { userId: DEMO_SESSION.userId, role: DEMO_SESSION.role },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.reply.body).toMatch(/insufficient/i);
+    expect(result.reply.citations).toHaveLength(0);
+  });
+
+  it("contributor seats cannot use the research chat (Invariant 21)", async () => {
+    const result = await localAdapters.data.postChatMessage(
+      ORG_ID,
+      "matter_thermal",
+      { question: "What does 35 USC 103 require?" },
+      { userId: "user_demo_chen", role: "contributor" },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/may not use the grounded chat/i);
+  });
+
+  it("chat threads are matter-isolated", async () => {
+    await localAdapters.data.postChatMessage(
+      ORG_ID,
+      "matter_thermal",
+      { question: "Grace period for public demonstration disclosures?" },
+      { userId: DEMO_SESSION.userId, role: DEMO_SESSION.role },
+    );
+    const thermal = await localAdapters.data.listChatMessages(ORG_ID, "matter_thermal");
+    const optical = await localAdapters.data.listChatMessages(ORG_ID, "matter_optical");
+    expect(thermal.length).toBe(2);
+    expect(optical.length).toBe(0);
+    // Cross-tenant read returns nothing.
+    const otherOrg = await localAdapters.data.listChatMessages("org_other", "matter_thermal");
+    expect(otherOrg).toHaveLength(0);
+  });
+});
+
 describe("fact ledger events", () => {
   beforeEach(() => resetLocalStore());
 

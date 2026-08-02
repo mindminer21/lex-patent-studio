@@ -232,6 +232,42 @@ export async function exportDocumentAction(
   };
 }
 
+const chatActionSchema = z.object({
+  matterId: z.string().min(1),
+  question: z.string().min(3).max(2000),
+});
+
+export async function postChatMessageAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const adapters = getAdapters();
+  const session = await adapters.auth.getSession();
+  if (!session) return { ok: false, message: "Not authenticated." };
+
+  const parsed = chatActionSchema.safeParse({
+    matterId: formData.get("matterId"),
+    question: formData.get("question"),
+  });
+  if (!parsed.success) {
+    return { ok: false, message: "Enter a question (3–2000 characters)." };
+  }
+
+  const result = await adapters.data.postChatMessage(
+    session.organizationId,
+    parsed.data.matterId,
+    { question: parsed.data.question },
+    { userId: session.userId, role: session.role },
+  );
+  if (!result.ok) return { ok: false, message: result.error };
+
+  revalidatePath(`/app/matters/${parsed.data.matterId}/chat`);
+  return {
+    ok: true,
+    message: `Grounded reply posted with ${result.reply.citations.filter((c) => c.kind === "authority").length} authority citation(s).`,
+  };
+}
+
 const styleActionSchema = z.object({
   name: z.string().min(1).max(200),
   kind: z.enum(["application_drafting", "search_report", "oa_response"]),

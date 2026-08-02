@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AuditEvent,
+  ChatMessage,
   ClaimRecord,
   DeadlineObservation,
   ExportRecord,
@@ -81,6 +82,7 @@ export interface LocalStore {
   deadlines: DeadlineObservation[];
   styleProfiles: StyleProfile[];
   playbookEntries: PlaybookEntry[];
+  chatMessages: ChatMessage[];
   auditEvents: AuditEvent[];
   uploadTargets: UploadTarget[];
   exports: ExportRecord[];
@@ -110,6 +112,7 @@ function newStore(): LocalStore {
     deadlines: SEED_DEADLINES,
     styleProfiles: SEED_STYLE_PROFILES,
     playbookEntries: SEED_PLAYBOOK_ENTRIES,
+    chatMessages: [],
     auditEvents: SEED_AUDIT_EVENTS,
     uploadTargets: [],
     exports: [],

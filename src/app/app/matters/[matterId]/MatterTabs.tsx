@@ -3,13 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// §8.2 route order: chat, facts, sources, workflows, documents, claims,
+// citations, reviews, counsel, activity — plus the composer workspace.
 const TABS = [
   { slug: "", label: "Workspace" },
+  { slug: "chat", label: "Chat" },
   { slug: "facts", label: "Facts" },
   { slug: "sources", label: "Sources" },
+  { slug: "workflows", label: "Workflows" },
   { slug: "documents", label: "Documents" },
   { slug: "claims", label: "Claims" },
   { slug: "citations", label: "Citations" },
+  { slug: "reviews", label: "Reviews" },
+  { slug: "counsel", label: "Counsel" },
   { slug: "activity", label: "Activity" },
 ] as const;
 

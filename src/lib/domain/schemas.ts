@@ -503,6 +503,33 @@ export const workProductDocumentSchema = z.object({
 });
 export type WorkProductDocument = z.infer<typeof workProductDocumentSchema>;
 
+/**
+ * Grounded chat message (§8.2 /chat). Lex replies are retrieval-grounded:
+ * every authority is cited from the license-gated corpus with verification
+ * state, and analysis is labeled (Invariants 13–14 apply to chat too).
+ */
+export const chatMessageSchema = z.object({
+  id: idSchema,
+  organizationId: idSchema,
+  matterId: idSchema,
+  author: z.enum(["user", "lex"]),
+  /** Human author id for user messages; "system:lex" for grounded replies. */
+  authorUserId: z.string().min(1),
+  body: z.string().min(1).max(6000),
+  citations: z.array(workCitationSchema).default([]),
+  /** As-of date the grounded reply retrieved against. */
+  asOfDate: isoDateSchema.optional(),
+  corpusRelease: z.string().optional(),
+  createdAt: isoDateTimeSchema,
+});
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+export const chatPostSchema = z.object({
+  question: z.string().min(3).max(2000),
+  asOfDate: isoDateSchema.optional(),
+});
+export type ChatPostInput = z.infer<typeof chatPostSchema>;
+
 /** The mandatory deadline disclaimer text (Invariant 20, §5.5). */
 export const DEADLINE_DISCLAIMER =
   "Lex Patent Studio is not a docketing system — verify every date against your docket.";

@@ -1,6 +1,8 @@
 import type { Role } from "@/lib/domain/roles";
 import type {
   AuditEvent,
+  ChatMessage,
+  ChatPostInput,
   ClaimRecord,
   DeadlineObservation,
   ExportRecord,
@@ -165,6 +167,14 @@ export interface DataAdapter {
   listExports(organizationId: string, matterId?: string): Promise<ExportRecord[]>;
   getExport(organizationId: string, exportId: string): Promise<ExportRecord | null>;
   listDeadlines(organizationId: string): Promise<DeadlineObservation[]>;
+  /** Grounded chat (§8.2 /chat): matter-isolated, retrieval-grounded. */
+  listChatMessages(organizationId: string, matterId: string): Promise<ChatMessage[]>;
+  postChatMessage(
+    organizationId: string,
+    matterId: string,
+    input: ChatPostInput,
+    actor: ActorContext,
+  ): Promise<Result<{ question: ChatMessage; reply: ChatMessage }>>;
   /** Style profiles (§5.4): tenant rulesets + the platform neutral default. */
   listStyleProfiles(organizationId: string): Promise<StyleProfile[]>;
   createStyleProfile(
