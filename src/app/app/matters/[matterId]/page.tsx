@@ -10,9 +10,10 @@ import {
   VerificationBadge,
 } from "@/components/workspace/badges";
 import { Composer } from "./Composer";
+import { CancelRunButton, RunAutoRefresh } from "./RunControls";
 import { DEADLINE_DISCLAIMER } from "@/lib/domain/schemas";
 import { formatUsd } from "@/lib/domain/pricing";
-import { runProgress } from "@/lib/domain/run-state";
+import { isTerminalRunState, runProgress } from "@/lib/domain/run-state";
 
 const paneHeading =
   "m-0 mb-2 text-[0.68rem] font-bold uppercase tracking-[0.13em] text-[var(--muted)]";
@@ -52,18 +53,11 @@ export default async function MatterWorkspace({
     i.unresolvedFlags.map((flag) => ({ doc: i.documentTitle, flag })),
   );
 
-  return (
-    <div className="max-w-[1500px]">
-      <header className="mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="m-0 text-2xl font-medium tracking-tight" style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>
-          {matter.matterNumber}
-        </h1>
-        <p className="m-0 max-w-[640px] text-[0.95rem] text-[var(--muted)]">{matter.title}</p>
-        <span className="text-[0.78rem] text-[var(--muted)]">
-          {matter.jurisdiction} · {matter.technologyArea} · {matter.lifecycle} · synthetic demo matter
-        </span>
-      </header>
+  const hasActiveRuns = runs.some((r) => !isTerminalRunState(r.state));
 
+  return (
+    <div>
+      <RunAutoRefresh active={hasActiveRuns} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[290px_minmax(0,1fr)_290px]">
         {/* LEFT PANE — facts, sources, workflow state */}
         <div className="min-w-0 space-y-5">
@@ -101,6 +95,9 @@ export default async function MatterWorkspace({
                     <p className="mb-0 mt-1 text-[0.7rem] text-[var(--muted)]">
                       {run.workflowVersion} · {run.modelId}
                     </p>
+                    {!isTerminalRunState(run.state) && (
+                      <CancelRunButton runId={run.id} />
+                    )}
                   </li>
                 ))}
               </ul>
