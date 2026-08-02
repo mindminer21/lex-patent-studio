@@ -41,6 +41,8 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
+  /** FR-5 kill switch: "1" refuses every model run at the gateway. */
+  MODEL_GATEWAY_KILL_SWITCH: z.enum(["0", "1"]).default("0"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -71,6 +73,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     OPENAI_API_KEY: source.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY,
     XAI_API_KEY: source.XAI_API_KEY,
+    MODEL_GATEWAY_KILL_SWITCH: source.MODEL_GATEWAY_KILL_SWITCH,
   });
 
   if (parsed.APP_MODE === "production") {

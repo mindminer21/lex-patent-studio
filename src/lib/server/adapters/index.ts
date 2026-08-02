@@ -35,14 +35,21 @@ export function getAdapters(): Adapters {
   if (cached) return cached;
   if (env.APP_MODE === "production") {
     // loadEnv() has already fail-fasted unless every production variable is
-    // present (src/lib/env). Data-plane traffic goes to Supabase; billing
-    // and provider generation throw until approved (PRD §17).
+    // present (src/lib/env). Data-plane traffic goes to Supabase; the model
+    // gateway refuses runs for providers whose keys are absent (PRD §17).
     cached = {
       data: new SupabaseDataAdapter({
         url: env.SUPABASE_URL!,
         serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!,
       }),
-      modelGateway: new ProviderModelGateway(),
+      modelGateway: new ProviderModelGateway({
+        keys: {
+          openai: env.OPENAI_API_KEY,
+          anthropic: env.ANTHROPIC_API_KEY,
+          xai: env.XAI_API_KEY,
+        },
+        killSwitch: env.MODEL_GATEWAY_KILL_SWITCH === "1",
+      }),
       billing: new StripeBillingAdapter(),
       storage: new SupabaseStorageAdapter(),
     };
