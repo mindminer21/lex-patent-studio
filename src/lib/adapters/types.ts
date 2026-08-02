@@ -3,12 +3,20 @@ import type {
   AuditEvent,
   ClaimRecord,
   DeadlineObservation,
+  FactCreateInput,
+  FactEvent,
   Matter,
+  MatterCreateInput,
   MatterFact,
+  MatterPatchInput,
   MatterSource,
   ReviewDecisionRecord,
   ReviewItem,
   RunRequest,
+  RunStageCheckpoint,
+  UploadSignInput,
+  UploadTarget,
+  WalletReservation,
   WorkflowRun,
   WorkProductDocument,
 } from "@/lib/domain/schemas";
@@ -41,13 +49,70 @@ export interface AuthAdapter {
   getSession(): Promise<Session | null>;
 }
 
+/** Actor context for mutations; always derived from the server session. */
+export interface ActorContext {
+  userId: string;
+  role: Role;
+  note?: string;
+}
+
+export type Result<T extends object> =
+  | ({ ok: true } & T)
+  | { ok: false; error: string };
+
 export interface DataAdapter {
   listMatters(organizationId: string): Promise<Matter[]>;
   getMatter(organizationId: string, matterId: string): Promise<Matter | null>;
+  createMatter(
+    organizationId: string,
+    input: MatterCreateInput,
+    actor: ActorContext,
+  ): Promise<Result<{ matter: Matter }>>;
+  updateMatter(
+    organizationId: string,
+    matterId: string,
+    patch: MatterPatchInput,
+    actor: ActorContext,
+  ): Promise<Result<{ matter: Matter }>>;
   listFacts(organizationId: string, matterId: string): Promise<MatterFact[]>;
+  createFact(
+    organizationId: string,
+    matterId: string,
+    input: FactCreateInput,
+    actor: ActorContext,
+  ): Promise<Result<{ fact: MatterFact }>>;
+  /** Human practitioner fact approval → counsel_reviewed + fact_event. */
+  approveFact(
+    organizationId: string,
+    matterId: string,
+    factId: string,
+    actor: ActorContext,
+  ): Promise<Result<{ fact: MatterFact; event: FactEvent }>>;
+  listFactEvents(organizationId: string, matterId: string): Promise<FactEvent[]>;
   listSources(organizationId: string, matterId: string): Promise<MatterSource[]>;
+  /** FR-4 signed-upload seam. Local mode issues SIMULATED targets only. */
+  createUploadTarget(
+    organizationId: string,
+    matterId: string,
+    input: UploadSignInput,
+    actor: ActorContext,
+  ): Promise<Result<{ target: UploadTarget }>>;
   listClaims(organizationId: string, matterId: string): Promise<ClaimRecord[]>;
   listRuns(organizationId: string, matterId?: string): Promise<WorkflowRun[]>;
+  /** Run detail with per-stage checkpoints and the wallet reservation. */
+  getRun(
+    organizationId: string,
+    runId: string,
+  ): Promise<{
+    run: WorkflowRun;
+    stages: RunStageCheckpoint[];
+    reservation: WalletReservation | null;
+  } | null>;
+  cancelRun(
+    organizationId: string,
+    runId: string,
+    actor: ActorContext,
+  ): Promise<Result<{ run: WorkflowRun }>>;
   createRun(
     organizationId: string,
     request: RunRequest,
@@ -70,6 +135,15 @@ export interface DataAdapter {
     organizationId: string,
     matterId?: string,
   ): Promise<WorkProductDocument[]>;
+  getDocument(
+    organizationId: string,
+    documentId: string,
+  ): Promise<WorkProductDocument | null>;
+  /** Approval provenance for a document's export manifest (FR-8). */
+  listDecisionsForDocument(
+    organizationId: string,
+    documentId: string,
+  ): Promise<ReviewDecisionRecord[]>;
   listDeadlines(organizationId: string): Promise<DeadlineObservation[]>;
   listAuditEvents(
     organizationId: string,

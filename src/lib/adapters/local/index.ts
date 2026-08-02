@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   Adapters,
   AuthAdapter,
@@ -11,8 +10,14 @@ import {
   applyReviewDecision,
   type ReviewDecision,
 } from "@/lib/domain/review";
-import { canInvokeWorkflow } from "@/lib/domain/roles";
+import {
+  can,
+  canInvokeWorkflow,
+  type Role,
+} from "@/lib/domain/roles";
+import { canTransitionFact, isDraftableProvenance } from "@/lib/domain/provenance";
 import { effectiveTier, WORKFLOW_TIER_FLOOR } from "@/lib/domain/tiers";
+import { getWorkflowMeta } from "@/lib/domain/workflow-meta";
 import {
   estimateCharge,
   getModel,
@@ -23,34 +28,34 @@ import {
   type TokenWorkload,
 } from "@/lib/domain/pricing";
 import {
+  factCreateSchema,
+  matterCreateSchema,
+  matterPatchSchema,
   runRequestSchema,
-  type AuditEvent,
-  type ClaimRecord,
-  type DeadlineObservation,
+  uploadSignSchema,
+  type FactEvent,
   type Matter,
   type MatterFact,
-  type MatterSource,
   type ReviewDecisionRecord,
   type ReviewItem,
   type RunRequest,
+  type UploadTarget,
   type WorkflowRun,
-  type WorkProductDocument,
 } from "@/lib/domain/schemas";
+import { CORPUS_RELEASE, DEMO_SESSION } from "./seed";
 import {
-  CORPUS_RELEASE,
-  DEMO_SESSION,
-  DEMO_WALLET_BALANCE_USD,
-  SEED_AUDIT_EVENTS,
-  SEED_CLAIMS,
-  SEED_DEADLINES,
-  SEED_DECISIONS,
-  SEED_DOCUMENTS,
-  SEED_FACTS,
-  SEED_MATTERS,
-  SEED_REVIEW_ITEMS,
-  SEED_RUNS,
-  SEED_SOURCES,
-} from "./seed";
+  advanceAllRuns,
+  advanceRun,
+  cancelRun as orchestratorCancelRun,
+  startRunPlan,
+} from "./orchestrator";
+import {
+  appendAudit,
+  getLocalStore,
+  newId,
+  nowIso,
+  resetLocalStore,
+} from "./store";
 
 /**
  * Local-mode adapters: fully in-memory, zero credentials, synthetic data.
@@ -61,69 +66,13 @@ import {
  * mirrors that contract so route/server-action code is adapter-agnostic.
  */
 
-interface LocalStore {
-  matters: Matter[];
-  facts: MatterFact[];
-  sources: MatterSource[];
-  claims: ClaimRecord[];
-  runs: WorkflowRun[];
-  documents: WorkProductDocument[];
-  reviewItems: ReviewItem[];
-  decisions: ReviewDecisionRecord[];
-  deadlines: DeadlineObservation[];
-  auditEvents: AuditEvent[];
-  walletBalanceUsd: number;
-}
+export { getLocalStore, resetLocalStore } from "./store";
 
-declare global {
-  var __lexLocalStore: LocalStore | undefined;
-}
-
-function newStore(): LocalStore {
-  // Structured clone keeps seed modules immutable across dev-server reloads.
-  return structuredClone({
-    matters: SEED_MATTERS,
-    facts: SEED_FACTS,
-    sources: SEED_SOURCES,
-    claims: SEED_CLAIMS,
-    runs: SEED_RUNS,
-    documents: SEED_DOCUMENTS,
-    reviewItems: SEED_REVIEW_ITEMS,
-    decisions: SEED_DECISIONS,
-    deadlines: SEED_DEADLINES,
-    auditEvents: SEED_AUDIT_EVENTS,
-    walletBalanceUsd: DEMO_WALLET_BALANCE_USD,
-  });
-}
-
-export function getLocalStore(): LocalStore {
-  if (!globalThis.__lexLocalStore) {
-    globalThis.__lexLocalStore = newStore();
-  }
-  return globalThis.__lexLocalStore;
-}
-
-/** Test seam: reset the in-memory store to the seed state. */
-export function resetLocalStore(): void {
-  globalThis.__lexLocalStore = newStore();
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function appendAudit(
-  store: LocalStore,
-  event: Omit<AuditEvent, "id" | "createdAt">,
-): AuditEvent {
-  const full: AuditEvent = {
-    ...event,
-    id: `aud_${randomUUID()}`,
-    createdAt: nowIso(),
-  };
-  store.auditEvents.push(full);
-  return full;
-}
+const DEFAULT_WORKLOAD: TokenWorkload = {
+  inputTokens: 60_000,
+  outputTokens: 12_000,
+  variance: 0.35,
+};
 
 const localAuth: AuthAdapter = {
   async getSession(): Promise<Session | null> {
@@ -152,7 +101,7 @@ const localModelGateway: ModelGatewayAdapter = {
     return estimateCharge(model, workload);
   },
   isLive(): boolean {
-    // Hard Round-1 guarantee: no live paid API is reachable.
+    // Hard guarantee: no live paid API is reachable in local mode.
     return false;
   },
 };
@@ -172,16 +121,250 @@ const localData: DataAdapter = {
     );
   },
 
+  async createMatter(organizationId, input, actor) {
+    if (!can(actor.role, "matter.create")) {
+      return { ok: false, error: `Role "${actor.role}" may not create matters.` };
+    }
+    const parsed = matterCreateSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: "Invalid matter input." };
+
+    const store = getLocalStore();
+    if (
+      store.matters.some(
+        (m) =>
+          m.organizationId === organizationId &&
+          m.matterNumber === parsed.data.matterNumber,
+      )
+    ) {
+      return { ok: false, error: "Matter number already exists in this tenant." };
+    }
+
+    const matter: Matter = {
+      id: newId("matter"),
+      organizationId,
+      ...parsed.data,
+      lifecycle: "active",
+      synthetic: true,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+    store.matters.push(matter);
+    appendAudit(store, {
+      organizationId,
+      matterId: matter.id,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "matter.create",
+      subjectType: "matter",
+      subjectId: matter.id,
+      detail: `Created matter ${matter.matterNumber} — ${matter.title}`,
+    });
+    return { ok: true, matter };
+  },
+
+  async updateMatter(organizationId, matterId, patch, actor) {
+    if (!can(actor.role, "matter.edit")) {
+      return { ok: false, error: `Role "${actor.role}" may not edit matters.` };
+    }
+    const parsed = matterPatchSchema.safeParse(patch);
+    if (!parsed.success) return { ok: false, error: "Invalid matter patch." };
+
+    const store = getLocalStore();
+    const matter = store.matters.find(
+      (m) => m.organizationId === organizationId && m.id === matterId,
+    );
+    if (!matter) return { ok: false, error: "Matter not found in this tenant." };
+    if (parsed.data.lifecycle === "closed" && !can(actor.role, "matter.close")) {
+      return { ok: false, error: `Role "${actor.role}" may not close matters.` };
+    }
+
+    Object.assign(matter, parsed.data);
+    matter.updatedAt = nowIso();
+    appendAudit(store, {
+      organizationId,
+      matterId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "matter.edit",
+      subjectType: "matter",
+      subjectId: matterId,
+      detail: `Updated fields: ${Object.keys(parsed.data).join(", ")}`,
+    });
+    return { ok: true, matter };
+  },
+
   async listFacts(organizationId, matterId) {
     return getLocalStore().facts.filter(
       (f) => f.organizationId === organizationId && f.matterId === matterId,
     );
   },
 
+  async createFact(organizationId, matterId, input, actor) {
+    if (!can(actor.role, "facts.contribute")) {
+      return { ok: false, error: `Role "${actor.role}" may not contribute facts.` };
+    }
+    const parsed = factCreateSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: "Invalid fact input." };
+
+    const store = getLocalStore();
+    const matter = store.matters.find(
+      (m) => m.organizationId === organizationId && m.id === matterId,
+    );
+    if (!matter) return { ok: false, error: "Matter not found in this tenant." };
+
+    const fact: MatterFact = {
+      id: newId("fact"),
+      organizationId,
+      matterId,
+      category: parsed.data.category,
+      text: parsed.data.text,
+      provenance: "user_asserted",
+      sourceIds: parsed.data.sourceIds,
+      contributedBy: actor.userId,
+      version: 1,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+    store.facts.push(fact);
+
+    const event: FactEvent = {
+      id: newId("fev"),
+      organizationId,
+      matterId,
+      factId: fact.id,
+      eventType: "created",
+      toProvenance: "user_asserted",
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      createdAt: nowIso(),
+    };
+    store.factEvents.push(event);
+    appendAudit(store, {
+      organizationId,
+      matterId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "facts.contribute",
+      subjectType: "matter_fact",
+      subjectId: fact.id,
+      detail: `Added ${fact.category} fact (user_asserted)`,
+    });
+    return { ok: true, fact };
+  },
+
+  async approveFact(organizationId, matterId, factId, actor) {
+    // Invariant-16 analog for facts: counsel review is a HUMAN practitioner
+    // action; model and system actors have no path here.
+    if (!can(actor.role, "facts.approve")) {
+      return { ok: false, error: `Role "${actor.role}" may not approve facts.` };
+    }
+    const store = getLocalStore();
+    const fact = store.facts.find(
+      (f) =>
+        f.organizationId === organizationId &&
+        f.matterId === matterId &&
+        f.id === factId,
+    );
+    if (!fact) return { ok: false, error: "Fact not found in this matter." };
+
+    const from = fact.provenance;
+    if (!canTransitionFact(from, "counsel_reviewed", "human")) {
+      return {
+        ok: false,
+        error: `Fact provenance "${from}" cannot transition to counsel_reviewed.`,
+      };
+    }
+    fact.provenance = "counsel_reviewed";
+    fact.version += 1;
+    fact.updatedAt = nowIso();
+
+    const event: FactEvent = {
+      id: newId("fev"),
+      organizationId,
+      matterId,
+      factId,
+      eventType: "approved",
+      fromProvenance: from,
+      toProvenance: "counsel_reviewed",
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      note: actor.note,
+      createdAt: nowIso(),
+    };
+    store.factEvents.push(event);
+    appendAudit(store, {
+      organizationId,
+      matterId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "facts.approve",
+      subjectType: "matter_fact",
+      subjectId: factId,
+      detail: `Fact approved: ${from} → counsel_reviewed (v${fact.version})`,
+    });
+    return { ok: true, fact, event };
+  },
+
+  async listFactEvents(organizationId, matterId) {
+    return getLocalStore()
+      .factEvents.filter(
+        (e) => e.organizationId === organizationId && e.matterId === matterId,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
   async listSources(organizationId, matterId) {
     return getLocalStore().sources.filter(
       (s) => s.organizationId === organizationId && s.matterId === matterId,
     );
+  },
+
+  async createUploadTarget(organizationId, matterId, input, actor) {
+    if (!can(actor.role, "sources.upload")) {
+      return { ok: false, error: `Role "${actor.role}" may not upload sources.` };
+    }
+    const parsed = uploadSignSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid upload request.",
+      };
+    }
+    const store = getLocalStore();
+    const matter = store.matters.find(
+      (m) => m.organizationId === organizationId && m.id === matterId,
+    );
+    if (!matter) return { ok: false, error: "Matter not found in this tenant." };
+
+    // TODO(adapter seam): production issues a short-lived signed Supabase
+    // Storage URL, then routes the object through malware scan → quarantine
+    // → extraction (FR-4). Local mode issues a simulated target that no
+    // network path accepts.
+    const target: UploadTarget = {
+      id: newId("upl"),
+      organizationId,
+      matterId,
+      fileName: parsed.data.fileName,
+      contentType: parsed.data.contentType,
+      maxBytes: parsed.data.sizeBytes,
+      uploadUrl: `local-sim://uploads/${matterId}/${encodeURIComponent(parsed.data.fileName)}`,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      createdBy: actor.userId,
+      createdAt: nowIso(),
+      simulated: true,
+    };
+    store.uploadTargets.push(target);
+    appendAudit(store, {
+      organizationId,
+      matterId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: "sources.upload.sign",
+      subjectType: "upload_target",
+      subjectId: target.id,
+      detail: `Signed upload target for ${target.fileName} (${target.contentType}, ≤${target.maxBytes} bytes). SIMULATED — local mode accepts no bytes.`,
+    });
+    return { ok: true, target };
   },
 
   async listClaims(organizationId, matterId) {
@@ -193,13 +376,30 @@ const localData: DataAdapter = {
   },
 
   async listRuns(organizationId, matterId) {
-    return getLocalStore()
-      .runs.filter(
+    const store = getLocalStore();
+    advanceAllRuns(store);
+    return store.runs
+      .filter(
         (r) =>
           r.organizationId === organizationId &&
           (!matterId || r.matterId === matterId),
       )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async getRun(organizationId, runId) {
+    const store = getLocalStore();
+    advanceRun(store, runId);
+    const run = store.runs.find(
+      (r) => r.organizationId === organizationId && r.id === runId,
+    );
+    if (!run) return null;
+    const stages = store.runStages
+      .filter((s) => s.runId === runId)
+      .sort((a, b) => a.enteredAt.localeCompare(b.enteredAt));
+    const reservation =
+      store.reservations.find((r) => r.runId === runId) ?? null;
+    return { run, stages, reservation };
   },
 
   async createRun(organizationId, request, context) {
@@ -214,6 +414,9 @@ const localData: DataAdapter = {
       (m) => m.organizationId === organizationId && m.id === req.matterId,
     );
     if (!matter) return { ok: false, error: "Matter not found in this tenant." };
+    if (matter.lifecycle !== "active") {
+      return { ok: false, error: "Runs require an active matter." };
+    }
 
     // Server-side role policy — never UI hiding alone (Invariant 21).
     const tier = effectiveTier(req.workflowKey);
@@ -224,14 +427,28 @@ const localData: DataAdapter = {
       };
     }
 
+    // PRD §9.2: no drafting run starts without approved facts.
+    if (req.workflowKey === "section_draft" || req.workflowKey === "claim_tree_draft") {
+      const approved = store.facts.filter(
+        (f) =>
+          f.organizationId === organizationId &&
+          f.matterId === req.matterId &&
+          isDraftableProvenance(f.provenance),
+      );
+      if (approved.length === 0) {
+        return {
+          ok: false,
+          error:
+            "Drafting is blocked: this matter has zero counsel-reviewed facts. Approve a fact baseline first.",
+        };
+      }
+    }
+
     const model = getModel(req.modelId);
     if (!model) return { ok: false, error: "Unknown model." };
 
-    const estimate = estimateCharge(model, {
-      inputTokens: 60_000,
-      outputTokens: 12_000,
-      variance: 0.35,
-    });
+    const workload = getWorkflowMeta(req.workflowKey)?.workload ?? DEFAULT_WORKLOAD;
+    const estimate = estimateCharge(model, workload);
     if (!walletSufficient(store.walletBalanceUsd, estimate)) {
       return {
         ok: false,
@@ -240,11 +457,11 @@ const localData: DataAdapter = {
     }
 
     const run: WorkflowRun = {
-      id: `run_${randomUUID()}`,
+      id: newId("run"),
       organizationId,
       matterId: req.matterId,
       workflowKey: req.workflowKey,
-      workflowVersion: `${req.workflowKey}@local-0.1`,
+      workflowVersion: `${req.workflowKey}@local-0.2`,
       tier,
       state: "QUEUED",
       jurisdiction: req.jurisdiction,
@@ -262,6 +479,14 @@ const localData: DataAdapter = {
     };
     store.runs.push(run);
 
+    // Reservation before run (FR-9) + simulated pipeline registration.
+    startRunPlan(store, {
+      run,
+      heldUsd: estimate.highChargeUsd,
+      expectedUsd: estimate.expectedChargeUsd,
+      failAtStage: req.simulate?.failAtStage,
+    });
+
     appendAudit(store, {
       organizationId,
       matterId: req.matterId,
@@ -270,18 +495,21 @@ const localData: DataAdapter = {
       action: "run.create",
       subjectType: "workflow_run",
       subjectId: run.id,
-      detail: `Queued ${req.workflowKey} (Tier ${tier}, ${model.displayName}, est. $${estimate.lowChargeUsd.toFixed(2)}–$${estimate.highChargeUsd.toFixed(2)}). Local mode: no provider call is made.`,
+      detail: `Queued ${req.workflowKey} (Tier ${tier}, ${model.displayName}, est. $${estimate.lowChargeUsd.toFixed(2)}–$${estimate.highChargeUsd.toFixed(2)}; $${estimate.highChargeUsd.toFixed(2)} reserved). SIMULATED pipeline — no provider call is made.`,
     });
 
-    // TODO(adapter seam): production enqueues a durable job that walks the
-    // FR-7 state machine with per-stage checkpoints. Local mode leaves the
-    // run QUEUED as a visible synthetic artifact.
     return { ok: true, run };
   },
 
+  async cancelRun(organizationId, runId, actor) {
+    return orchestratorCancelRun(getLocalStore(), organizationId, runId, actor);
+  },
+
   async listReviewItems(organizationId, filter) {
-    return getLocalStore()
-      .reviewItems.filter(
+    const store = getLocalStore();
+    advanceAllRuns(store);
+    return store.reviewItems
+      .filter(
         (i) =>
           i.organizationId === organizationId &&
           (!filter?.matterId || i.matterId === filter.matterId) &&
@@ -323,7 +551,7 @@ const localData: DataAdapter = {
     }
 
     const record: ReviewDecisionRecord = {
-      id: `dec_${randomUUID()}`,
+      id: newId("dec"),
       organizationId,
       reviewItemId,
       decision,
@@ -350,11 +578,38 @@ const localData: DataAdapter = {
   },
 
   async listDocuments(organizationId, matterId) {
-    return getLocalStore().documents.filter(
+    const store = getLocalStore();
+    advanceAllRuns(store);
+    return store.documents.filter(
       (d) =>
         d.organizationId === organizationId &&
         (!matterId || d.matterId === matterId),
     );
+  },
+
+  async getDocument(organizationId, documentId) {
+    const store = getLocalStore();
+    return (
+      store.documents.find(
+        (d) => d.organizationId === organizationId && d.id === documentId,
+      ) ?? null
+    );
+  },
+
+  async listDecisionsForDocument(organizationId, documentId) {
+    const store = getLocalStore();
+    const doc = store.documents.find(
+      (d) => d.organizationId === organizationId && d.id === documentId,
+    );
+    if (!doc) return [];
+    const itemIds = new Set(
+      store.reviewItems
+        .filter((i) => i.organizationId === organizationId && i.runId === doc.runId)
+        .map((i) => i.id),
+    );
+    return store.decisions
+      .filter((d) => d.organizationId === organizationId && itemIds.has(d.reviewItemId))
+      .sort((a, b) => a.decidedAt.localeCompare(b.decidedAt));
   },
 
   async listDeadlines(organizationId) {
@@ -384,4 +639,4 @@ export const localAdapters: Adapters = {
 
 export { WORKFLOW_TIER_FLOOR };
 
-export type { ReviewDecision };
+export type { ReviewDecision, ReviewItem, Role };
