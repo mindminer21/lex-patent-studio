@@ -28,11 +28,12 @@ export default function Home() {
           <span>Lex Patent Studio</span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="#work">Workflows</a>
-          <a href="#control">Professional control</a>
-          <a href="#pricing">Pricing</a>
+          <a href="/product">Product</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/models">Models</a>
+          <a href="/security">Security</a>
         </nav>
-        <a className="button button-small" href="#pricing">Request a firm demo</a>
+        <a className="button button-small" href="/app">Open the workspace</a>
       </header>
 
       <main id="top">
@@ -84,7 +85,14 @@ export default function Home() {
         </section>
       </main>
 
-      <footer><span>Lex Patent Studio — professional patent workbench</span><span>Design-stage prototype · U.S. patent professionals</span></footer>
+      <footer>
+        <span>Lex Patent Studio — professional patent workbench</span>
+        <nav aria-label="Legal" style={{ display: "flex", gap: 20 }}>
+          <a href="/security" style={{ textDecoration: "underline", textUnderlineOffset: 4 }}>Security</a>
+          <a href="/legal" style={{ textDecoration: "underline", textUnderlineOffset: 4 }}>Legal</a>
+          <a href="/legal/ai-disclosure" style={{ textDecoration: "underline", textUnderlineOffset: 4 }}>AI disclosure</a>
+        </nav>
+      </footer>
     </div>
   );
 }
