@@ -8,7 +8,35 @@ evidence, and the exact next action. Update after every completed slice.
 **Mode:** local mode only — zero credentials, synthetic data, no external calls.
 Production adapters are refuse-to-boot seams per the env contract.
 
-**Last updated:** 2026-08-02 (Round 3 start)
+**Last updated:** 2026-08-02 (Round 3 — slices S1–S6 complete)
+
+## Round 3 progress snapshot (S1–S6 committed)
+
+- S2 e36b8e3: FR-5 knowledge system (license-gated retrieval, as-of/supersession
+  filtering, quote verifier, evidence sets in every run, critic-model
+  independence, /app/knowledge, /citations, corpus-project migration).
+  Evidence: 27 knowledge tests + orchestrator verification tests; runtime
+  smoke of both API endpoints incl. fabricated-citation failure.
+- S3 (commit after e36b8e3): SB/08, numeral-consistency, section-completeness
+  checkers + orchestrator wiring with real deliverable sections per workflow.
+  Evidence: 46 checker tests incl. known-good/known-bad fixtures.
+- S4 5cd9f1b: style profiles + hash-chained playbooks (domain, adapters,
+  §12 endpoints, /app/templates, migration 0004). Runs record
+  styleProfileVersion. Evidence: chain tamper/reorder/splice tests; smoke.
+- S5 193362f: /chat (retrieval-grounded, Invariant-21 gated, matter-isolated),
+  /workflows, /reviews, /counsel (approval-gated seam, no dead controls).
+- S6 b58831f: /portfolio + /api/portfolio/summary (practitioner-gated),
+  /usage (reservation ledger), /team, /settings (seam table), security
+  headers (CSP/HSTS/etc.) verified at runtime; nav complete — zero planned
+  placeholders remain.
+- Gate status after S6: lint 0 · tsc clean · vitest 394/394 · build ✅.
+
+Remaining slices: S7 PDF export; S8 RLS matrix vs throwaway PG16 (+0004 +
+corpus migrations); S8b production Postgres-backed DataAdapter (seam
+requirement: production adapter written + tested without credentials);
+S9 Playwright E2E; S10 eval-harness scaffolding (§14); S6b remaining §8.1
+marketing routes (/product/* subpages, /patent-counsel, /professionals,
+/teams, /resources, /login, /signup); S11 final audit + ledger close-out.
 
 ## Gate status (latest full check)
 
