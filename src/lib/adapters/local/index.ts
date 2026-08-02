@@ -62,6 +62,7 @@ import {
   verifyQuote,
 } from "@/lib/knowledge";
 import { renderUsptoDocx } from "@/lib/export/docx";
+import { exportPdfFileName, renderUsptoPdf } from "@/lib/export/pdf";
 import { buildExportManifest, exportFileName } from "@/lib/export/manifest";
 import { CORPUS_RELEASE, DEMO_SESSION } from "./seed";
 import {
@@ -673,6 +674,7 @@ const localData: DataAdapter = {
     const exportId = newId("exp");
     const generatedAt = nowIso();
     const docxBuffer = await renderUsptoDocx(doc);
+    const pdfBuffer = renderUsptoPdf(doc);
     const decisions = await localData.listDecisionsForDocument(
       organizationId,
       documentId,
@@ -682,20 +684,25 @@ const localData: DataAdapter = {
       document: doc,
       decisions,
       docxBuffer,
+      pdfBuffer,
       generatedBy: actor.userId,
       generatedAt,
     });
 
+    const fileName = exportFileName(doc);
     const record: ExportRecord = {
       id: exportId,
       organizationId,
       matterId: doc.matterId,
       documentId,
       documentVersion: doc.version,
-      fileName: exportFileName(doc),
+      fileName,
+      pdfFileName: exportPdfFileName(fileName),
       docxSha256: manifest.checksums.docxSha256,
+      pdfSha256: manifest.checksums.pdfSha256,
       manifest,
       docxBase64: docxBuffer.toString("base64"),
+      pdfBase64: pdfBuffer.toString("base64"),
       createdBy: actor.userId,
       createdAt: generatedAt,
     };

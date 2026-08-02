@@ -298,7 +298,9 @@ function exportSummary(record: {
   documentId: string;
   documentVersion: number;
   fileName: string;
+  pdfFileName: string;
   docxSha256: string;
+  pdfSha256: string;
   manifest: unknown;
   createdAt: string;
   createdBy: string;
@@ -308,11 +310,14 @@ function exportSummary(record: {
     documentId: record.documentId,
     documentVersion: record.documentVersion,
     fileName: record.fileName,
+    pdfFileName: record.pdfFileName,
     docxSha256: record.docxSha256,
+    pdfSha256: record.pdfSha256,
     manifest: record.manifest,
     createdAt: record.createdAt,
     createdBy: record.createdBy,
     downloadPath: `/api/exports/${record.id}`,
+    pdfDownloadPath: `/api/exports/${record.id}?format=pdf`,
   };
 }
 

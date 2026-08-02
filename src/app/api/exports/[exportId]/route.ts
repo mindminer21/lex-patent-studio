@@ -3,11 +3,12 @@ import { getAdapters } from "@/lib/adapters";
 import { can } from "@/lib/domain/roles";
 
 /**
- * Download an immutable export artifact (DOCX). Binary response; all other
- * API conventions (session auth, role check, generic errors) still apply.
+ * Download an immutable export artifact — DOCX by default, PDF with
+ * ?format=pdf (FR-8). Binary response; all other API conventions (session
+ * auth, role check, generic errors) still apply.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   ctx: { params: Promise<{ exportId: string }> },
 ): Promise<NextResponse> {
   try {
@@ -27,15 +28,21 @@ export async function GET(
     if (!record) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
-    const bytes = Buffer.from(record.docxBase64, "base64");
+    const wantPdf =
+      new URL(request.url).searchParams.get("format")?.toLowerCase() === "pdf";
+    const bytes = Buffer.from(
+      wantPdf ? record.pdfBase64 : record.docxBase64,
+      "base64",
+    );
     return new NextResponse(new Uint8Array(bytes), {
       status: 200,
       headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": `attachment; filename="${record.fileName}"`,
+        "Content-Type": wantPdf
+          ? "application/pdf"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename="${wantPdf ? record.pdfFileName : record.fileName}"`,
         "Content-Length": String(bytes.length),
-        "X-Export-Sha256": record.docxSha256,
+        "X-Export-Sha256": wantPdf ? record.pdfSha256 : record.docxSha256,
       },
     });
   } catch (err) {

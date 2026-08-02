@@ -10,6 +10,7 @@ import {
   USPTO_MARGINS,
 } from "@/lib/export/docx";
 import { buildExportManifest, sha256Hex } from "@/lib/export/manifest";
+import { layoutPdfPages, renderUsptoPdf } from "@/lib/export/pdf";
 import { DRAFT_WATERMARK } from "@/lib/domain/schemas";
 
 const PRACTITIONER = { userId: DEMO_SESSION.userId, role: DEMO_SESSION.role };
@@ -202,9 +203,80 @@ describe("export manifests (FR-8)", () => {
       document: (await localAdapters.data.getDocument(ORG_ID, "doc_t_memo"))!,
       decisions: [],
       docxBuffer: Buffer.from("test"),
+      pdfBuffer: Buffer.from("test-pdf"),
       generatedBy: DEMO_SESSION.userId,
       generatedAt: new Date().toISOString(),
     });
     expect(() => exportManifestSchema.parse(built)).not.toThrow();
+  });
+});
+
+describe("USPTO PDF rendering (FR-8)", () => {
+  beforeEach(() => resetLocalStore());
+
+  it("renders a valid PDF with the DRAFT watermark for unapproved documents", () => {
+    const store = getLocalStore();
+    const pending = store.documents.find((d) => d.id === "doc_t_sections")!;
+    const buffer = renderUsptoPdf(pending);
+    expect(buffer.subarray(0, 8).toString("latin1")).toBe("%PDF-1.4");
+    expect(buffer.toString("latin1")).toContain("%%EOF");
+    // Watermark text appears in the (uncompressed) content stream.
+    expect(buffer.toString("latin1")).toContain("DRAFT");
+    // Times fonts with WinAnsi encoding.
+    expect(buffer.toString("latin1")).toContain("/Times-Roman");
+    expect(buffer.toString("latin1")).toContain("/Times-Bold");
+  });
+
+  it("omits the watermark for human-approved documents", () => {
+    const store = getLocalStore();
+    const approved = store.documents.find((d) => d.id === "doc_t_memo")!;
+    expect(approved.reviewState).toBe("approved");
+    const buffer = renderUsptoPdf(approved);
+    expect(buffer.toString("latin1")).not.toContain("DRAFT");
+  });
+
+  it("is deterministic: identical input produces identical bytes", () => {
+    const store = getLocalStore();
+    const doc = store.documents.find((d) => d.id === "doc_t_sections")!;
+    const a = sha256Hex(renderUsptoPdf(doc));
+    const b = sha256Hex(renderUsptoPdf(doc));
+    expect(a).toBe(b);
+  });
+
+  it("lays out multi-page output with footer chrome on every page", () => {
+    const store = getLocalStore();
+    const doc = structuredClone(
+      store.documents.find((d) => d.id === "doc_t_sections")!,
+    );
+    // Force pagination with a long body.
+    doc.sections = Array.from({ length: 12 }, (_, i) => ({
+      heading: `Section ${i + 1}`,
+      body: "Deterministic filler sentence for pagination testing. ".repeat(30),
+      flags: [],
+    }));
+    const pages = layoutPdfPages(planDocx(doc));
+    expect(pages.length).toBeGreaterThan(1);
+    for (const [index, page] of pages.entries()) {
+      const labels = page.map((line) => line.text);
+      expect(labels).toContain(`Page ${index + 1} of ${pages.length}`);
+      // Watermark chrome present on every page (pending review state).
+      expect(labels[0]).toContain("DRAFT");
+    }
+  });
+
+  it("createExport stores both artifacts with matching manifest checksums", async () => {
+    const result = await localAdapters.data.createExport(
+      ORG_ID,
+      "doc_t_sections",
+      PRACTITIONER,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { record } = result;
+    expect(record.pdfFileName.endsWith(".pdf")).toBe(true);
+    expect(record.manifest.checksums.pdfSha256).toBe(
+      sha256Hex(Buffer.from(record.pdfBase64, "base64")),
+    );
+    expect(record.pdfSha256).toBe(record.manifest.checksums.pdfSha256);
   });
 });

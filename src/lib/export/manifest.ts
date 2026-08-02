@@ -28,6 +28,7 @@ export interface BuildManifestInput {
   document: WorkProductDocument;
   decisions: ReviewDecisionRecord[];
   docxBuffer: Buffer;
+  pdfBuffer: Buffer;
   generatedBy: string;
   generatedAt: string;
 }
@@ -53,6 +54,7 @@ export function buildExportManifest(input: BuildManifestInput): ExportManifest {
     corpusRelease: document.corpusRelease,
     checksums: {
       docxSha256: sha256Hex(input.docxBuffer),
+      pdfSha256: sha256Hex(input.pdfBuffer),
       sections: document.sections.map((s) => ({
         heading: s.heading,
         sha256: sha256Hex(s.body),

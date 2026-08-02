@@ -85,12 +85,20 @@ export default async function DocumentsPage({
                             >
                               {record.fileName}
                             </a>{" "}
+                            ·{" "}
+                            <a
+                              href={`/api/exports/${record.id}?format=pdf`}
+                              className="font-bold underline underline-offset-4"
+                            >
+                              PDF
+                            </a>{" "}
                             — v{record.documentVersion} ·{" "}
                             {record.manifest.watermark
                               ? `watermarked "${record.manifest.watermark}"`
                               : "approved export (no watermark)"}
                             <span className="block break-all text-[var(--muted)]">
-                              sha256 {record.docxSha256} · manifest locks doc hash{" "}
+                              docx sha256 {record.docxSha256} · pdf sha256{" "}
+                              {record.pdfSha256} · manifest locks doc hash{" "}
                               {record.manifest.documentVersionHash} ·{" "}
                               {record.manifest.approvals.length} approval record(s) ·{" "}
                               {record.createdAt.slice(0, 16).replace("T", " ")}Z

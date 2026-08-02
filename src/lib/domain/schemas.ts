@@ -354,6 +354,8 @@ export const exportManifestSchema = z.object({
   checksums: z.object({
     /** SHA-256 of the exported DOCX bytes. */
     docxSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    /** SHA-256 of the exported PDF bytes (deterministic renderer). */
+    pdfSha256: z.string().regex(/^[0-9a-f]{64}$/),
     /** SHA-256 per section body, in document order. */
     sections: z.array(
       z.object({
@@ -386,10 +388,14 @@ export const exportRecordSchema = z.object({
   documentId: idSchema,
   documentVersion: z.number().int().positive(),
   fileName: z.string().min(1).max(255),
+  pdfFileName: z.string().min(1).max(255),
   docxSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  pdfSha256: z.string().regex(/^[0-9a-f]{64}$/),
   manifest: exportManifestSchema,
   /** DOCX bytes, base64 (local mode keeps artifacts in memory). */
   docxBase64: z.string().min(1),
+  /** PDF bytes, base64 (same immutability guarantees as the DOCX). */
+  pdfBase64: z.string().min(1),
   createdBy: z.string().min(1),
   createdAt: isoDateTimeSchema,
 });
