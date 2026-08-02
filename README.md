@@ -30,9 +30,13 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Quality checks
 
 ```bash
-npm run lint
-npx tsc --noEmit
-npm run build
+npm run lint                     # ESLint (0 errors)
+npm run typecheck                # tsc --noEmit
+npm test                         # 409 unit/integration tests incl. the §14 eval smoke suite
+npm run build                    # production build
+npm run test:e2e                 # 14 Playwright journeys (build first)
+npm run test:rls                 # 96 pgTAP RLS/immutability assertions vs real PostgreSQL 16
+npm run test:production-adapter  # production Postgres adapter vs a throwaway database
 ```
 
 ## Repository
@@ -49,4 +53,15 @@ npm run build
 
 ## Status
 
-This repository is an initial design handoff and product shell, not production legal software. It does not authenticate users, process confidential inventions, provide legal advice, or submit filings.
+The local-mode product surface is complete and verified (see
+[`docs/LEDGER-lex.md`](docs/LEDGER-lex.md) for the full requirements
+traceability record). The app boots credential-free with synthetic data:
+license-gated knowledge retrieval with a real quote verifier, deterministic
+patent checkers, a simulated run orchestrator with reservation→settlement,
+review/approval with immutable DOCX+PDF exports, and every PRD §8 route.
+Production adapters (Postgres data layer, Supabase Auth seam, ledger
+billing, gated model gateway) are written and integration-tested against a
+real PostgreSQL 16 server; external activation (Supabase/Stripe/providers/
+deploy) remains approval-gated per PRD §20. This software never
+authenticates real users in this environment, never processes confidential
+inventions, never provides legal advice, and never submits filings.
