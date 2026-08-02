@@ -1,4 +1,5 @@
 import type { ModelRate } from "@/lib/wepatent/domain/usage";
+import { isLocalMode } from "@/lib/wepatent/env";
 import type { DraftWorkflow } from "./adapters/types";
 
 /**
@@ -13,12 +14,46 @@ export type ModelTier = {
   id: string;
   displayName: string;
   modelId: string;
-  provider: "local-synthetic";
+  provider: "local-synthetic" | "openai";
   rate: ModelRate;
   maxOutputTokens: number;
 };
 
-export const MODEL_TIERS: readonly ModelTier[] = [
+/**
+ * Production tiers resolve to real provider models present in
+ * PROVIDER_PRICE_REGISTRY. Only OpenAI is keyed/enabled today (Jeff's
+ * OpenAI-only directive, 2026-08-02); both tiers map to gpt-4.1 until
+ * additional providers are approved. Rates are the provider registry rates;
+ * retail remains provider cost x 1.50 (FR-6) applied downstream.
+ */
+const PRODUCTION_MODEL_TIERS: readonly ModelTier[] = [
+  {
+    id: "standard",
+    displayName: "Standard drafting model (GPT-4.1)",
+    modelId: "gpt-4.1",
+    provider: "openai",
+    rate: {
+      rateVersion: "2026-07-01.openai.gpt-4.1",
+      inputCentsPerMillionTokens: 200, // $2.00 / M input tokens (provider)
+      outputCentsPerMillionTokens: 800, // $8.00 / M output tokens (provider)
+    },
+    maxOutputTokens: 4_000,
+  },
+  {
+    id: "advanced",
+    displayName: "Advanced drafting model (GPT-4.1, extended output)",
+    modelId: "gpt-4.1",
+    provider: "openai",
+    rate: {
+      rateVersion: "2026-07-01.openai.gpt-4.1",
+      inputCentsPerMillionTokens: 200,
+      outputCentsPerMillionTokens: 800,
+    },
+    maxOutputTokens: 8_000,
+  },
+];
+
+const LOCAL_MODEL_TIERS: readonly ModelTier[] = [
   {
     id: "standard",
     displayName: "Standard drafting model (synthetic local)",
@@ -44,6 +79,10 @@ export const MODEL_TIERS: readonly ModelTier[] = [
     maxOutputTokens: 8_000,
   },
 ];
+
+export const MODEL_TIERS: readonly ModelTier[] = isLocalMode
+  ? LOCAL_MODEL_TIERS
+  : PRODUCTION_MODEL_TIERS;
 
 export function getModelTier(tierId: string): ModelTier | null {
   return MODEL_TIERS.find((tier) => tier.id === tierId) ?? null;
