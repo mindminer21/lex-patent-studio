@@ -205,6 +205,6 @@ What moved (repo layout only, no Lex behavior change):
 
 Verification after reconciliation (2026-08-02, this container): `npm run lint` (0 errors),
 `npx tsc --noEmit` (clean), `npm run test:lex` (409 passed, 8 skipped),
-`npm run test:rls:lex` (96 pgTAP), `npm run test:e2e:lex` (14 passed, Chromium pinned at
+`npm run test:rls:lex` (81 private + 7 corpus pgTAP assertions — identical counts to the pre-merge track/lex-app baseline run), `npm run test:e2e:lex` (14 passed, Chromium pinned at
 /opt/pw-browsers), `npm run build` (success). See the merge commit on
 `track/wepatent-app-reconciled` for the full evidence run.
