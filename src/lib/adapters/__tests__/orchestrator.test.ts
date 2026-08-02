@@ -267,6 +267,91 @@ describe("simulated orchestrator", () => {
   });
 });
 
+describe("evidence set, quote verification, and critic independence (FR-5/FR-6, Inv. 13–14)", () => {
+  beforeEach(() => resetLocalStore());
+
+  async function completedDocument(request: Partial<RunRequest> = {}) {
+    const run = await createRun(request);
+    const store = getLocalStore();
+    const start = Date.parse(store.runPlans.find((p) => p.runId === run.id)!.startedAt);
+    advanceRun(store, run.id, start + TOTAL_PIPELINE_MS + 1_000);
+    const doc = store.documents.find((d) => d.runId === run.id);
+    if (!doc) throw new Error("no document produced");
+    return { run, doc, store };
+  }
+
+  it("a completed run carries a real evidence set retrieved from the corpus", async () => {
+    const { doc } = await completedDocument();
+    const authority = doc.citations.filter((c) => c.kind === "authority");
+    expect(authority.length).toBeGreaterThan(0);
+    // Quotes are verbatim excerpts, so verification must pass.
+    for (const citation of authority) {
+      expect(citation.corpusDocumentId).toBeTruthy();
+      expect(citation.verification).toBe("verified");
+    }
+    expect(doc.verificationState).toBe("verified");
+  });
+
+  it("every legal proposition is cited or labeled analysis (Invariant 13)", async () => {
+    const { doc } = await completedDocument();
+    const analysis = doc.citations.filter((c) => c.kind === "analysis");
+    expect(analysis.length).toBeGreaterThan(0);
+    for (const entry of analysis) {
+      expect(entry.quote).toBeUndefined();
+      expect(entry.note).toMatch(/labeled analysis/i);
+    }
+  });
+
+  it("a tampered quote FAILS verification and blocks verified status (Invariant 14)", async () => {
+    const { doc, store, run } = await completedDocument({
+      simulate: { tamperQuote: true },
+    });
+    expect(doc.verificationState).toBe("failed");
+    const failed = doc.citations.filter((c) => c.verification === "failed");
+    expect(failed.length).toBeGreaterThan(0);
+    expect(failed[0].note).toMatch(/not found verbatim/i);
+    const item = store.reviewItems.find((i) => i.runId === run.id);
+    expect(item?.verificationState).toBe("failed");
+    expect(item?.unresolvedFlags.join(" ")).toMatch(/verifier failure/i);
+  });
+
+  it("skipping quote verification yields unverified — never verified for free", async () => {
+    const { doc } = await completedDocument({
+      qualityControls: {
+        sourceRequired: true,
+        secondModelReview: false,
+        quoteVerification: false,
+      },
+    });
+    expect(doc.verificationState).toBe("unverified");
+  });
+
+  it("the second-model critic differs from the drafting model (FR-6)", async () => {
+    const { doc, store, run } = await completedDocument();
+    expect(doc.criticModelId).toBeTruthy();
+    expect(doc.criticModelId).not.toBe(run.modelId);
+    const item = store.reviewItems.find((i) => i.runId === run.id);
+    expect(item?.criticModelId).toBe(doc.criticModelId);
+    expect(item?.criticReportSummary).toContain(doc.criticModelId!);
+  });
+
+  it("no critic model is recorded when second-model review is off", async () => {
+    const { doc } = await completedDocument({
+      qualityControls: {
+        sourceRequired: true,
+        secondModelReview: false,
+        quoteVerification: true,
+      },
+    });
+    expect(doc.criticModelId).toBeUndefined();
+  });
+
+  it("citations record the corpus release used by the run (§6.5 reproducibility)", async () => {
+    const { doc, run } = await completedDocument();
+    expect(doc.corpusRelease).toBe(run.corpusRelease);
+  });
+});
+
 describe("fact ledger events", () => {
   beforeEach(() => resetLocalStore());
 

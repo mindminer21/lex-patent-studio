@@ -56,6 +56,10 @@ export const ACTIONS = [
   // Exports
   "export.draft",
   "export.approved",
+  // Knowledge corpus (public-law browser/search; license-gated content).
+  // NOT granted to contributor seats: R&D seats are limited to intake, fact
+  // contribution, source upload, and status visibility (PRD §3).
+  "knowledge.search",
   // Portfolio, templates, admin
   "portfolio.view",
   "styles.manage",
@@ -87,6 +91,7 @@ const PRACTITIONER_ACTIONS: Action[] = [
   "review.decide.tierC",
   "export.draft",
   "export.approved",
+  "knowledge.search",
   "portfolio.view",
   "styles.manage",
   "playbook.publish",
@@ -115,6 +120,7 @@ export const ROLE_POLICY: Record<Role, ReadonlySet<Action>> = {
     "workflow.invoke.tierB",
     "review.decide.tierA",
     "export.draft",
+    "knowledge.search",
     "audit.view",
   ]),
   contributor: new Set<Action>([
@@ -124,7 +130,7 @@ export const ROLE_POLICY: Record<Role, ReadonlySet<Action>> = {
     "facts.contribute",
     "sources.upload",
   ]),
-  viewer: new Set<Action>(["matter.view"]),
+  viewer: new Set<Action>(["matter.view", "knowledge.search"]),
   counsel_intake: new Set<Action>(["counsel.intake.view"]),
   counsel_attorney: new Set<Action>([
     "counsel.intake.view",

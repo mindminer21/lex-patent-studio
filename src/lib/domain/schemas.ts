@@ -156,13 +156,15 @@ export const runRequestSchema = z.object({
    */
   simulate: z
     .object({
-      failAtStage: z.enum([
-        "INGESTING",
-        "RETRIEVING",
-        "GENERATING",
-        "VERIFYING",
-        "RENDERING",
-      ]),
+      failAtStage: z
+        .enum(["INGESTING", "RETRIEVING", "GENERATING", "VERIFYING", "RENDERING"])
+        .optional(),
+      /**
+       * Tamper one quotation in the evidence set so the quote verifier's
+       * failure path (Invariant 14: failure blocks "verified") is
+       * demonstrable and testable end to end.
+       */
+      tamperQuote: z.boolean().optional(),
     })
     .optional(),
 });
@@ -233,6 +235,27 @@ export const verificationStateSchema = z.enum([
   "verified",
   "failed",
 ]);
+
+/**
+ * A citation carried by work product (Invariants 13–14). Every legal
+ * proposition is either cited to a retrievable source in the run's evidence
+ * set (kind "authority") or explicitly labeled analysis (kind "analysis").
+ * Analysis entries carry no quote and are never presented as authority.
+ */
+export const workCitationSchema = z.object({
+  id: idSchema,
+  kind: z.enum(["authority", "analysis"]),
+  /** Corpus registry id for authority citations; absent for analysis labels. */
+  corpusDocumentId: idSchema.optional(),
+  /** Display citation, e.g. "35 U.S.C. § 112". */
+  citation: z.string().min(1).max(300),
+  /** Verbatim quotation checked by the quote verifier, when present. */
+  quote: z.string().max(2000).optional(),
+  verification: verificationStateSchema,
+  /** Verifier failure reason or supersession/authority note. */
+  note: z.string().max(600).optional(),
+});
+export type WorkCitation = z.infer<typeof workCitationSchema>;
 
 /** Fact ledger event (PRD §11 fact_events; FR-3 approval events). */
 export const factEventTypeSchema = z.enum([
@@ -397,6 +420,8 @@ export const reviewItemSchema = z.object({
   state: reviewStateSchema,
   verificationState: verificationStateSchema,
   criticReportSummary: z.string().max(4000).optional(),
+  /** Second-model critic identity (FR-6: differs from the drafting model). */
+  criticModelId: z.string().min(1).optional(),
   deterministicCheckFailures: z.number().int().nonnegative().default(0),
   unresolvedFlags: z.array(z.string().max(300)).default([]),
   dueDate: isoDateSchema.optional(),
@@ -456,6 +481,8 @@ export const workProductDocumentSchema = z.object({
   reviewState: reviewStateSchema,
   verificationState: verificationStateSchema,
   modelId: z.string().min(1),
+  /** Second-model critic (FR-6): must differ from the drafting model. */
+  criticModelId: z.string().min(1).optional(),
   corpusRelease: z.string().min(1),
   version: z.number().int().positive(),
   versionHash: z.string().min(8),
@@ -468,6 +495,8 @@ export const workProductDocumentSchema = z.object({
       flags: z.array(z.string().max(300)).default([]),
     }),
   ),
+  /** Evidence set: citations + labeled analysis (Invariants 13–14). */
+  citations: z.array(workCitationSchema).default([]),
   actualChargeUsd: z.number().nonnegative().optional(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,

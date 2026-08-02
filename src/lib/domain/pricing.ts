@@ -124,6 +124,26 @@ export function modelsForTier(tier: ModelTier): ModelCatalogEntry[] {
   return MODEL_CATALOG.filter((m) => m.tier === tier);
 }
 
+/**
+ * Second-model critique routing (FR-6): the critic model MUST differ from
+ * the drafting model. Preference order: same tier + different provider,
+ * then any different provider, then any different model id. Deterministic.
+ */
+export function pickCriticModel(draftingModelId: string): ModelCatalogEntry {
+  const drafting = getModel(draftingModelId);
+  const candidates = MODEL_CATALOG.filter((m) => m.id !== draftingModelId);
+  if (candidates.length === 0) {
+    throw new Error("Model catalog cannot satisfy critic-model independence.");
+  }
+  if (!drafting) return candidates[0];
+  const sameTierOtherProvider = candidates.find(
+    (m) => m.tier === drafting.tier && m.provider !== drafting.provider,
+  );
+  if (sameTierOtherProvider) return sameTierOtherProvider;
+  const otherProvider = candidates.find((m) => m.provider !== drafting.provider);
+  return otherProvider ?? candidates[0];
+}
+
 export interface TokenWorkload {
   /** Expected token counts for the run. */
   inputTokens: number;

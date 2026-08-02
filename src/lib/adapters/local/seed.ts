@@ -12,6 +12,7 @@ import type {
   WorkProductDocument,
 } from "@/lib/domain/schemas";
 import type { Session } from "@/lib/adapters/types";
+import { CORPUS_RELEASE } from "@/lib/knowledge";
 
 /**
  * SYNTHETIC demo tenant for local mode.
@@ -23,7 +24,7 @@ import type { Session } from "@/lib/adapters/types";
  */
 
 export const ORG_ID = "org_demo_meridian";
-export const CORPUS_RELEASE = "corpus-2026.07.2 (local snapshot)";
+export { CORPUS_RELEASE };
 
 export const DEMO_SESSION: Session = {
   userId: "user_demo_reyes",
@@ -424,6 +425,24 @@ export const SEED_DOCUMENTS: WorkProductDocument[] = [
         ],
       },
     ],
+    citations: [
+      {
+        id: "cit_seed_t_sections_1",
+        kind: "authority",
+        corpusDocumentId: "corp_usc_112",
+        citation: "35 U.S.C. § 112",
+        quote:
+          "The specification shall contain a written description of the invention, and of the manner and process of making and using it",
+        verification: "verified",
+      },
+      {
+        id: "cit_seed_t_sections_2",
+        kind: "analysis",
+        citation: "Analysis (no authority quoted)",
+        verification: "unverified",
+        note: "Labeled analysis — scope framing of the Summary is drafting judgment, not quoted authority.",
+      },
+    ],
     actualChargeUsd: 2.41,
     createdAt: T2,
     updatedAt: T2,
@@ -452,6 +471,18 @@ export const SEED_DOCUMENTS: WorkProductDocument[] = [
         heading: "Response-path options (Tier C decision support)",
         body: "Option 1: argue kinematic-seat limitation not taught (estoppel exposure: low). Option 2: amend claim 1 to recite opposed magnet pairs with three-point seat (scope narrowing; supports §112 basis at spec ¶[0042], synthetic). Option 3: interview first. Lex presents options and evidence only — the practitioner decides.",
         flags: [],
+      },
+    ],
+    citations: [
+      {
+        id: "cit_seed_o_matrix_1",
+        kind: "authority",
+        corpusDocumentId: "corp_usc_103",
+        citation: "35 U.S.C. § 103",
+        quote:
+          "if the differences between the claimed invention and the prior art are such that the claimed invention as a whole would have been obvious",
+        verification: "unverified",
+        note: "Verification stage in progress — quote not yet checked.",
       },
     ],
     createdAt: T2,
@@ -483,6 +514,33 @@ export const SEED_DOCUMENTS: WorkProductDocument[] = [
         flags: [],
       },
     ],
+    citations: [
+      {
+        id: "cit_seed_t_memo_1",
+        kind: "authority",
+        corpusDocumentId: "corp_usc_102",
+        citation: "35 U.S.C. § 102",
+        quote:
+          "in public use, on sale, or otherwise available to the public before the effective filing date of the claimed invention",
+        verification: "verified",
+      },
+      {
+        id: "cit_seed_t_memo_2",
+        kind: "authority",
+        corpusDocumentId: "corp_usc_102",
+        citation: "35 U.S.C. § 102(b)(1)",
+        quote:
+          "A disclosure made one year or less before the effective filing date of a claimed invention shall not be prior art",
+        verification: "verified",
+      },
+      {
+        id: "cit_seed_t_memo_3",
+        kind: "analysis",
+        citation: "Analysis (no authority quoted)",
+        verification: "unverified",
+        note: "Labeled analysis — filing-before-demonstration recommendation framing is practitioner decision support.",
+      },
+    ],
     actualChargeUsd: 6.02,
     createdAt: T1,
     updatedAt: T2,
@@ -508,6 +566,7 @@ export const SEED_DOCUMENTS: WorkProductDocument[] = [
         flags: [],
       },
     ],
+    citations: [],
     createdAt: T2,
     updatedAt: T2,
   },

@@ -9,12 +9,14 @@ import {
   estimateRunEndpoint,
   exportDocumentEndpoint,
   getRunEndpoint,
+  knowledgeSearchEndpoint,
   listDocumentsEndpoint,
   listFactsEndpoint,
   listMattersEndpoint,
   patchMatterEndpoint,
   reviewQueueEndpoint,
   signUploadEndpoint,
+  verifyQuoteEndpoint,
 } from "@/lib/api/endpoints";
 import { resetLocalStore, getLocalStore } from "@/lib/adapters/local";
 import { ORG_ID } from "@/lib/adapters/local/seed";
@@ -169,6 +171,24 @@ const CASES: MatrixCase[] = [
     name: "POST /api/review-items/:id/decision (Tier A)",
     allowed: [...PRACTITIONER_SET, "agent_operator"],
     call: (s) => decideReviewEndpoint(s, "rev_t_ids", { decision: "approve" }),
+  },
+  {
+    // Contributor (R&D) seats are limited to intake/status visibility; the
+    // license-gated corpus browser is a professional-lane surface.
+    name: "GET /api/knowledge/search",
+    allowed: [...PRACTITIONER_SET, "agent_operator", "viewer"],
+    call: (s) =>
+      knowledgeSearchEndpoint(s, { q: "obviousness", asOfDate: "2026-08-01" }),
+  },
+  {
+    name: "GET /api/knowledge/verify-quote",
+    allowed: [...PRACTITIONER_SET, "agent_operator", "viewer"],
+    call: (s) =>
+      verifyQuoteEndpoint(s, {
+        corpusDocumentId: "corp_usc_112",
+        quote:
+          "particularly pointing out and distinctly claiming the subject matter",
+      }),
   },
 ];
 

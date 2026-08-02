@@ -6,6 +6,7 @@ import {
   modelsForTier,
   providerCostUsd,
   USAGE_MARKUP,
+  pickCriticModel,
   walletSufficient,
 } from "@/lib/domain/pricing";
 
@@ -86,5 +87,27 @@ describe("cost-estimate math (FR-9: provider cost × 1.50)", () => {
       const providers = new Set(modelsForTier(tier).map((m) => m.provider));
       expect(providers.size).toBeGreaterThanOrEqual(2);
     }
+  });
+});
+
+describe("critic-model routing (FR-6: critic must differ from drafting model)", () => {
+  it("never returns the drafting model, for every catalog entry", () => {
+    for (const m of MODEL_CATALOG) {
+      expect(pickCriticModel(m.id).id).not.toBe(m.id);
+    }
+  });
+
+  it("prefers a different provider at the same tier", () => {
+    for (const m of MODEL_CATALOG) {
+      const critic = pickCriticModel(m.id);
+      expect(critic.provider).not.toBe(m.provider);
+      expect(critic.tier).toBe(m.tier);
+    }
+  });
+
+  it("is deterministic", () => {
+    expect(pickCriticModel("claude-sonnet-4-5").id).toBe(
+      pickCriticModel("claude-sonnet-4-5").id,
+    );
   });
 });

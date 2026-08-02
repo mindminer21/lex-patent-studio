@@ -6,7 +6,17 @@ import {
   type CheckFinding,
 } from "@/lib/domain/checks";
 import { isDraftableProvenance } from "@/lib/domain/provenance";
+import { pickCriticModel } from "@/lib/domain/pricing";
 import type { Role } from "@/lib/domain/roles";
+import {
+  searchCorpus,
+  verifyCitationSet,
+  QUOTE_VERIFIER,
+  QUOTE_VERIFIER_VERSION,
+  getRegistryEntry,
+  type CorpusCollection,
+} from "@/lib/knowledge";
+import type { WorkflowKey } from "@/lib/domain/tiers";
 import {
   nextRunStage,
   RUN_PIPELINE,
@@ -57,6 +67,7 @@ export interface StartPlanInput {
   heldUsd: number;
   expectedUsd: number;
   failAtStage?: RunState;
+  tamperQuote?: boolean;
   now?: number;
 }
 
@@ -70,6 +81,7 @@ export function startRunPlan(store: LocalStore, input: StartPlanInput): RunPlan 
     startedAt,
     stageDurationsMs: { ...STAGE_DURATIONS_MS },
     failAtStage: input.failAtStage,
+    tamperQuote: input.tamperQuote,
     heldUsd: input.expectedUsd > input.heldUsd ? input.expectedUsd : input.heldUsd,
     expectedUsd: input.expectedUsd,
   };
@@ -330,6 +342,94 @@ function findingFlags(findings: CheckFinding[]): string[] {
 }
 
 /**
+ * Retrieval query per workflow (local mode): drives the REAL corpus search
+ * so the evidence set, citations, and verifier results are genuine outputs
+ * of the FR-5 retrieval protocol, not hard-coded strings.
+ */
+const WORKFLOW_RETRIEVAL: Partial<
+  Record<WorkflowKey, { query: string; collection?: CorpusCollection }>
+> = {
+  section_draft: {
+    query: "written description enable specification claims invention",
+    collection: "drafting",
+  },
+  claim_tree_draft: {
+    query: "particularly pointing out distinctly claiming reasonable certainty",
+  },
+  dependent_claim_draft: {
+    query: "particularly pointing out distinctly claiming subject matter",
+  },
+  oa_analysis: {
+    query: "obvious effective filing date prima facie rationales predictable results",
+    collection: "prosecution",
+  },
+  oa_response_draft: {
+    query: "obvious rational underpinning conclusory prima facie",
+    collection: "prosecution",
+  },
+  research_memo: {
+    query: "public use printed publication grace period disclosure inventor",
+  },
+  ids_packet: {
+    query: "information disclosure statement three months material patentability",
+    collection: "prosecution",
+  },
+  search_report: {
+    query: "kinematic mount magnets seats repeatable prior art",
+  },
+  response_path_options: {
+    query: "obvious combination familiar elements predictable results",
+  },
+};
+
+const DEFAULT_RETRIEVAL_QUERY =
+  "specification claims obviousness disclosure";
+
+/**
+ * Build the run's evidence set by executing the retrieval protocol, then
+ * derive citations whose quotations are VERBATIM excerpts of retrieved
+ * section text (so the verifier has something real to verify).
+ */
+function buildEvidenceCitations(
+  run: WorkflowRun,
+  tamperQuote: boolean,
+): WorkProductDocument["citations"] {
+  const spec = WORKFLOW_RETRIEVAL[run.workflowKey];
+  const search = searchCorpus({
+    query: spec?.query ?? DEFAULT_RETRIEVAL_QUERY,
+    jurisdiction: "US",
+    asOfDate: run.asOfDate,
+    collection: spec?.collection,
+    limit: 4,
+  });
+
+  const citations: WorkProductDocument["citations"] = [];
+  search.hits.forEach((hit, i) => {
+    const doc = getRegistryEntry(hit.documentId);
+    const section = doc?.sections.find((s) => s.id === hit.sectionId);
+    if (!doc || !section) return;
+    // Verbatim excerpt: slice at a word boundary, ≥ verifier minimum length.
+    let quote = section.text.slice(0, 160);
+    const lastSpace = quote.lastIndexOf(" ");
+    if (lastSpace > 40) quote = quote.slice(0, lastSpace);
+    if (tamperQuote && i === 0) {
+      // Deterministic verifier-failure injection (local mode only).
+      quote = quote.replace(/\b(\w+)\b/, "TAMPERED-$1");
+    }
+    citations.push({
+      id: `cit_${run.id}_${i + 1}`,
+      kind: "authority",
+      corpusDocumentId: hit.documentId,
+      citation: hit.citation,
+      quote,
+      verification: "unverified",
+      note: hit.authorityNote ?? hit.supersessionNote,
+    });
+  });
+  return citations;
+}
+
+/**
  * Build the deterministic synthetic work product for a completed run and
  * register it plus its review-queue item. Model/system actors NEVER set
  * review state: the item enters pending_review and stays there until an
@@ -401,11 +501,81 @@ function finalizeRunOutputs(store: LocalStore, run: WorkflowRun, atIso: string):
     });
   }
 
+  // -------------------------------------------------------------------
+  // Evidence set: REAL retrieval (FR-5) + REAL quote verification (Inv. 14).
+  // -------------------------------------------------------------------
+  const plan = getPlan(store, run.id);
+  const citations = buildEvidenceCitations(run, plan?.tamperQuote === true);
+
+  let verificationState: WorkProductDocument["verificationState"] = "unverified";
+  if (run.qualityControls.quoteVerification) {
+    const authorityCitations = citations.filter(
+      (c) => c.kind === "authority" && c.corpusDocumentId,
+    );
+    const verification = verifyCitationSet(
+      authorityCitations.map((c) => ({
+        corpusDocumentId: c.corpusDocumentId!,
+        quote: c.quote,
+      })),
+    );
+    verification.results.forEach((result, i) => {
+      const citation = authorityCitations[i];
+      if (!citation) return;
+      citation.verification = result.state;
+      if (result.state === "failed" && result.reason) {
+        citation.note = result.reason;
+      }
+    });
+    verificationState = verification.allVerified ? "verified" : "failed";
+    if (!verification.allVerified) {
+      // Invariant 14: a verifier failure BLOCKS "verified" and flags the doc.
+      unresolvedFlags.push(
+        ...verification.failures.map(
+          (f) => `Verifier failure [${f.corpusDocumentId}]: ${f.reason}`,
+        ),
+      );
+    }
+  }
+
+  // Invariant 13 demonstration: the labeled-analysis entry carries no quote
+  // and is never presented as authority.
+  citations.push({
+    id: `cit_${run.id}_analysis`,
+    kind: "analysis",
+    citation: "Analysis (no authority quoted)",
+    verification: "unverified",
+    note: "Labeled analysis — reasoning not grounded in a quotation; a practitioner must independently evaluate it.",
+  });
+
+  sections.push({
+    heading: "Authority relied upon (evidence set)",
+    body:
+      citations
+        .filter((c) => c.kind === "authority")
+        .map(
+          (c) =>
+            `${c.citation} [${c.verification}${c.verification === "failed" ? " — blocks verified status" : ""}]`,
+        )
+        .join("; ") || "No retrievable authority in the evidence set.",
+    flags:
+      verificationState === "failed"
+        ? [
+            `Quote verifier (${QUOTE_VERIFIER}@${QUOTE_VERIFIER_VERSION}) FAILED at least one quotation — "verified" status is blocked (Invariant 14).`,
+          ]
+        : [],
+  });
+
   sections.push({
     heading: `${run.deliverableType} (simulated draft)`,
-    body: `[SIMULATED] Deterministic placeholder for "${run.deliverableType}" produced by the ${run.workflowKey} workflow. In production this section carries the model-drafted work product with per-proposition citations into the run's evidence set; every quotation passes the verifier before display as verified.`,
+    body: `[SIMULATED] Deterministic placeholder for "${run.deliverableType}" produced by the ${run.workflowKey} workflow. Every legal proposition above is either cited into the run's evidence set or explicitly labeled analysis; quotations were checked by ${QUOTE_VERIFIER}@${QUOTE_VERIFIER_VERSION} against corpus release ${run.corpusRelease}.`,
     flags: [],
   });
+
+  // FR-6: second-model critique — the critic model must differ from the
+  // drafting model. Deterministic routing via the model catalog.
+  const criticModel = run.qualityControls.secondModelReview
+    ? pickCriticModel(run.modelId)
+    : undefined;
 
   const contentFingerprint = sections.map((s) => `${s.heading}\n${s.body}`).join("\n\n");
   const versionHash = sha256Hex(`${run.id}@1:${contentFingerprint}`).slice(0, 16);
@@ -419,12 +589,14 @@ function finalizeRunOutputs(store: LocalStore, run: WorkflowRun, atIso: string):
     deliverableType: run.deliverableType,
     tier: run.tier,
     reviewState: "pending_review",
-    verificationState: run.qualityControls.quoteVerification ? "verified" : "unverified",
+    verificationState,
     modelId: run.modelId,
+    criticModelId: criticModel?.id,
     corpusRelease: run.corpusRelease,
     version: 1,
     versionHash,
     sections,
+    citations,
     actualChargeUsd: run.actualChargeUsd,
     createdAt: atIso,
     updatedAt: atIso,
@@ -441,8 +613,9 @@ function finalizeRunOutputs(store: LocalStore, run: WorkflowRun, atIso: string):
     tier: run.tier,
     state: "pending_review",
     verificationState: document.verificationState,
-    criticReportSummary: run.qualityControls.secondModelReview
-      ? "SIMULATED second-model critique: no unsupported legal propositions detected in placeholder content. (Local mode — no critic model was called.)"
+    criticModelId: criticModel?.id,
+    criticReportSummary: criticModel
+      ? `SIMULATED second-model critique by ${criticModel.displayName} (${criticModel.id}) — independent of drafting model ${run.modelId} per FR-6. No unsupported legal propositions detected in placeholder content. (Local mode — no provider was called.)`
       : undefined,
     deterministicCheckFailures: checkErrorCount,
     unresolvedFlags,

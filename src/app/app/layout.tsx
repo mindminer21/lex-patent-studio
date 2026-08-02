@@ -11,12 +11,12 @@ const NAV = [
   { href: "/app", label: "Home" },
   { href: "/app/matters", label: "Matters" },
   { href: "/app/review-queue", label: "Review queue" },
+  { href: "/app/knowledge", label: "Knowledge" },
 ] as const;
 
 const NAV_PLANNED = [
   "Portfolio",
   "Templates",
-  "Knowledge",
   "Usage",
   "Team",
   "Settings",

@@ -45,6 +45,8 @@ export interface RunPlan {
   stageDurationsMs: Partial<Record<RunState, number>>;
   /** Local-mode failure injection: the stage at which the run fails. */
   failAtStage?: RunState;
+  /** Local-mode verifier-failure injection: tamper one evidence quote. */
+  tamperQuote?: boolean;
   /** Reserved (held) amount and the deterministic settlement amount. */
   heldUsd: number;
   expectedUsd: number;

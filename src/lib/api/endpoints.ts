@@ -333,6 +333,68 @@ export async function exportDocumentEndpoint(
 }
 
 // ---------------------------------------------------------------------------
+// Knowledge: corpus search + quote verification (FR-5, §12)
+// ---------------------------------------------------------------------------
+
+const knowledgeSearchSchema = z.object({
+  q: z.string().min(2).max(200),
+  asOfDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD")
+    .optional(),
+  collection: z
+    .enum([
+      "prosecution",
+      "drafting",
+      "litigation",
+      "ptab",
+      "foreign_pct",
+      "technical_prior_art",
+    ])
+    .optional(),
+  includeInternational: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(25).optional(),
+});
+
+export async function knowledgeSearchEndpoint(
+  session: Session,
+  query: unknown,
+): Promise<ApiResult> {
+  // License-gated public corpus; contributor seats are limited to intake and
+  // status visibility (PRD §3), so knowledge.search is a distinct right.
+  if (!can(session.role, "knowledge.search")) return forbidden();
+  const parsed = knowledgeSearchSchema.safeParse(query);
+  if (!parsed.success) return badRequest("Invalid knowledge search.");
+  const { searchCorpus } = await import("@/lib/knowledge");
+  const result = searchCorpus({
+    query: parsed.data.q,
+    jurisdiction: "US",
+    asOfDate: parsed.data.asOfDate ?? new Date().toISOString().slice(0, 10),
+    collection: parsed.data.collection,
+    includeInternational: parsed.data.includeInternational,
+    limit: parsed.data.limit,
+  });
+  return apiResult(200, result);
+}
+
+const verifyQuoteSchema = z.object({
+  corpusDocumentId: z.string().min(1).max(120),
+  quote: z.string().min(1).max(2000),
+});
+
+export async function verifyQuoteEndpoint(
+  session: Session,
+  query: unknown,
+): Promise<ApiResult> {
+  if (!can(session.role, "knowledge.search")) return forbidden();
+  const parsed = verifyQuoteSchema.safeParse(query);
+  if (!parsed.success) return badRequest("Invalid quote-verification request.");
+  const { verifyQuote } = await import("@/lib/knowledge");
+  const verification = verifyQuote(parsed.data);
+  return apiResult(200, { verification });
+}
+
+// ---------------------------------------------------------------------------
 // Review queue + decisions
 // ---------------------------------------------------------------------------
 

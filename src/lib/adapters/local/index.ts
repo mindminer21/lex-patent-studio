@@ -482,6 +482,7 @@ const localData: DataAdapter = {
       heldUsd: estimate.highChargeUsd,
       expectedUsd: estimate.expectedChargeUsd,
       failAtStage: req.simulate?.failAtStage,
+      tamperQuote: req.simulate?.tamperQuote,
     });
 
     appendAudit(store, {
