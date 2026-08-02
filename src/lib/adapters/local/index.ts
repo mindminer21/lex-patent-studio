@@ -732,6 +732,20 @@ const localData: DataAdapter = {
     );
   },
 
+  async listReservations(organizationId) {
+    const store = getLocalStore();
+    advanceAllRuns(store);
+    return store.reservations
+      .filter((r) => r.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async listTeamMembers(organizationId) {
+    return getLocalStore().teamMembers.filter(
+      (m) => m.organizationId === organizationId,
+    );
+  },
+
   async listChatMessages(organizationId, matterId) {
     return getLocalStore()
       .chatMessages.filter(

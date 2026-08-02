@@ -451,6 +451,89 @@ export async function verifyQuoteEndpoint(
 }
 
 // ---------------------------------------------------------------------------
+// Portfolio summary (§12, §5.1 portfolio; role-gated)
+// ---------------------------------------------------------------------------
+
+export async function portfolioSummaryEndpoint(
+  session: Session,
+): Promise<ApiResult> {
+  if (!can(session.role, "portfolio.view")) return forbidden();
+  const org = session.organizationId;
+  const d = data();
+  const [matters, runs, reviewItems, documents, deadlines] = await Promise.all([
+    d.listMatters(org),
+    d.listRuns(org),
+    d.listReviewItems(org),
+    d.listDocuments(org),
+    d.listDeadlines(org),
+  ]);
+
+  const perMatter = await Promise.all(
+    matters.map(async (matter) => {
+      const [facts, claims, exports] = await Promise.all([
+        d.listFacts(org, matter.id),
+        d.listClaims(org, matter.id),
+        d.listExports(org, matter.id),
+      ]);
+      const approvedFacts = facts.filter(
+        (f) => f.provenance === "counsel_reviewed",
+      ).length;
+      const matterRuns = runs.filter((r) => r.matterId === matter.id);
+      const pending = reviewItems.filter(
+        (i) => i.matterId === matter.id && i.state === "pending_review",
+      );
+      const matterDeadlines = deadlines.filter((x) => x.matterId === matter.id);
+      // Deterministic coverage-gap heuristics (§5.1 portfolio) — status
+      // signals, never legal conclusions.
+      const coverageGaps: string[] = [];
+      if (approvedFacts === 0) coverageGaps.push("No approved fact baseline");
+      if (claims.length === 0) coverageGaps.push("No claim set on file");
+      if (matterRuns.length === 0) coverageGaps.push("No workflow runs yet");
+      if (
+        documents.filter((doc) => doc.matterId === matter.id).length > 0 &&
+        exports.length === 0
+      ) {
+        coverageGaps.push("Work product exists but nothing exported");
+      }
+      return {
+        matterId: matter.id,
+        matterNumber: matter.matterNumber,
+        title: matter.title,
+        lifecycle: matter.lifecycle,
+        technologyArea: matter.technologyArea,
+        facts: { total: facts.length, approved: approvedFacts },
+        claims: claims.length,
+        runs: matterRuns.length,
+        pendingReviews: pending.length,
+        pendingByTier: {
+          A: pending.filter((i) => i.tier === "A").length,
+          B: pending.filter((i) => i.tier === "B").length,
+          C: pending.filter((i) => i.tier === "C").length,
+        },
+        exports: exports.length,
+        nextObservedDate: matterDeadlines[0]?.observedDate ?? null,
+        coverageGaps,
+      };
+    }),
+  );
+
+  // Filing-priority ordering: soonest observed date first, then most
+  // pending reviews. Advisory only — never a docketing conclusion.
+  const priorities = [...perMatter].sort((a, b) => {
+    const dateA = a.nextObservedDate ?? "9999-12-31";
+    const dateB = b.nextObservedDate ?? "9999-12-31";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return b.pendingReviews - a.pendingReviews;
+  });
+
+  return apiResult(200, {
+    matters: perMatter,
+    priorities: priorities.map((m) => m.matterId),
+    disclaimerRequired: true as const,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Review queue + decisions
 // ---------------------------------------------------------------------------
 

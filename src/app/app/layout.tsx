@@ -11,11 +11,13 @@ const NAV = [
   { href: "/app", label: "Home" },
   { href: "/app/matters", label: "Matters" },
   { href: "/app/review-queue", label: "Review queue" },
+  { href: "/app/portfolio", label: "Portfolio" },
   { href: "/app/knowledge", label: "Knowledge" },
   { href: "/app/templates", label: "Templates" },
+  { href: "/app/usage", label: "Usage" },
+  { href: "/app/team", label: "Team" },
+  { href: "/app/settings", label: "Settings" },
 ] as const;
-
-const NAV_PLANNED = ["Portfolio", "Usage", "Team", "Settings"] as const;
 
 export default async function AppLayout({
   children,
@@ -64,16 +66,6 @@ export default async function AppLayout({
                 >
                   {item.label}
                 </Link>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-6 mb-1 px-2 text-[0.62rem] font-bold uppercase tracking-[0.13em] text-[var(--muted)]">
-            Planned (Round 2+)
-          </p>
-          <ul className="m-0 list-none space-y-1 p-0">
-            {NAV_PLANNED.map((label) => (
-              <li key={label} className="px-2 py-1.5 text-[0.85rem] text-[var(--muted)]">
-                {label} <span className="sr-only">(planned, not yet available)</span>
               </li>
             ))}
           </ul>

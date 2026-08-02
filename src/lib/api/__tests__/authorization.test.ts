@@ -13,6 +13,7 @@ import {
   knowledgeSearchEndpoint,
   listPlaybookEndpoint,
   listStyleProfilesEndpoint,
+  portfolioSummaryEndpoint,
   publishPlaybookEndpoint,
   listDocumentsEndpoint,
   listFactsEndpoint,
@@ -193,6 +194,13 @@ const CASES: MatrixCase[] = [
         quote:
           "particularly pointing out and distinctly claiming the subject matter",
       }),
+  },
+  {
+    // Portfolio visibility is a practitioner right (FR-2); operators,
+    // contributors, and viewers see single matters only.
+    name: "GET /api/portfolio/summary",
+    allowed: PRACTITIONER_SET,
+    call: (s) => portfolioSummaryEndpoint(s),
   },
   {
     name: "GET /api/style-profiles",

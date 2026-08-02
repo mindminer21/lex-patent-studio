@@ -8,6 +8,7 @@ import type {
   MatterSource,
   ReviewDecisionRecord,
   ReviewItem,
+  TeamMember,
   WorkflowRun,
   WorkProductDocument,
 } from "@/lib/domain/schemas";
@@ -914,3 +915,56 @@ const pb2 = seedPlaybookEntry(
 );
 
 export const SEED_PLAYBOOK_ENTRIES: PlaybookEntry[] = [pb1, pb2];
+
+// ---------------------------------------------------------------------------
+// Team roster (FR-2). Synthetic seats covering the professional-lane roles;
+// invitations/email are approval-gated and not simulated.
+// ---------------------------------------------------------------------------
+
+export const SEED_TEAM: TeamMember[] = [
+  {
+    userId: "user_demo_reyes",
+    organizationId: ORG_ID,
+    displayName: "D. Reyes (synthetic practitioner)",
+    email: "d.reyes@demo.invalid",
+    role: "practitioner_admin",
+    mfaEnrolled: true,
+    joinedAt: T0,
+  },
+  {
+    userId: "user_demo_okafor",
+    organizationId: ORG_ID,
+    displayName: "A. Okafor (synthetic practitioner)",
+    email: "a.okafor@demo.invalid",
+    role: "practitioner",
+    mfaEnrolled: true,
+    joinedAt: T0,
+  },
+  {
+    userId: "user_demo_ortiz",
+    organizationId: ORG_ID,
+    displayName: "M. Ortiz (synthetic agent/paralegal)",
+    email: "m.ortiz@demo.invalid",
+    role: "agent_operator",
+    mfaEnrolled: false,
+    joinedAt: T1,
+  },
+  {
+    userId: "user_demo_chen",
+    organizationId: ORG_ID,
+    displayName: "L. Chen (synthetic R&D contributor)",
+    email: "l.chen@demo.invalid",
+    role: "contributor",
+    mfaEnrolled: false,
+    joinedAt: T1,
+  },
+  {
+    userId: "user_demo_voss",
+    organizationId: ORG_ID,
+    displayName: "K. Voss (synthetic viewer seat)",
+    email: "k.voss@demo.invalid",
+    role: "viewer",
+    mfaEnrolled: false,
+    joinedAt: T2,
+  },
+];

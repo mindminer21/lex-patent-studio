@@ -530,6 +530,19 @@ export const chatPostSchema = z.object({
 });
 export type ChatPostInput = z.infer<typeof chatPostSchema>;
 
+/** Team member (FR-2 seats/roles; /team roster). */
+export const teamMemberSchema = z.object({
+  userId: z.string().min(1),
+  organizationId: idSchema,
+  displayName: z.string().min(1).max(200),
+  email: z.string().email().max(320),
+  role: roleSchema,
+  /** FR-1: MFA required for owner/practitioner_admin at GA. */
+  mfaEnrolled: z.boolean(),
+  joinedAt: isoDateTimeSchema,
+});
+export type TeamMember = z.infer<typeof teamMemberSchema>;
+
 /** The mandatory deadline disclaimer text (Invariant 20, §5.5). */
 export const DEADLINE_DISCLAIMER =
   "Lex Patent Studio is not a docketing system — verify every date against your docket.";

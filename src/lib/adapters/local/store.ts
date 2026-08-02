@@ -3,6 +3,7 @@ import type {
   AuditEvent,
   ChatMessage,
   ClaimRecord,
+  TeamMember,
   DeadlineObservation,
   ExportRecord,
   FactEvent,
@@ -23,6 +24,7 @@ import {
   DEMO_WALLET_BALANCE_USD,
   SEED_PLAYBOOK_ENTRIES,
   SEED_STYLE_PROFILES,
+  SEED_TEAM,
   SEED_AUDIT_EVENTS,
   SEED_CLAIMS,
   SEED_DEADLINES,
@@ -83,6 +85,7 @@ export interface LocalStore {
   styleProfiles: StyleProfile[];
   playbookEntries: PlaybookEntry[];
   chatMessages: ChatMessage[];
+  teamMembers: TeamMember[];
   auditEvents: AuditEvent[];
   uploadTargets: UploadTarget[];
   exports: ExportRecord[];
@@ -113,6 +116,7 @@ function newStore(): LocalStore {
     styleProfiles: SEED_STYLE_PROFILES,
     playbookEntries: SEED_PLAYBOOK_ENTRIES,
     chatMessages: [],
+    teamMembers: SEED_TEAM,
     auditEvents: SEED_AUDIT_EVENTS,
     uploadTargets: [],
     exports: [],

@@ -17,6 +17,7 @@ import type {
   ReviewItem,
   RunRequest,
   RunStageCheckpoint,
+  TeamMember,
   UploadSignInput,
   UploadTarget,
   WalletReservation,
@@ -167,6 +168,10 @@ export interface DataAdapter {
   listExports(organizationId: string, matterId?: string): Promise<ExportRecord[]>;
   getExport(organizationId: string, exportId: string): Promise<ExportRecord | null>;
   listDeadlines(organizationId: string): Promise<DeadlineObservation[]>;
+  /** Reservation→settlement ledger view (FR-9; /usage surface). */
+  listReservations(organizationId: string): Promise<WalletReservation[]>;
+  /** Team roster (FR-2 seats/roles). Invitations are approval-gated. */
+  listTeamMembers(organizationId: string): Promise<TeamMember[]>;
   /** Grounded chat (§8.2 /chat): matter-isolated, retrieval-grounded. */
   listChatMessages(organizationId: string, matterId: string): Promise<ChatMessage[]>;
   postChatMessage(
