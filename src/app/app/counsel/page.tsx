@@ -9,11 +9,7 @@ import {
 import { isLocalMode } from "@/lib/env";
 import { getAdapters } from "@/lib/server/adapters";
 import { requireOnboarded } from "@/lib/server/session";
-import {
-  createCounselRequestAction,
-  requesterCounselAction,
-  simulateCounselAdminAction,
-} from "./actions";
+import { createCounselRequestAction, requesterCounselAction } from "./actions";
 
 const ACTION_LABELS: Record<CounselRequestAction, string> = {
   submit: "Submit conflict-intake request",
@@ -51,6 +47,7 @@ export default async function CounselPage({
   const events = request
     ? await data.listCounselRequestEvents(context.organization.id, request.id)
     : [];
+  const engagement = request ? await data.getEngagementByRequest(request.id) : null;
   const status = request ? representationStatus(request.state) : null;
   const userActions = request
     ? availableActions(request.state, { kind: "user", role: context.membership.role })
@@ -174,6 +171,18 @@ export default async function CounselPage({
                 ))}
               </div>
             )}
+            {engagement && (
+              <>
+                <h3>Engagement</h3>
+                <p>
+                  {engagement.lawFirmName}:{" "}
+                  {engagement.signedAt
+                    ? `signed ${new Date(engagement.signedAt).toLocaleDateString()} (${engagement.signedDocumentRef})`
+                    : "offered — you are not represented until the engagement letter is signed"}
+                  . Scope: {engagement.scopeSummary}
+                </p>
+              </>
+            )}
             <h3>History</h3>
             <ul className="wp-timeline">
               {events.map((event) => (
@@ -208,44 +217,16 @@ export default async function CounselPage({
 
             {isLocalMode && (
               <div className="wp-card" style={{ marginTop: 22, borderStyle: "dashed" }}>
-                <p className="venture-kicker">Local preview only — counsel-lane simulation</p>
-                <h3>Simulate the counsel administration lane</h3>
+                <p className="venture-kicker">Local preview — counsel administration lane</p>
+                <h3>Counsel-side steps happen in the separate /counsel lane</h3>
                 <p className="hint">
-                  In production these actions live in the separate connected-counsel
-                  administration app (routes under /counsel) restricted to counsel roles. This
-                  panel exercises the same state-machine guards for demonstration.
+                  Conflict review, accept/decline, engagement, and matter conversion live in the
+                  connected-counsel administration lane (PRD §6.3), restricted to counsel roles
+                  with a separate audit trail. In this local preview, sign in as{" "}
+                  <code>counsel-intake@wepatent.local</code> or{" "}
+                  <code>counsel-attorney@wepatent.local</code> to exercise it against the same
+                  state-machine guards.
                 </p>
-                <form action={simulateCounselAdminAction} className="wp-form">
-                  <input type="hidden" name="requestId" value={request.id} />
-                  <div className="field">
-                    <label htmlFor="sim-role">Acting role</label>
-                    <select id="sim-role" name="role" defaultValue="counsel_intake">
-                      <option value="counsel_intake">counsel_intake</option>
-                      <option value="counsel_attorney">counsel_attorney</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="sim-action">Action</label>
-                    <select id="sim-action" name="action" defaultValue="begin_conflict_review">
-                      {COUNSEL_REQUEST_TRANSITIONS.map((transition) => (
-                        <option key={transition.action} value={transition.action}>
-                          {ACTION_LABELS[transition.action]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="sim-evidence">
-                      Evidence reference (required to record a signed engagement)
-                    </label>
-                    <input id="sim-evidence" name="evidenceRef" placeholder="e.g. engagement-letter-2026-08-01.pdf" />
-                  </div>
-                  <div>
-                    <button className="button button-secondary" type="submit">
-                      Apply simulated counsel action
-                    </button>
-                  </div>
-                </form>
               </div>
             )}
           </div>

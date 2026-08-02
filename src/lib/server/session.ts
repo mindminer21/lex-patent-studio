@@ -7,6 +7,7 @@ import { needsReacceptance } from "@/lib/domain/clickwrap";
 import { env } from "@/lib/env";
 import { getAdapters } from "./adapters";
 import type {
+  CounselAssignmentRecord,
   MembershipRecord,
   OrganizationRecord,
   TermsAcceptanceRecord,
@@ -123,6 +124,35 @@ export async function requireOnboarded(): Promise<OnboardedContext> {
     redirect("/app/terms");
   }
   return { ...context, acceptance };
+}
+
+export type CounselContext = {
+  user: UserRecord;
+  assignment: CounselAssignmentRecord;
+};
+
+/**
+ * Connected-counsel administration lane (PRD §6.3): a separate role surface
+ * with its own audit policy. Counsel roles are NEVER granted through
+ * organization membership or invitations — only through the counsel
+ * assignment table written by trusted operator process.
+ */
+export async function getCounselContext(): Promise<CounselContext | null> {
+  const userId = await getSessionUserId();
+  if (!userId) return null;
+  const { data } = getAdapters();
+  const user = await data.getUserById(userId);
+  if (!user) return null;
+  const assignment = await data.getCounselAssignment(user.id);
+  if (!assignment) return null;
+  return { user, assignment };
+}
+
+/** Redirects non-counsel sessions away from /counsel/** routes. */
+export async function requireCounsel(): Promise<CounselContext> {
+  const context = await getCounselContext();
+  if (!context) redirect("/wepatent/sign-in?error=counsel_only");
+  return context;
 }
 
 /** Privacy-preserving IP hash for the clickwrap audit record. */

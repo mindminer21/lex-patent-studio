@@ -536,6 +536,10 @@ export interface DataPort {
     input: Omit<FilingPackageRecord, "id" | "createdAt">,
   ): Promise<FilingPackageRecord>;
   listFilingPackages(matterId: Id): Promise<FilingPackageRecord[]>;
+  updateFilingPackageStatus(
+    packageId: Id,
+    status: FilingPackageStatus,
+  ): Promise<FilingPackageRecord | null>;
   appendCounselAuditEvent(
     input: Omit<CounselAuditEventRecord, "id" | "createdAt">,
   ): Promise<CounselAuditEventRecord>;

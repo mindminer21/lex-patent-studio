@@ -695,6 +695,16 @@ export class LocalDataAdapter implements DataPort {
     return [...tables().filingPackages.values()].filter((p) => p.matterId === matterId);
   }
 
+  async updateFilingPackageStatus(
+    packageId: Id,
+    status: FilingPackageRecord["status"],
+  ): Promise<FilingPackageRecord | null> {
+    const record = tables().filingPackages.get(packageId);
+    if (!record) return null;
+    record.status = status;
+    return record;
+  }
+
   async appendCounselAuditEvent(
     input: Omit<CounselAuditEventRecord, "id" | "createdAt">,
   ): Promise<CounselAuditEventRecord> {

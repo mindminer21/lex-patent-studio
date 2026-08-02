@@ -5,7 +5,6 @@ import {
   COUNSEL_REQUEST_ACTIONS,
   type CounselRequestAction,
 } from "@/lib/domain/counsel-request";
-import { isLocalMode } from "@/lib/env";
 import { requireOnboarded } from "@/lib/server/session";
 import {
   createCounselRequest,
@@ -51,37 +50,3 @@ export async function requesterCounselAction(formData: FormData): Promise<void> 
   redirect(`/app/counsel${result.ok ? "" : `?error=${result.error}`}`);
 }
 
-/**
- * LOCAL MODE ONLY: simulates the separate connected-counsel administration
- * lane (PRD §6.3) so the full state machine can be exercised without a
- * counsel deployment. It still runs through the same domain guards with an
- * explicit counsel role — it is a stand-in for the counsel UI, not a
- * bypass. Disabled outside local mode.
- */
-export async function simulateCounselAdminAction(formData: FormData): Promise<void> {
-  if (!isLocalMode) {
-    redirect("/app/counsel?error=not_available");
-  }
-  const context = await requireOnboarded();
-  const action = String(formData.get("action") ?? "") as CounselRequestAction;
-  const requestId = String(formData.get("requestId") ?? "");
-  const role = String(formData.get("role") ?? "");
-  const evidenceRef = String(formData.get("evidenceRef") ?? "") || undefined;
-  if (
-    !COUNSEL_REQUEST_ACTIONS.includes(action) ||
-    (role !== "counsel_intake" && role !== "counsel_attorney")
-  ) {
-    redirect("/app/counsel?error=unknown_action");
-  }
-  const counselRole = role as "counsel_intake" | "counsel_attorney";
-  const result = await performCounselAction({
-    organizationId: context.organization.id,
-    requestId,
-    action,
-    actor: { kind: "user", role: counselRole },
-    actorUserId: `local-simulated-${counselRole}`,
-    actorRole: counselRole,
-    evidenceRef,
-  });
-  redirect(`/app/counsel${result.ok ? "" : `?error=${result.error}`}`);
-}

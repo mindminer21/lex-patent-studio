@@ -1451,6 +1451,25 @@ export class SupabaseDataAdapter implements DataPort {
     }));
   }
 
+  async updateFilingPackageStatus(
+    packageId: Id,
+    status: FilingPackageRecord["status"],
+  ): Promise<FilingPackageRecord | null> {
+    const row = await one<Row>(
+      this.from("filing_packages").update({ status }).eq("id", packageId).select(),
+      "filing_packages.updateStatus",
+    );
+    if (!row) return null;
+    return {
+      id: s(row, "id"),
+      organizationId: s(row, "organization_id"),
+      matterId: s(row, "matter_id"),
+      description: s(row, "description"),
+      status: s(row, "status") as FilingPackageRecord["status"],
+      createdAt: s(row, "created_at"),
+    };
+  }
+
   async appendCounselAuditEvent(
     input: Omit<CounselAuditEventRecord, "id" | "createdAt">,
   ): Promise<CounselAuditEventRecord> {
