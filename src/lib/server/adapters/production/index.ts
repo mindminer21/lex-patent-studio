@@ -2,6 +2,7 @@ export { SupabaseDataAdapter } from "./supabase-data";
 export { ProviderModelGateway } from "./model-gateway";
 export { StripeBillingAdapter } from "./stripe-billing";
 export { SupabaseStorageAdapter } from "./supabase-storage";
+export { SupabaseCorpusAdapter } from "./corpus";
 
 /**
  * Production adapters. All are fully implemented and unit-tested against

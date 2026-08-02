@@ -510,6 +510,10 @@ export interface DataPort {
   ): Promise<DraftVersionRecord>;
   listDraftVersions(organizationId: Id, draftId: Id): Promise<DraftVersionRecord[]>;
   getDraftVersion(organizationId: Id, versionId: Id): Promise<DraftVersionRecord | null>;
+  createDraftCitation(
+    input: Omit<DraftCitationRecord, "id" | "createdAt">,
+  ): Promise<DraftCitationRecord>;
+  listDraftCitations(organizationId: Id, draftVersionId: Id): Promise<DraftCitationRecord[]>;
 
   // Exports
   createExport(
@@ -637,6 +641,41 @@ export interface DataPort {
   listAuditEvents(organizationId: Id): Promise<AuditEventRecord[]>;
 }
 
+/**
+ * Allowlisted public-corpus material (§7.4 step 4). Snippets come from the
+ * SEPARATE public-corpus Supabase project, carry license provenance, and
+ * are excerpt-bounded (legal memo §6: public ≠ public domain; link/cite
+ * rather than republish).
+ */
+export interface CorpusSnippet {
+  authority: string;
+  citation: string;
+  title: string;
+  canonicalUrl: string;
+  /** "Current as of" date for the version the excerpt came from. */
+  effectiveDate: string | null;
+  licenseNote: string;
+  /** Bounded excerpt — never a substantial passage. */
+  excerpt: string;
+}
+
+export interface CorpusPort {
+  /** Returns only license-allowlisted, excerpt-bounded material. */
+  searchAllowlisted(query: string, limit: number): Promise<CorpusSnippet[]>;
+}
+
+/** §7.4 step 6: draft versions are linked to source/fact/corpus references. */
+export interface DraftCitationRecord {
+  id: Id;
+  organizationId: Id;
+  draftVersionId: Id;
+  sourceId: Id | null;
+  factId: Id | null;
+  /** Human-readable reference, e.g. "corpus:35 U.S.C. §101 (as of 2026-01-01)". */
+  locator: string;
+  createdAt: string;
+}
+
 export interface ModelGenerationRequest {
   workflow: DraftWorkflow;
   modelId: string;
@@ -644,6 +683,7 @@ export interface ModelGenerationRequest {
   facts: InventionFactRecord[];
   contributors: ContributorRecord[];
   sources: SourceRecord[];
+  corpusSnippets: CorpusSnippet[];
   maxOutputTokens: number;
 }
 
@@ -692,4 +732,5 @@ export interface Adapters {
   modelGateway: ModelGatewayPort;
   billing: BillingPort;
   storage: StoragePort;
+  corpus: CorpusPort;
 }

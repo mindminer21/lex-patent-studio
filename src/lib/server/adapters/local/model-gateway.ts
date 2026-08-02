@@ -91,6 +91,19 @@ export class LocalModelGateway implements ModelGatewayPort {
       }
     }
 
+    if (request.corpusSnippets.length > 0) {
+      lines.push("");
+      lines.push("## Public authority references (allowlisted corpus)");
+      lines.push(
+        "These citations are organizational reference points from the public corpus. They are not legal analysis; counsel decides what applies.",
+      );
+      for (const snippet of request.corpusSnippets) {
+        lines.push(
+          `- ${snippet.citation} — ${snippet.title} (current as of ${snippet.effectiveDate ?? "n/a"}): ${snippet.canonicalUrl}`,
+        );
+      }
+    }
+
     lines.push("");
     lines.push("---");
     lines.push(

@@ -2,12 +2,14 @@ import "server-only";
 
 import { env } from "@/lib/env";
 import type { Adapters, BillingPort, CheckoutRequest } from "./types";
+import { LocalCorpusAdapter } from "./local/corpus";
 import { LocalDataAdapter } from "./local/store";
 import { LocalModelGateway } from "./local/model-gateway";
 import { LocalStorageAdapter } from "./local/storage";
 import {
   ProviderModelGateway,
   StripeBillingAdapter,
+  SupabaseCorpusAdapter,
   SupabaseDataAdapter,
   SupabaseStorageAdapter,
 } from "./production";
@@ -72,6 +74,12 @@ export function getAdapters(): Adapters {
         url: env.SUPABASE_URL!,
         serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!,
       }),
+      // SEPARATE corpus project credentials (PRD §5.8) — loadEnv refuses
+      // production boot when they match the private project.
+      corpus: new SupabaseCorpusAdapter({
+        url: env.CORPUS_SUPABASE_URL!,
+        serviceRoleKey: env.CORPUS_SUPABASE_SERVICE_ROLE_KEY!,
+      }),
     };
     return cached;
   }
@@ -80,6 +88,7 @@ export function getAdapters(): Adapters {
     modelGateway: new LocalModelGateway(),
     billing: new LocalBillingAdapter(),
     storage: new LocalStorageAdapter(),
+    corpus: new LocalCorpusAdapter(),
   };
   return cached;
 }

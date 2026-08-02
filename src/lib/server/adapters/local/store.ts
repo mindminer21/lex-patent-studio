@@ -11,6 +11,7 @@ import type {
   CounselRequestRecord,
   DataPort,
   DisclosureEventRecord,
+  DraftCitationRecord,
   DraftRecord,
   DraftVersionRecord,
   EngagementRecord,
@@ -73,6 +74,7 @@ type Tables = {
   counselAssignments: Map<Id, CounselAssignmentRecord>;
   counselAuditEvents: CounselAuditEventRecord[];
   exportArtifacts: ExportArtifactRecord[];
+  draftCitations: DraftCitationRecord[];
   stripeEvents: Map<string, StripeEventRecord>;
   billingOutbox: Map<Id, BillingOutboxRecord>;
   stripeCustomers: Map<Id, string>;
@@ -108,6 +110,7 @@ function emptyTables(): Tables {
     counselAssignments: new Map(),
     counselAuditEvents: [],
     exportArtifacts: [],
+    draftCitations: [],
     stripeEvents: new Map(),
     billingOutbox: new Map(),
     stripeCustomers: new Map(),
@@ -308,9 +311,11 @@ export class LocalDataAdapter implements DataPort {
     for (const [id, source] of t.sources) {
       if (source.inventionId === inventionId) t.sources.delete(id);
     }
-    for (const [id, version] of t.draftVersions) {
-      if (draftIds.has(version.draftId)) t.draftVersions.delete(id);
-    }
+    const versionIds = new Set(
+      [...t.draftVersions.values()].filter((v) => draftIds.has(v.draftId)).map((v) => v.id),
+    );
+    for (const id of versionIds) t.draftVersions.delete(id);
+    t.draftCitations = t.draftCitations.filter((c) => !versionIds.has(c.draftVersionId));
     for (const id of draftIds) t.drafts.delete(id);
     t.exportArtifacts = t.exportArtifacts.filter((a) => !exportIds.has(a.exportId));
     for (const id of exportIds) t.exports.delete(id);
@@ -467,6 +472,23 @@ export class LocalDataAdapter implements DataPort {
     const record = tables().draftVersions.get(versionId);
     if (!record || record.organizationId !== organizationId) return null;
     return record;
+  }
+
+  async createDraftCitation(
+    input: Omit<DraftCitationRecord, "id" | "createdAt">,
+  ): Promise<DraftCitationRecord> {
+    const record: DraftCitationRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().draftCitations.push(record);
+    return record;
+  }
+
+  async listDraftCitations(
+    organizationId: Id,
+    draftVersionId: Id,
+  ): Promise<DraftCitationRecord[]> {
+    return tables().draftCitations.filter(
+      (c) => c.organizationId === organizationId && c.draftVersionId === draftVersionId,
+    );
   }
 
   async createExport(

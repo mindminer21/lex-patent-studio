@@ -15,6 +15,7 @@ import type {
   CounselRequestRecord,
   DataPort,
   DisclosureEventRecord,
+  DraftCitationRecord,
   DraftRecord,
   DraftVersionRecord,
   EngagementRecord,
@@ -923,6 +924,50 @@ export class SupabaseDataAdapter implements DataPort {
       "draft_versions.get",
     );
     return row ? mapDraftVersion(row) : null;
+  }
+
+  async createDraftCitation(
+    input: Omit<DraftCitationRecord, "id" | "createdAt">,
+  ): Promise<DraftCitationRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("draft_citations")
+          .insert({
+            organization_id: input.organizationId,
+            draft_version_id: input.draftVersionId,
+            source_id: input.sourceId,
+            fact_id: input.factId,
+            locator: input.locator,
+          })
+          .select(),
+        "draft_citations.insert",
+      ),
+      "draft_citations.insert",
+    );
+    return { ...input, id: s(row, "id"), createdAt: s(row, "created_at") };
+  }
+
+  async listDraftCitations(
+    organizationId: Id,
+    draftVersionId: Id,
+  ): Promise<DraftCitationRecord[]> {
+    const rows = await many<Row>(
+      this.from("draft_citations")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("draft_version_id", draftVersionId)
+        .order("created_at", { ascending: true }),
+      "draft_citations.list",
+    );
+    return rows.map((row) => ({
+      id: s(row, "id"),
+      organizationId: s(row, "organization_id"),
+      draftVersionId: s(row, "draft_version_id"),
+      sourceId: sOrNull(row, "source_id"),
+      factId: sOrNull(row, "fact_id"),
+      locator: s(row, "locator"),
+      createdAt: s(row, "created_at"),
+    }));
   }
 
   // ------------------------------------------------------------------

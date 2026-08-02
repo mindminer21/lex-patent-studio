@@ -52,6 +52,9 @@ export default async function DraftsPage({
   const selectedVersion = versionId
     ? await data.getDraftVersion(context.organization.id, versionId)
     : null;
+  const selectedCitations = selectedVersion
+    ? await data.listDraftCitations(context.organization.id, selectedVersion.id)
+    : [];
 
   const approximateInputTokens = Math.max(
     200,
@@ -106,6 +109,18 @@ export default async function DraftsPage({
             <span>Sources: {selectedVersion.sourceStatusSummary}</span>
           </div>
           <div className="wp-draft-output">{selectedVersion.content}</div>
+          {selectedCitations.length > 0 && (
+            <>
+              <h3 style={{ marginTop: 18 }}>Linked references (§7.4)</h3>
+              <ul>
+                {selectedCitations.map((citation) => (
+                  <li key={citation.id}>
+                    <code>{citation.locator}</code>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
 

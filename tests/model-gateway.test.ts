@@ -47,6 +47,7 @@ function request(modelId: string, maxOutputTokens = 1_000): ModelGenerationReque
     ],
     contributors: [],
     sources: [],
+    corpusSnippets: [],
   };
 }
 

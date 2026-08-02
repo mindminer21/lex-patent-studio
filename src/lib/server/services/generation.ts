@@ -16,7 +16,8 @@ import {
   WORKFLOW_TITLES,
   type ModelTier,
 } from "../model-registry";
-import type { DraftVersionRecord, DraftWorkflow, Id } from "../adapters/types";
+import type {
+  CorpusSnippet, DraftVersionRecord, DraftWorkflow, Id } from "../adapters/types";
 
 /** Fixed estimation profile for the local workflows (tokens). */
 const ESTIMATE_PROFILE = {
@@ -65,7 +66,7 @@ export async function runGeneration(params: {
   tierId: string;
   idempotencyKey: string;
 }): Promise<GenerationResult> {
-  const { data, modelGateway } = getAdapters();
+  const { data, modelGateway, corpus } = getAdapters();
 
   const invention = await data.getInvention(params.organizationId, params.inventionId);
   if (!invention) return { ok: false, error: "invention_not_found" };
@@ -79,6 +80,19 @@ export async function runGeneration(params: {
   const facts = await data.listFacts(params.organizationId, params.inventionId);
   const contributors = await data.listContributors(params.organizationId, params.inventionId);
   const sources = await data.listSources(params.organizationId, params.inventionId);
+
+  // Allowlisted public-corpus references (§7.4 step 4). Corpus degradation
+  // must not block drafting — the draft simply carries no references and
+  // the UI shows the degraded state.
+  let corpusSnippets: CorpusSnippet[] = [];
+  try {
+    corpusSnippets = await corpus.searchAllowlisted(
+      `${invention.title} ${params.workflow.replaceAll("_", " ")}`,
+      3,
+    );
+  } catch {
+    corpusSnippets = [];
+  }
 
   const approximateInputTokens = Math.max(
     200,
@@ -140,6 +154,7 @@ export async function runGeneration(params: {
       facts,
       contributors,
       sources,
+      corpusSnippets,
       maxOutputTokens: tier.maxOutputTokens,
     });
   } catch {
@@ -216,6 +231,36 @@ export async function runGeneration(params: {
     sourceStatusSummary: `${extractedCount} of ${sources.length} sources extracted`,
     reservationId: reservationRecord.id,
   });
+
+  // §7.4 step 6: link the stored version to its source/fact/corpus
+  // references so provenance is queryable, not just embedded in prose.
+  for (const source of sources) {
+    await data.createDraftCitation({
+      organizationId: params.organizationId,
+      draftVersionId: version.id,
+      sourceId: source.id,
+      factId: null,
+      locator: `source:${source.name} (${source.status})`,
+    });
+  }
+  for (const fact of facts) {
+    await data.createDraftCitation({
+      organizationId: params.organizationId,
+      draftVersionId: version.id,
+      sourceId: null,
+      factId: fact.id,
+      locator: `fact:${fact.category}/${fact.provenance}`,
+    });
+  }
+  for (const snippet of corpusSnippets) {
+    await data.createDraftCitation({
+      organizationId: params.organizationId,
+      draftVersionId: version.id,
+      sourceId: null,
+      factId: null,
+      locator: `corpus:${snippet.citation} (as of ${snippet.effectiveDate ?? "n/a"}) ${snippet.canonicalUrl}`,
+    });
+  }
 
   await data.appendAuditEvent({
     organizationId: params.organizationId,

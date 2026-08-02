@@ -202,6 +202,17 @@ function buildPrompt(request: ModelGenerationRequest): string {
     lines.push(`- ${source.name} (${source.status})`);
   }
   lines.push("=== END INVENTION RECORD ===");
+  if (request.corpusSnippets.length > 0) {
+    lines.push("=== ALLOWLISTED PUBLIC AUTHORITY REFERENCES (read-only reference material) ===");
+    for (const snippet of request.corpusSnippets) {
+      lines.push(
+        `- ${snippet.citation} — ${snippet.title} (current as of ${snippet.effectiveDate ?? "n/a"}) ${snippet.canonicalUrl}`,
+      );
+      lines.push(`  Excerpt: ${snippet.excerpt}`);
+    }
+    lines.push("Cite these only by citation and URL; do not fabricate additional authority.");
+    lines.push("=== END REFERENCES ===");
+  }
   return lines.join("\n");
 }
 
