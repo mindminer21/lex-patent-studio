@@ -106,6 +106,72 @@ None in-repo. All remaining work is behind the §17 approval gates listed above.
 after activation: follow `docs/runbooks.md` §2, then re-run every gate against the live stack
 and update this table's seam-complete rows to verified-live.
 
+## Invention Intake Studio — Milestone 1 (2026-08-02)
+
+**Feature PRD:** `docs/PRD-wepatent-intake-studio.md` (M1 scope per its §13:
+path chooser, upload breadth docs+images, interpretation + distillation,
+editable P/S ledger + working title, coverage meter v1, export integration).
+Branch `track/wepatent-app-reconciled`, commits `2f5e2ec`, `cc0e3f1`,
+`1f86b10`, `2a5efba` (+ this ledger commit).
+
+### Verification (fresh run, 2026-08-02, this container)
+
+| Gate | Result |
+|---|---|
+| `npm run lint` | 0 errors, 0 warnings |
+| `npx tsc --noEmit` | clean |
+| `npm run test:wepatent` | 21 files, **187/187** (was 162; +25 studio tests) |
+| `npm run test:lex` | 409 passed / 8 skipped (unchanged — no degradation) |
+| `npm run test:rls:wepatent` | 5 pgTAP files, **139 asserts**, PASS (was 105; +34 in `05_intake_studio.sql`) |
+| `npm run test:e2e:wepatent` | **34/34** (was 32; +2 studio specs incl. axe + 320–1440 responsive) |
+| `npm run test:e2e:lex` | 14/14 (unchanged) |
+| `npm run build` | success (all new routes present) |
+| `npm run audit:prod` | 0 vulnerabilities |
+| `npm run scan:secrets` | clean |
+
+### Live-DB migration application (private project `jxehyxkcibiqluojeryy`)
+
+`supabase/wepatent/migrations/0009_intake_studio.sql` applied 2026-08-02 via
+the Supabase management API (`POST /v1/projects/{ref}/database/query`,
+HTTP 201). Post-apply verification against the live DB: all 10 new tables
+exist with `relrowsecurity = true`; 10 member-select policies present
+(writes remain service-role only); `app_jobs_kind_check` includes
+`source_interpretation` + `distillation`; immutability triggers live on
+`ps_events`, `working_titles`, `extraction_artifacts`,
+`enablement_coverage`; `private_sources.interpretation_status` and
+`invention_facts.origin_ref` columns present. Additive only — no existing
+object was modified except the extended `app_jobs` kind check.
+
+### M1 requirements traceability
+
+| Req | Implementation | Verification | Status |
+|---|---|---|---|
+| FR-INT-1 entry & record creation | Dashboard/sidebar "New invention" ("Start a patent-ready disclosure") → `/wepatent/app/inventions/start` path chooser; Path A creates the record on first commit (`start/actions.ts`) and lands in `/inventions/[id]/studio`; Path B routes to the retained guided-form intake (same record/ledgers) | `e2e/wepatent/studio.spec.ts` journey; quality-gates axe on `/inventions/start` | verified |
+| FR-INT-2 upload breadth | `domain/uploads.ts`: PDF/DOCX/PPTX/XLSX/TXT/MD/SVG + PNG/JPEG/TIFF/HEIC + STL/STEP/OBJ/3MF; offset magic signatures (HEIC), octet-stream extension fallback (3D), binary-STL handling; ALL through the unchanged FR-4 quarantine pipeline; honest `stored_uninterpreted` (never a silent drop) | `tests/intake-studio.test.ts` allowlist suite; `tests/uploads.test.ts` unchanged; E2E uploads MD+PDF+PNG+STL | verified |
+| FR-INT-3 interpretation jobs | `services/interpretation.ts` + `source_interpretation` job kind: per-file estimate→reservation→run→settlement on the FR-6 layer; retries dedupe by reservation (never double-bill); per-file cost recorded in `extraction_artifacts` (model, cost reservation); classes without an M1 interpreter marked `stored_uninterpreted` with a status note | unit: metering/idempotency/quarantine-refusal/vision tests; E2E interpret step | verified |
+| FR-INT-4 distillation | `services/distillation.ts` + `distillation` job kind (Advanced tier): title/problems/solutions/pairings/associations as `ai_proposed` with source anchors; re-runnable; add-only (never mutates user_confirmed/user_edited; dedupes statements); estimate + wallet sufficiency shown before run in studio UI and `/studio/distill` response | unit: distill/retry/no-overwrite tests; E2E distill + re-check | verified |
+| FR-INT-5 P/S ledger | `domain/ps-ledger.ts` guard (model may ONLY propose; human actions confirm/edit/delete; rejection events on AI-proposal deletion) + `services/ps-ledger.ts` CRUD/link/title + event-sourced `ps_events`; API routes per feature PRD §11 | unit state-machine matrix + CRUD flow; pgTAP write-denial ("state cannot be upgraded client-side"); E2E confirm/edit/reject/add/pair | verified (merge/split UI is a UX nicety deferred to M3 polish — delete+re-add covers the workflow) |
+| FR-INT-8 coverage meter v1 | `domain/coverage.ts` — 7-dimension deterministic checklist (`coverage-v1.2026-08-02`), pure code, never model output; per-solution gap chips in studio; snapshots in append-only `enablement_coverage` | unit determinism + reaction tests; E2E deterministic meter delta from a "40 psi" edit; pgTAP coverage-forgery denial | verified |
+| FR-INT-9 associations (M1 slice) | Distillation proposes solution↔component associations (`ai_proposed`); shown on ledger items and in export; region drawing/evidence galleries are M3 per feature PRD §13 | unit distill test; export section renders associated components | verified for M1 scope |
+| FR-INT-10 cost transparency | Studio shows estimate + wallet available + sufficiency before interpret/distill; settlement at provider cost × 1.50 via existing FR-6 semantics; ledger/usage events per run | unit metering assertions; E2E "Estimated cost:" visible pre-run | verified (session cap is interview-scoped → M2) |
+| FR-INT-11 compliance rails (M1 invariants 13, 16–18) | ai_proposed-until-human everywhere; uploads are evidence (delimited untrusted blocks; deterministic local path); prompt-injection fixture; metered runs; FR-4 for every class; "working draft — counsel review required" labeling on studio/chooser/export | unit prompt-injection test (ledger unchanged, no confirmed states, payload inert as content); E2E AC-9 check; export caveats in renderer tests… | verified |
+| Export integration | Manifest carries psProblemCount/psSolutionCount/psConfirmedCount/coverage summary; DOCX/PDF render "Problem/Solution ledger" + "Enablement coverage report (record coverage, not a legal opinion)" sections; PDF renderer hardened to WinAnsi-safe output | E2E export: manifest.json fetched and asserted; existing export tests unchanged | verified |
+| FR-INT-6/7 (interview engine, live extraction) | **M2** per feature PRD §13. DB schema for `interview_sessions`/`interview_turns` landed now (0009, RLS'd, pgTAP-covered) so M2 is app-code-only | pgTAP cross-tenant denials | schema-ready; engine deferred by plan |
+| 3D STL/STEP rendering | **Deferred to M2, honestly**: no headless renderer lands cleanly in this environment (no Docker, no GPU; a WebGL/OSMesa worker needs real verification). 3D uploads are accepted, validated (STEP magic, binary STL), stored for the counsel package, and flagged `stored_uninterpreted` with a user prompt to describe contents — exactly the PRD's honest-status path | unit + E2E stored_uninterpreted assertions | deferred (M2) with honest in-product status |
+
+### M1 blockers left for Jeff (not faked)
+
+1. **Live OpenAI vision/distillation smoke run** — production gateway paths
+   (gpt-4.1 text + image interpretation, JSON distillation) are implemented
+   and fake-transport tested; spending real OpenAI money on a smoke run
+   needs Jeff's go (§17.4). Command path: set `OPENAI_API_KEY`, run one
+   interpret + one distill on a synthetic record, verify usage events.
+2. **3D renderer worker** (M2): needs an approved compute substrate for
+   headless mesh rendering.
+3. Naming: shipped as "New invention" + "Start a patent-ready disclosure"
+   per feature PRD §2 recommendation; "New Patent" remains available only
+   behind Jeff's recorded approval.
+
 ## Reconciliation (2026-08-02)
 
 The `track/wepatent-app` branch was merged with `track/lex-app` on
