@@ -80,6 +80,8 @@ export function transitionFact(
   from: FactProvenance,
   to: FactProvenance,
 ): FactTransitionResult {
+  // Actors with no mutation rights (model) are rejected before anything else.
+  if (ALLOWED[actor].length === 0) return { ok: false, error: "actor_not_allowed" };
   if (from === to) return { ok: false, error: "no_change" };
   if (!canTransitionFact(actor, from, to)) return { ok: false, error: "actor_not_allowed" };
   return { ok: true, next: to };
