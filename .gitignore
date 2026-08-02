@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local private-blob storage (FR-4 local adapter) — synthetic data only
+/.local-storage/
+
+# supabase CLI local state
+/supabase/.temp/
+/supabase/.branches/
+
+# playwright
+/test-results/
+/playwright-report/

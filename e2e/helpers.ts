@@ -1,0 +1,58 @@
+import { expect, type Page } from "@playwright/test";
+
+/** Signs in through the real form; local mode creates the synthetic user. */
+export async function signIn(page: Page, email: string, name: string): Promise<void> {
+  await page.goto("/wepatent/sign-in");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Display name (optional)").fill(name);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.waitForURL(/\/(app|counsel)/);
+}
+
+export async function signOut(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.waitForURL(/\/wepatent$/);
+}
+
+export async function createOrganization(page: Page, name: string): Promise<void> {
+  await expect(page.getByLabel(/organization name/i)).toBeVisible();
+  await page.getByLabel(/organization name/i).fill(name);
+  await page.getByRole("button", { name: "Create organization" }).click();
+  await page.waitForURL(/\/app\/terms/);
+}
+
+/**
+ * Completes the versioned clickwrap with the KEYBOARD only (PRD §13):
+ * every acknowledgement is toggled with Space, submission with Enter, and
+ * the Continue button must stay disabled until all four are checked.
+ */
+export async function acceptClickwrapByKeyboard(page: Page): Promise<void> {
+  const continueButton = page.getByRole("button", { name: "Continue to the workspace" });
+  await expect(continueButton).toBeDisabled();
+
+  const checkboxes = page.getByRole("checkbox");
+  await expect(checkboxes).toHaveCount(4);
+  for (let index = 0; index < 4; index += 1) {
+    await checkboxes.nth(index).focus();
+    await page.keyboard.press("Space");
+    if (index < 3) await expect(continueButton).toBeDisabled();
+  }
+  await expect(continueButton).toBeEnabled();
+  await continueButton.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/app$/);
+}
+
+/** Fresh tenant: sign-in → organization → clickwrap. Returns the email. */
+export async function onboardFreshTenant(
+  page: Page,
+  slug: string,
+): Promise<{ email: string; orgName: string }> {
+  const unique = `${slug}-${Date.now()}`;
+  const email = `${unique}@example.test`;
+  const orgName = `Org ${unique}`;
+  await signIn(page, email, `User ${unique}`);
+  await createOrganization(page, orgName);
+  await acceptClickwrapByKeyboard(page);
+  return { email, orgName };
+}

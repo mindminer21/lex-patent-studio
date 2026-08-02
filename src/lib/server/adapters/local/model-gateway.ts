@@ -1,0 +1,131 @@
+import { isUnresolved } from "@/lib/domain/facts";
+import { getModelTier } from "../../model-registry";
+import type {
+  ModelGatewayPort,
+  ModelGenerationRequest,
+  ModelGenerationResult,
+} from "../types";
+
+/**
+ * Deterministic synthetic model gateway for credential-independent local
+ * mode. Produces a clearly labeled working draft from the tenant's fact
+ * record without calling any external provider.
+ *
+ * Boundary notes (PRD §5.9, §7.4): the gateway returns TEXT ONLY. It has no
+ * access to mutate facts, approve drafts, or trigger actions — callers store
+ * the content as an immutable draft version labeled "working_draft".
+ */
+export class LocalModelGateway implements ModelGatewayPort {
+  async generate(request: ModelGenerationRequest): Promise<ModelGenerationResult> {
+    const tier = [...(["standard", "advanced"] as const)]
+      .map((id) => getModelTier(id))
+      .find((t) => t?.modelId === request.modelId);
+    if (!tier) {
+      throw new Error("model_not_allowed");
+    }
+
+    const unresolved = request.facts.filter((fact) => isUnresolved(fact.provenance));
+    const supported = request.facts.filter((fact) => fact.provenance === "source_supported");
+
+    const lines: string[] = [];
+    lines.push("WORKING DRAFT — COUNSEL REVIEW REQUIRED");
+    lines.push(
+      "This automated draft was generated from the facts recorded in your invention record. It is not legal advice, is not filing-ready, and must be reviewed and approved by qualified patent counsel before any consequential use.",
+    );
+    lines.push("");
+
+    switch (request.workflow) {
+      case "invention_disclosure_summary": {
+        lines.push(`# Invention disclosure summary: ${request.invention.title}`);
+        lines.push("");
+        lines.push("## Problem addressed (as recorded by your team)");
+        lines.push(request.invention.problem);
+        lines.push("");
+        lines.push("## Technical approach (as recorded by your team)");
+        lines.push(request.invention.solution);
+        lines.push("");
+        lines.push("## Recorded technical facts");
+        for (const fact of request.facts.filter((f) => f.category === "technical")) {
+          lines.push(`- [${fact.provenance}] ${fact.statement}`);
+        }
+        lines.push("");
+        lines.push("## Contributors of record");
+        for (const contributor of request.contributors) {
+          lines.push(`- ${contributor.name}: ${contributor.contribution}`);
+        }
+        break;
+      }
+      case "counsel_question_list": {
+        lines.push(`# Questions to prepare for counsel: ${request.invention.title}`);
+        lines.push("");
+        lines.push(
+          "These are organizational prompts derived from your record. They are not legal questions answered by the software, and counsel will decide what actually matters.",
+        );
+        lines.push("");
+        for (const fact of unresolved) {
+          lines.push(
+            `- An unresolved ${fact.category} fact needs discussion: ${fact.statement}`,
+          );
+        }
+        lines.push("- Which contributors meet the legal standard for inventorship? (Counsel determines this.)");
+        lines.push("- Do any recorded disclosure events affect filing options or deadlines? (Counsel determines this.)");
+        lines.push("- Are ownership and assignment documents complete for every contributor? (Counsel determines this.)");
+        break;
+      }
+      case "gap_analysis": {
+        lines.push(`# Documentation gap analysis: ${request.invention.title}`);
+        lines.push("");
+        lines.push(`Facts recorded: ${request.facts.length}`);
+        lines.push(`Facts with source support: ${supported.length}`);
+        lines.push(`Facts needing confirmation or disputed: ${unresolved.length}`);
+        lines.push(`Sources organized: ${request.sources.length}`);
+        lines.push("");
+        lines.push("## Gaps flagged for your team (not legal conclusions)");
+        for (const fact of unresolved) {
+          lines.push(`- [${fact.provenance}] ${fact.statement}`);
+        }
+        if (request.sources.some((source) => source.status !== "extracted")) {
+          lines.push("- Some sources are not yet extracted; their contents are not reflected in drafts.");
+        }
+        break;
+      }
+    }
+
+    if (request.corpusSnippets.length > 0) {
+      lines.push("");
+      lines.push("## Public authority references (allowlisted corpus)");
+      lines.push(
+        "These citations are organizational reference points from the public corpus. They are not legal analysis; counsel decides what applies.",
+      );
+      for (const snippet of request.corpusSnippets) {
+        lines.push(
+          `- ${snippet.citation} — ${snippet.title} (current as of ${snippet.effectiveDate ?? "n/a"}): ${snippet.canonicalUrl}`,
+        );
+      }
+    }
+
+    lines.push("");
+    lines.push("---");
+    lines.push(
+      `Generated by ${request.modelId} (synthetic local gateway). Unresolved facts at generation time: ${unresolved.length}.`,
+    );
+    lines.push("Status: working draft — counsel review required.");
+
+    const content = lines.join("\n");
+
+    // Deterministic simulated token accounting: ~4 chars per token.
+    const inputChars =
+      request.invention.summary.length +
+      request.invention.problem.length +
+      request.invention.solution.length +
+      request.facts.reduce((sum, fact) => sum + fact.statement.length, 0);
+    const inputTokens = Math.max(200, Math.ceil(inputChars / 4));
+    const outputTokens = Math.min(request.maxOutputTokens, Math.ceil(content.length / 4));
+
+    const providerCostCents =
+      Math.ceil((inputTokens * tier.rate.inputCentsPerMillionTokens) / 1_000_000) +
+      Math.ceil((outputTokens * tier.rate.outputCentsPerMillionTokens) / 1_000_000);
+
+    return { content, inputTokens, outputTokens, providerCostCents };
+  }
+}
