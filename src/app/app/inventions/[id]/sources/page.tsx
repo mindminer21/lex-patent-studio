@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { isLocalMode } from "@/lib/env";
+import UploadForm from "@/components/wepatent/UploadForm";
 import { getAdapters } from "@/lib/server/adapters";
 import { requireOnboarded } from "@/lib/server/session";
 import { addSourceAction } from "../actions";
@@ -31,14 +31,11 @@ export default async function SourcesPage({
 
   return (
     <>
-      {isLocalMode && (
-        <div className="wp-boundary-banner">
-          <strong>Local preview:</strong> sources are registered as metadata only. Production
-          uploads go directly to private storage with type allowlists, magic-byte checks, size
-          caps, malware scanning, and quarantine before extraction (FR-4). Do not enter
-          confidential third-party or export-controlled material.
-        </div>
-      )}
+      <div className="wp-boundary-banner">
+        Uploads are validated against a type allowlist with extension, size, and content-signature
+        checks, then quarantined and scanned before extraction (FR-4). Do not upload confidential
+        third-party or export-controlled material.
+      </div>
       {error && (
         <p className="form-error" role="alert">
           Could not register that source. Check the fields and try again.
@@ -51,7 +48,8 @@ export default async function SourcesPage({
             <tr>
               <th scope="col">Name</th>
               <th scope="col">Kind</th>
-              <th scope="col">Extraction status</th>
+              <th scope="col">Pipeline status</th>
+              <th scope="col">Checksum</th>
               <th scope="col">Note</th>
             </tr>
           </thead>
@@ -65,6 +63,18 @@ export default async function SourcesPage({
                 <td>{source.kind.replace(/_/g, " ")}</td>
                 <td>
                   <span className="wp-badge neutral">{source.status}</span>
+                  {source.status === "rejected" && source.quarantineReason && (
+                    <span className="hint" style={{ display: "block" }}>
+                      {source.quarantineReason}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  {source.checksumSha256 ? (
+                    <code>{source.checksumSha256.slice(0, 12)}…</code>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td>{source.note || "—"}</td>
               </tr>
@@ -78,7 +88,12 @@ export default async function SourcesPage({
       </div>
 
       <div className="wp-card" style={{ marginTop: 22, maxWidth: 760 }}>
-        <h2>Register a source</h2>
+        <h2>Upload a source document</h2>
+        <UploadForm inventionId={id} />
+      </div>
+
+      <div className="wp-card" style={{ marginTop: 22, maxWidth: 760 }}>
+        <h2>Register a source (metadata only)</h2>
         <form action={addSourceAction} className="wp-form">
           <input type="hidden" name="inventionId" value={id} />
           <div className="field">

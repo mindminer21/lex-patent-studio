@@ -2,6 +2,7 @@ import "server-only";
 
 import type { DraftWorkflow, JobKind, JobRecord } from "../adapters/types";
 import { runGeneration } from "../services/generation";
+import { performExtraction, performScan } from "../services/upload-pipeline";
 
 /**
  * Job executors by kind. Each executor receives the job row and returns the
@@ -37,8 +38,32 @@ async function generationExecutor(job: JobRecord): Promise<JobRecord["result"]> 
   };
 }
 
+async function sourceScanExecutor(job: JobRecord): Promise<JobRecord["result"]> {
+  const sourceId = String(job.payload.sourceId ?? "");
+  const scan = await performScan(job.organizationId, sourceId);
+  if (scan.status === "scanned") {
+    // Clean scan releases the file to asynchronous extraction (FR-4).
+    const { enqueueJob } = await import("./runner");
+    await enqueueJob({
+      organizationId: job.organizationId,
+      kind: "source_extraction",
+      idempotencyKey: `extract:${sourceId}`,
+      payload: { sourceId },
+    });
+  }
+  return { sourceId, status: scan.status, reason: scan.reason };
+}
+
+async function sourceExtractionExecutor(job: JobRecord): Promise<JobRecord["result"]> {
+  const sourceId = String(job.payload.sourceId ?? "");
+  const extraction = await performExtraction(job.organizationId, sourceId);
+  return { sourceId, status: extraction.status };
+}
+
 const EXECUTORS: Partial<Record<JobKind, JobExecutor>> = {
   generation: generationExecutor,
+  source_scan: sourceScanExecutor,
+  source_extraction: sourceExtractionExecutor,
 };
 
 export function registerExecutor(kind: JobKind, executor: JobExecutor): void {
