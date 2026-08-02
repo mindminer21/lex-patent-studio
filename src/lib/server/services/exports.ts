@@ -15,8 +15,8 @@ export type CreateExportResult =
 /**
  * Counsel-ready export (PRD §7.5): a version-locked manifest referencing
  * immutable draft-version ids with a checksum. Later record changes never
- * silently alter an existing export. DOCX/PDF/ZIP artifact rendering is a
- * Phase 2 durable job (TODO seam).
+ * silently alter an existing export. DOCX/PDF/manifest artifacts render
+ * through the export_render durable job with per-artifact SHA-256s.
  */
 export async function createExport(params: {
   organizationId: Id;
@@ -64,6 +64,16 @@ export async function createExport(params: {
     draftVersionId: params.draftVersionId,
     manifest,
     checksum,
+  });
+
+  // Artifact rendering happens off the request path (PRD §14); the export
+  // page reports job progress via findJobByKey(export_render, record.id).
+  const { enqueueJob } = await import("../jobs/runner");
+  await enqueueJob({
+    organizationId: params.organizationId,
+    kind: "export_render",
+    idempotencyKey: record.id,
+    payload: { exportId: record.id },
   });
 
   await data.appendAuditEvent({

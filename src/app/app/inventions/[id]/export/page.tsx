@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getAdapters } from "@/lib/server/adapters";
+import { mintDownloadToken } from "@/lib/server/services/export-download";
 import { requireOnboarded } from "@/lib/server/session";
 import { createExportAction } from "../actions";
 
@@ -24,6 +25,30 @@ export default async function ExportPage({
     )
   ).flat();
   const exports = await data.listExports(context.organization.id, id);
+  const exportViews = await Promise.all(
+    exports.map(async (entry) => {
+      const artifacts = await data.listExportArtifacts(context.organization.id, entry.id);
+      const renderJob = await data.findJobByKey(
+        context.organization.id,
+        "export_render",
+        entry.id,
+      );
+      return {
+        entry,
+        renderJob,
+        artifacts: artifacts.map((artifact) => ({
+          artifact,
+          href: `/api/exports/${entry.id}/artifacts/${encodeURIComponent(artifact.name)}?token=${encodeURIComponent(
+            mintDownloadToken({
+              organizationId: context.organization.id,
+              exportId: entry.id,
+              name: artifact.name,
+            }),
+          )}`,
+        })),
+      };
+    }),
+  );
 
   return (
     <>
@@ -70,8 +95,8 @@ export default async function ExportPage({
               </button>
             </div>
             <p className="hint">
-              DOCX/PDF/ZIP artifact rendering runs as a durable job in a later phase; this build
-              produces the manifest and checksum.
+              DOCX, PDF, and manifest artifacts render as a durable job right after the export is
+              created; each artifact records its own SHA-256 checksum.
             </p>
           </form>
         </div>
@@ -81,12 +106,42 @@ export default async function ExportPage({
           {exports.length === 0 ? (
             <p>No exports yet.</p>
           ) : (
-            exports.map((entry) => (
-              <details key={entry.id} style={{ marginBottom: 14 }}>
+            exportViews.map(({ entry, artifacts, renderJob }) => (
+              <details key={entry.id} style={{ marginBottom: 14 }} open={exports.length === 1}>
                 <summary>
                   {new Date(entry.createdAt).toLocaleString()} — checksum{" "}
                   <code>{entry.checksum.slice(0, 16)}…</code>
                 </summary>
+                {artifacts.length > 0 ? (
+                  <table className="wp-table" style={{ marginTop: 10 }}>
+                    <thead>
+                      <tr>
+                        <th scope="col">Artifact</th>
+                        <th scope="col">SHA-256</th>
+                        <th scope="col"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {artifacts.map(({ artifact, href }) => (
+                        <tr key={artifact.id}>
+                          <td>{artifact.name}</td>
+                          <td>
+                            <code>{artifact.sha256.slice(0, 16)}…</code>
+                          </td>
+                          <td>
+                            <a href={href}>Download</a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p role="status" style={{ marginTop: 10 }}>
+                    Artifact rendering: {renderJob ? renderJob.status : "queued"}. Refresh to see
+                    DOCX/PDF downloads.
+                  </p>
+                )}
+                <p className="hint">Download links are short-lived and tenant-scoped.</p>
                 <div className="wp-draft-output" style={{ marginTop: 10 }}>
                   {JSON.stringify(entry.manifest, null, 2)}
                 </div>

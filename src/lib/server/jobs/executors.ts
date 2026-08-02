@@ -60,10 +60,18 @@ async function sourceExtractionExecutor(job: JobRecord): Promise<JobRecord["resu
   return { sourceId, status: extraction.status };
 }
 
+async function exportRenderExecutor(job: JobRecord): Promise<JobRecord["result"]> {
+  const { renderExportArtifacts } = await import("../services/export-render");
+  const exportId = String(job.payload.exportId ?? "");
+  const rendered = await renderExportArtifacts(job.organizationId, exportId);
+  return { exportId, artifactCount: rendered.artifacts.length };
+}
+
 const EXECUTORS: Partial<Record<JobKind, JobExecutor>> = {
   generation: generationExecutor,
   source_scan: sourceScanExecutor,
   source_extraction: sourceExtractionExecutor,
+  export_render: exportRenderExecutor,
 };
 
 export function registerExecutor(kind: JobKind, executor: JobExecutor): void {
