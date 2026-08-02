@@ -152,6 +152,13 @@ export async function getCounselContext(): Promise<CounselContext | null> {
 export async function requireCounsel(): Promise<CounselContext> {
   const context = await getCounselContext();
   if (!context) redirect("/wepatent/sign-in?error=counsel_only");
+  // FR-1: MFA is required for counsel administrators. Local mode has no
+  // real factor enrollment (synthetic seeds are pre-enrolled); production
+  // refuses counsel sessions until Supabase Auth MFA enrollment is
+  // mirrored onto the assignment by trusted operator process.
+  if (env.APP_MODE === "production" && !context.assignment.mfaEnrolled) {
+    redirect("/wepatent/sign-in?error=mfa_required");
+  }
   return context;
 }
 

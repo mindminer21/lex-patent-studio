@@ -33,6 +33,16 @@ export default async function SignInPage({
               Enter a valid email address.
             </p>
           )}
+          {error === "rate_limited" && (
+            <p className="form-error" role="alert">
+              Too many sign-in attempts. Please wait a few minutes and try again.
+            </p>
+          )}
+          {error === "mfa_required" && (
+            <p className="form-error" role="alert">
+              Counsel administrator access requires multi-factor authentication enrollment.
+            </p>
+          )}
           <div className="field">
             <label htmlFor="email">Email address</label>
             <input

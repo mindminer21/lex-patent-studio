@@ -34,12 +34,14 @@ async function setup() {
     userId: intakeUser.id,
     role: "counsel_intake",
     lawFirmName: "Schell IP (synthetic)",
+    mfaEnrolled: true,
     createdAt: new Date().toISOString(),
   };
   const attorney: CounselAssignmentRecord = {
     userId: attorneyUser.id,
     role: "counsel_attorney",
     lawFirmName: "Schell IP (synthetic)",
+    mfaEnrolled: true,
     createdAt: new Date().toISOString(),
   };
   await data.setCounselAssignment(intake);

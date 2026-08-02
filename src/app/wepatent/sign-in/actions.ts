@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { isLocalMode } from "@/lib/env";
 import { getAdapters } from "@/lib/server/adapters";
-import { createSession, destroySession } from "@/lib/server/session";
+import { incrementCounter, logEvent } from "@/lib/server/observability";
+import { checkRateLimit, SIGN_IN_LIMIT } from "@/lib/server/rate-limit";
+import { createSession, destroySession, requestIpHash } from "@/lib/server/session";
 
 const emailSchema = z.email();
 
@@ -27,6 +29,15 @@ const LOCAL_COUNSEL_SEEDS: Record<string, "counsel_intake" | "counsel_attorney">
  * MFA required for counsel administrators).
  */
 export async function signInAction(formData: FormData): Promise<void> {
+  // FR-1: rate limit the auth endpoint per hashed IP (never a raw IP).
+  const ipHash = await requestIpHash();
+  const rate = checkRateLimit({ key: `signin:${ipHash}`, ...SIGN_IN_LIMIT });
+  if (!rate.allowed) {
+    incrementCounter("auth.rate_limited");
+    logEvent({ level: "warn", event: "auth.rate_limited", meta: { ipHash } });
+    redirect("/wepatent/sign-in?error=rate_limited");
+  }
+
   const rawEmail = String(formData.get("email") ?? "")
     .trim()
     .toLowerCase();
@@ -47,6 +58,10 @@ export async function signInAction(formData: FormData): Promise<void> {
       userId: user.id,
       role: LOCAL_COUNSEL_SEEDS[parsed.data],
       lawFirmName: "Schell IP (connected counsel, synthetic local)",
+      // Local synthetic seeds are treated as MFA-enrolled so the counsel
+      // lane is exercisable; production enforcement happens in
+      // requireCounsel and real enrollment lives in Supabase Auth (FR-1).
+      mfaEnrolled: true,
       createdAt: new Date().toISOString(),
     });
   }

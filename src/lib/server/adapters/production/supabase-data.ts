@@ -1279,6 +1279,7 @@ export class SupabaseDataAdapter implements DataPort {
       userId: s(row, "user_id"),
       role: s(row, "role") as CounselAssignmentRecord["role"],
       lawFirmName: s(row, "law_firm_name"),
+      mfaEnrolled: b(row, "mfa_enrolled"),
       createdAt: s(row, "created_at"),
     };
   }
@@ -1290,6 +1291,7 @@ export class SupabaseDataAdapter implements DataPort {
       user_id: record.userId,
       role: record.role,
       law_firm_name: record.lawFirmName,
+      mfa_enrolled: record.mfaEnrolled,
     });
     if (error) throw new Error(`supabase_adapter:counsel_assignments.set:${error.message}`);
     return record;

@@ -373,6 +373,12 @@ export interface CounselAssignmentRecord {
   userId: Id;
   role: CounselRole;
   lawFirmName: string;
+  /**
+   * FR-1: MFA is REQUIRED for counsel administrators. Production sets this
+   * from Supabase Auth MFA enrollment (AAL2); `requireCounsel` refuses
+   * unenrolled counsel sessions in production mode.
+   */
+  mfaEnrolled: boolean;
   createdAt: string;
 }
 
