@@ -195,13 +195,13 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .policy-page a { text-decoration: underline; text-underline-offset: 3px; }
 .venture-footer-nav { display: flex; gap: 18px; }
 .boundary-list { margin: 30px 0; padding-left: 22px; line-height: 1.9; }
-.pricing-list { border-top: 2px solid var(--venture-ink); margin: 44px 0 20px; }
+.pricing-list { list-style: none; padding-left: 0; border-top: 2px solid var(--venture-ink); margin: 44px 0 20px; }
 .pricing-row { display: grid; grid-template-columns: 1.4fr 0.6fr 1fr; gap: 24px; align-items: center; padding: 26px 0; border-bottom: 1px solid var(--venture-line); }
 .pricing-row h2 { margin: 0 0 8px; font-size: 1.3rem; }
 .pricing-row p { margin: 0; color: #52627a; }
 .pricing-row .price { display: flex; align-items: baseline; gap: 8px; }
 .pricing-row .price strong { font-size: 2.1rem; letter-spacing: -0.04em; }
-.pricing-row .price span { color: #6b7a90; font-size: 0.78rem; }
+.pricing-row .price span { color: #54627a; font-size: 0.78rem; } /* >=4.5:1 on #f8fbff (WCAG 2.2 AA) */
 .pricing-row .credit { font-weight: 700; color: var(--venture-ink); }
 .signin-page { max-width: 640px; }
 .signin-form { display: grid; gap: 20px; margin: 36px 0 22px; padding: 30px; background: white; border: 2px solid var(--venture-ink); }
@@ -213,6 +213,10 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .form-error { color: #a01212; background: #fdeeee; border: 1px solid #e3a0a0; padding: 10px 12px; font-size: 0.9rem; margin: 0; }
 .form-success { color: #0c5a2b; background: #ecf9f0; border: 1px solid #93cfa8; padding: 10px 12px; font-size: 0.9rem; margin: 0; }
 .form-issues { color: #a01212; background: #fdeeee; border: 1px solid #e3a0a0; padding: 10px 16px 10px 30px; font-size: 0.88rem; margin: 0; }
+
+/* Tables scroll inside their card instead of widening the page (§12
+   responsive at 320px); table semantics are preserved. */
+.wp-card { overflow-x: auto; }
 
 /* --- wepatent authenticated app shell -------------------------------- */
 .wp-app { min-height: 100vh; display: grid; grid-template-columns: 250px minmax(0, 1fr); background: #f5f8fc; color: var(--venture-ink, #17253d); }
@@ -264,7 +268,7 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .wp-stage-nav li.complete { border-color: #93cfa8; }
 .wp-stage-nav .stage-mark { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; border: 1px solid currentColor; font-size: 0.7rem; font-weight: 800; flex-shrink: 0; }
 .wp-stage-nav li.complete .stage-mark { background: #0d5c2e; border-color: #0d5c2e; color: white; }
-.wp-stage-nav li.locked { color: #8b98ab; }
+.wp-stage-nav li.locked { color: #5a687d; } /* >=4.5:1 on white (WCAG 2.2 AA) */
 .wp-draft-output { background: white; border: 1px solid var(--venture-line); padding: 22px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; line-height: 1.6; overflow-x: auto; }
 .wp-draft-meta { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 18px; font-size: 0.8rem; color: #52627a; }
 .wp-draft-meta span { padding: 4px 8px; background: #f0f4fa; border: 1px solid var(--venture-line); }
@@ -280,11 +284,13 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .wp-app footer.wp-app-footer { grid-column: 1 / -1; border-top: 1px solid var(--venture-line); background: var(--venture-ink); color: #dbe7f7; padding: 20px 4vw; font-size: 0.78rem; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
 
 @media (max-width: 980px) {
-  .wp-app { grid-template-columns: 1fr; }
+  /* minmax(0,1fr): wide tables scroll inside cards instead of stretching
+     the page (§12 responsive 320-1440px). */
+  .wp-app { grid-template-columns: minmax(0, 1fr); }
   .wp-sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
   .wp-sidebar-footer { display: none; }
   .wp-nav { display: flex; flex-wrap: wrap; }
-  .wp-grid.cols-2, .wp-grid.cols-3 { grid-template-columns: 1fr; }
+  .wp-grid.cols-2, .wp-grid.cols-3 { grid-template-columns: minmax(0, 1fr); }
   .pricing-row { grid-template-columns: 1fr auto; }
   .pricing-row .credit { grid-column: 1 / -1; }
 }

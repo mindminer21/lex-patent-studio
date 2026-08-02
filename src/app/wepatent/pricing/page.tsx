@@ -26,9 +26,9 @@ export default function PricingPage() {
           prepaid usage wallet, so you always see an estimated cost range and wallet sufficiency before a run.
         </p>
 
-        <div className="pricing-list" role="table" aria-label="wepatent subscription plans">
+        <ul className="pricing-list" aria-label="wepatent subscription plans">
           {plans.map(([name, price, cadence, credit, audience]) => (
-            <article className="pricing-row" key={name} role="row">
+            <li className="pricing-row" key={name}>
               <div>
                 <h2>{name}</h2>
                 <p>{audience}</p>
@@ -38,9 +38,9 @@ export default function PricingPage() {
                 <span>{cadence}</span>
               </p>
               <p className="credit">{credit}</p>
-            </article>
+            </li>
           ))}
-        </div>
+        </ul>
 
         <section className="terms-source">
           <h2>How AI usage billing works</h2>

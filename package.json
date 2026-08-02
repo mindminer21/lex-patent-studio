@@ -9,8 +9,11 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build && npm run test:e2e",
-    "test:e2e": "playwright test"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build && npm run test:e2e && npm run audit:prod && npm run scan:secrets",
+    "test:e2e": "playwright test",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "scan:secrets": "bash scripts/scan-secrets.sh",
+    "test:rls": "bash scripts/test-rls.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
@@ -23,6 +26,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -35,5 +39,9 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "postcss": "^8.5.25",
+    "sharp": "^0.35.3"
   }
 }
