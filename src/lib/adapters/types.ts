@@ -3,6 +3,7 @@ import type {
   AuditEvent,
   ClaimRecord,
   DeadlineObservation,
+  ExportRecord,
   FactCreateInput,
   FactEvent,
   Matter,
@@ -144,6 +145,18 @@ export interface DataAdapter {
     organizationId: string,
     documentId: string,
   ): Promise<ReviewDecisionRecord[]>;
+  /**
+   * Create (or idempotently return) the version-locked export for a
+   * document (FR-8). Immutable: re-export of the same document version
+   * returns the existing artifact; edits create new versions.
+   */
+  createExport(
+    organizationId: string,
+    documentId: string,
+    actor: ActorContext,
+  ): Promise<Result<{ record: ExportRecord; reused: boolean }>>;
+  listExports(organizationId: string, matterId?: string): Promise<ExportRecord[]>;
+  getExport(organizationId: string, exportId: string): Promise<ExportRecord | null>;
   listDeadlines(organizationId: string): Promise<DeadlineObservation[]>;
   listAuditEvents(
     organizationId: string,

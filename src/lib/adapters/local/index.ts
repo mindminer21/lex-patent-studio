@@ -33,6 +33,7 @@ import {
   matterPatchSchema,
   runRequestSchema,
   uploadSignSchema,
+  type ExportRecord,
   type FactEvent,
   type Matter,
   type MatterFact,
@@ -42,6 +43,8 @@ import {
   type UploadTarget,
   type WorkflowRun,
 } from "@/lib/domain/schemas";
+import { renderUsptoDocx } from "@/lib/export/docx";
+import { buildExportManifest, exportFileName } from "@/lib/export/manifest";
 import { CORPUS_RELEASE, DEMO_SESSION } from "./seed";
 import {
   advanceAllRuns,
@@ -604,6 +607,95 @@ const localData: DataAdapter = {
     return store.decisions
       .filter((d) => d.organizationId === organizationId && itemIds.has(d.reviewItemId))
       .sort((a, b) => a.decidedAt.localeCompare(b.decidedAt));
+  },
+
+  async createExport(organizationId, documentId, actor) {
+    const store = getLocalStore();
+    const doc = store.documents.find(
+      (d) => d.organizationId === organizationId && d.id === documentId,
+    );
+    if (!doc) return { ok: false, error: "Document not found in this tenant." };
+
+    // Export-as-approved is a separate right from draft export (FR-8).
+    const requiredAction =
+      doc.reviewState === "approved" ? "export.approved" : "export.draft";
+    if (!can(actor.role, requiredAction)) {
+      return {
+        ok: false,
+        error: `Role "${actor.role}" may not export this document (${requiredAction} required).`,
+      };
+    }
+
+    // Version-locked immutability: an export for this document version is
+    // created at most once; re-export returns the existing artifact.
+    const existing = store.exports.find(
+      (e) =>
+        e.organizationId === organizationId &&
+        e.documentId === documentId &&
+        e.documentVersion === doc.version,
+    );
+    if (existing) return { ok: true, record: existing, reused: true };
+
+    const exportId = newId("exp");
+    const generatedAt = nowIso();
+    const docxBuffer = await renderUsptoDocx(doc);
+    const decisions = await localData.listDecisionsForDocument(
+      organizationId,
+      documentId,
+    );
+    const manifest = buildExportManifest({
+      exportId,
+      document: doc,
+      decisions,
+      docxBuffer,
+      generatedBy: actor.userId,
+      generatedAt,
+    });
+
+    const record: ExportRecord = {
+      id: exportId,
+      organizationId,
+      matterId: doc.matterId,
+      documentId,
+      documentVersion: doc.version,
+      fileName: exportFileName(doc),
+      docxSha256: manifest.checksums.docxSha256,
+      manifest,
+      docxBase64: docxBuffer.toString("base64"),
+      createdBy: actor.userId,
+      createdAt: generatedAt,
+    };
+    store.exports.push(record);
+
+    appendAudit(store, {
+      organizationId,
+      matterId: doc.matterId,
+      actorUserId: actor.userId,
+      actorRole: actor.role,
+      action: doc.reviewState === "approved" ? "export.approved" : "export.draft",
+      subjectType: "export",
+      subjectId: exportId,
+      detail: `Exported "${doc.title}" v${doc.version} (${record.fileName}, sha256 ${record.docxSha256.slice(0, 12)}…)${manifest.watermark ? ` watermarked "${manifest.watermark}"` : " as approved work product"}.`,
+    });
+    return { ok: true, record, reused: false };
+  },
+
+  async listExports(organizationId, matterId) {
+    return getLocalStore()
+      .exports.filter(
+        (e) =>
+          e.organizationId === organizationId &&
+          (!matterId || e.matterId === matterId),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async getExport(organizationId, exportId) {
+    return (
+      getLocalStore().exports.find(
+        (e) => e.organizationId === organizationId && e.id === exportId,
+      ) ?? null
+    );
   },
 
   async listDeadlines(organizationId) {
