@@ -9,7 +9,7 @@ import {
   addFact,
   updateFactProvenance,
 } from "@/lib/server/services/inventions";
-import { runGeneration } from "@/lib/server/services/generation";
+import { enqueueJob } from "@/lib/server/jobs/runner";
 import { createExport } from "@/lib/server/services/exports";
 import type { DraftWorkflow } from "@/lib/server/adapters/types";
 
@@ -165,6 +165,12 @@ export async function addSourceAction(formData: FormData): Promise<void> {
   redirect(`/app/inventions/${inventionId}/sources`);
 }
 
+/**
+ * Enqueues a durable generation job (PRD §7.4, §14). The request path never
+ * waits for the model; the drafts screen polls /api/jobs/:id for progress.
+ * The idempotency key travels into the reservation layer so a retry can
+ * never double-charge.
+ */
 export async function generateDraftAction(formData: FormData): Promise<void> {
   const context = await requireOnboarded();
   const inventionId = String(formData.get("inventionId") ?? "");
@@ -174,18 +180,43 @@ export async function generateDraftAction(formData: FormData): Promise<void> {
   if (!WORKFLOWS.includes(workflow as DraftWorkflow) || !idempotencyKey) {
     redirect(`/app/inventions/${inventionId}/drafts?error=invalid_input`);
   }
-  const result = await runGeneration({
+  const { data } = getAdapters();
+  const invention = await data.getInvention(context.organization.id, inventionId);
+  if (!invention) redirect("/app");
+  const result = await enqueueJob({
     organizationId: context.organization.id,
-    userId: context.user.id,
-    inventionId,
-    workflow: workflow as DraftWorkflow,
-    tierId,
+    kind: "generation",
     idempotencyKey,
+    payload: {
+      inventionId,
+      workflow,
+      tierId,
+      userId: context.user.id,
+    },
   });
   if (!result.ok) {
-    redirect(`/app/inventions/${inventionId}/drafts?error=${result.error}`);
+    redirect(`/app/inventions/${inventionId}/drafts?error=invalid_input`);
   }
-  redirect(`/app/inventions/${inventionId}/drafts?version=${result.version.id}`);
+  redirect(`/app/inventions/${inventionId}/drafts?job=${result.job.id}`);
+}
+
+/** Retries a failed/cancelled generation job under its original key. */
+export async function retryGenerationAction(formData: FormData): Promise<void> {
+  const context = await requireOnboarded();
+  const jobId = String(formData.get("jobId") ?? "");
+  const { data } = getAdapters();
+  const job = await data.getJob(context.organization.id, jobId);
+  if (!job || job.kind !== "generation") redirect("/app");
+  const inventionId = String(job.payload.inventionId ?? "");
+  const result = await enqueueJob({
+    organizationId: context.organization.id,
+    kind: "generation",
+    idempotencyKey: job.idempotencyKey,
+    payload: job.payload,
+  });
+  redirect(
+    `/app/inventions/${inventionId}/drafts${result.ok ? `?job=${result.job.id}` : "?error=invalid_input"}`,
+  );
 }
 
 export async function createExportAction(formData: FormData): Promise<void> {

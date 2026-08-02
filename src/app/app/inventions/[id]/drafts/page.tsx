@@ -6,10 +6,11 @@ import {
   WORKFLOW_ALLOWLIST,
   WORKFLOW_TITLES,
 } from "@/lib/server/model-registry";
+import JobProgress from "@/components/wepatent/JobProgress";
 import { estimateForTier } from "@/lib/server/services/generation";
 import { requireOnboarded } from "@/lib/server/session";
 import type { DraftWorkflow } from "@/lib/server/adapters/types";
-import { generateDraftAction } from "../actions";
+import { generateDraftAction, retryGenerationAction } from "../actions";
 
 function usd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -28,10 +29,10 @@ export default async function DraftsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; version?: string }>;
+  searchParams: Promise<{ error?: string; version?: string; job?: string }>;
 }) {
   const { id } = await params;
-  const { error, version: versionId } = await searchParams;
+  const { error, version: versionId, job: jobId } = await searchParams;
   const context = await requireOnboarded();
   const { data } = getAdapters();
   const invention = await data.getInvention(context.organization.id, id);
@@ -75,6 +76,20 @@ export default async function DraftsPage({
         <p className="form-error" role="alert">
           {ERROR_MESSAGES[error] ?? "Something went wrong."}
         </p>
+      )}
+
+      {jobId && !selectedVersion && (
+        <JobProgress
+          jobId={jobId}
+          successPath={`/app/inventions/${id}/drafts?version=:versionId`}
+        >
+          <form action={retryGenerationAction} className="wp-inline-form">
+            <input type="hidden" name="jobId" value={jobId} />
+            <button className="button button-secondary button-small" type="submit">
+              Retry generation (same idempotency key)
+            </button>
+          </form>
+        </JobProgress>
       )}
 
       {selectedVersion && (
