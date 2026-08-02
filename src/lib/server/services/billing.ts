@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { getAdapters } from "../adapters";
 import { verifyStripeSignature } from "../adapters/production/stripe-billing";
 import type { BillingOutboxRecord, CheckoutRequest } from "../adapters/types";
+import { incrementCounter, logEvent, newCorrelationId } from "../observability";
 
 /**
  * Stripe webhook processing (FR-6): verified signature → idempotent event
@@ -105,13 +106,23 @@ export async function processStripeWebhook(params: {
     return { ok: false, error: "invalid_payload" };
   }
 
+  const correlationId = newCorrelationId();
   const verification = verifyStripeSignature({
     payload: params.payload,
     header: params.signatureHeader,
     secret,
     nowSeconds: params.nowSeconds,
   });
-  if (!verification.ok) return { ok: false, error: "invalid_signature" };
+  if (!verification.ok) {
+    incrementCounter("webhook.rejected");
+    logEvent({
+      level: "warn",
+      event: "webhook.signature_rejected",
+      correlationId,
+      meta: { reason: verification.error },
+    });
+    return { ok: false, error: "invalid_signature" };
+  }
 
   let json: unknown;
   try {
@@ -158,6 +169,12 @@ export async function processStripeWebhook(params: {
     });
     await drainBillingOutbox();
     await data.markStripeEventProcessed(event.id);
+    logEvent({
+      level: "info",
+      event: "webhook.processed",
+      correlationId: event.id,
+      meta: { type: event.type, amountCents },
+    });
     return { ok: true, status: "processed" };
   }
 

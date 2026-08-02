@@ -3,6 +3,7 @@ import "server-only";
 import { canRetryJob, canTransitionJob } from "@/lib/domain/jobs";
 import { getAdapters } from "../adapters";
 import type { Id, JobKind, JobRecord } from "../adapters/types";
+import { incrementCounter, logEvent, recordTiming } from "../observability";
 import { getExecutor } from "./executors";
 
 /**
@@ -49,6 +50,13 @@ export async function enqueueJob(
         status: "queued",
         errorSummary: null,
       });
+      incrementCounter("job.retried");
+      logEvent({
+        level: "info",
+        event: "job.requeued",
+        correlationId: existing.id,
+        meta: { kind: existing.kind, attempts: existing.attempts },
+      });
       if (requeued && !options?.defer) schedule(input.organizationId, requeued.id);
       return { ok: true, job: requeued ?? existing, deduplicated: true };
     }
@@ -94,15 +102,48 @@ export async function processJob(organizationId: Id, jobId: Id): Promise<JobReco
     attempts: job.attempts + 1,
     startedAt: new Date().toISOString(),
   });
+  // The job id doubles as the correlation id across web → job → provider →
+  // billing events (FR-7).
+  logEvent({
+    level: "info",
+    event: "job.started",
+    correlationId: jobId,
+    meta: { kind: job.kind, attempt: job.attempts + 1 },
+  });
+  const startedMs = Date.now();
 
   try {
     const result = await executor({ ...job, status: "running", attempts: job.attempts + 1 });
+    incrementCounter("job.succeeded");
+    recordTiming(`job.duration.${job.kind}`, Date.now() - startedMs);
+    logEvent({
+      level: "info",
+      event: "job.succeeded",
+      correlationId: jobId,
+      meta: { kind: job.kind, durationMs: Date.now() - startedMs },
+    });
     return await data.updateJob(organizationId, jobId, {
       status: "succeeded",
       result,
       finishedAt: new Date().toISOString(),
     });
   } catch (error) {
+    incrementCounter("job.failed");
+    recordTiming(`job.duration.${job.kind}`, Date.now() - startedMs);
+    // Internal detail (e.g. gateway internalDetail) goes to structured logs
+    // only; the stored summary and any client response stay generic.
+    const internalDetail =
+      error && typeof error === "object" && "internalDetail" in error
+        ? String((error as { internalDetail: unknown }).internalDetail)
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    logEvent({
+      level: "error",
+      event: "job.failed",
+      correlationId: jobId,
+      meta: { kind: job.kind, internalDetail },
+    });
     return await data.updateJob(organizationId, jobId, {
       status: "failed",
       // Generic summaries only — provider/internal detail stays server-side
