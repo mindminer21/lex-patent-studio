@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import PublicShell from "@/components/wepatent/PublicShell";
+import { CURRENT_TERMS_VERSION } from "@/lib/wepatent/domain/clickwrap";
 
 export const metadata: Metadata = {
   title: "Draft Self-Service Terms | wepatent",
@@ -20,17 +23,42 @@ const sections = [
 
 export default function SelfServiceTerms() {
   return (
-    <div className="terms-page">
-      <header className="terms-header"><a className="venture-wordmark" href="/wepatent"><span>wp</span> wepatent</a><a className="text-link" href="/wepatent#start">Return to acknowledgement</a></header>
-      <main>
+    <PublicShell>
+      <div className="policy-page">
         <p className="venture-kicker">Design-stage legal architecture · not approved launch terms</p>
         <h1>Self-Service Terms and Required Counsel Review</h1>
-        <p className="terms-intro">This prototype adapts the risk-control categories commonly used by self-service legal-technology providers, including LegalZoom, but uses original product-specific language. It must be reviewed by UPL/ethics, consumer-contract, privacy, and technology counsel before release.</p>
-        <div className="terms-warning"><strong>Key requirement:</strong> wepatent is not a law firm and does not provide legal advice. Patent-related drafts must be reviewed and approved by qualified patent counsel before filing or consequential use.</div>
-        <div className="terms-sections">{sections.map(([title, text]) => <section key={title}><h2>{title}</h2><p>{text}</p></section>)}</div>
-        <section className="terms-source"><h2>Reference pattern</h2><p>LegalZoom Terms of Use reviewed July 30, 2026: <a href="https://www.legalzoom.com/legal/general-terms/terms-of-use">legalzoom.com/legal/general-terms/terms-of-use</a>. The reference is used for clause categories, not copied language or an assumption of enforceability.</p></section>
-      </main>
-      <footer className="venture-footer"><span>Draft for product and counsel review</span><span>Not customer-ready terms</span></footer>
-    </div>
+        <p className="terms-intro">
+          Terms version <strong>{CURRENT_TERMS_VERSION}</strong>. This prototype adapts the risk-control
+          categories commonly used by self-service legal-technology providers, including LegalZoom, but uses
+          original product-specific language. It must be reviewed by UPL/ethics, consumer-contract, privacy,
+          and technology counsel before release.
+        </p>
+        <div className="terms-warning">
+          <strong>Key requirement:</strong> wepatent is not a law firm and does not provide legal advice.
+          Patent-related drafts must be reviewed and approved by qualified patent counsel before filing or
+          consequential use.
+        </div>
+        <div className="terms-sections">
+          {sections.map(([title, text]) => (
+            <section key={title}>
+              <h2>{title}</h2>
+              <p>{text}</p>
+            </section>
+          ))}
+        </div>
+        <section className="terms-source">
+          <h2>Reference pattern</h2>
+          <p>
+            LegalZoom Terms of Use reviewed July 30, 2026:{" "}
+            <a href="https://www.legalzoom.com/legal/general-terms/terms-of-use">
+              legalzoom.com/legal/general-terms/terms-of-use
+            </a>
+            . The reference is used for clause categories, not copied language or an assumption of
+            enforceability. See also the <Link href="/wepatent/privacy">Privacy Policy</Link> and{" "}
+            <Link href="/wepatent/ai-disclosure">AI Disclosure</Link> drafts.
+          </p>
+        </section>
+      </div>
+    </PublicShell>
   );
 }

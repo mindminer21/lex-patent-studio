@@ -44,7 +44,7 @@ import { buildExportManifest, exportFileName, sha256Hex } from "@/lib/export/man
 
 /**
  * PRODUCTION DataAdapter — PostgreSQL implementation over the migration
- * schema (supabase/migrations/0001–0006).
+ * schema (supabase/lex/migrations/0001–0006).
  *
  * Design (mirrors the migrations' security model):
  *  - The web tier connects with the service credential; RLS protects direct

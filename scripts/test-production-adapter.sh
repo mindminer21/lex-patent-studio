@@ -22,8 +22,8 @@ psql -d postgres -q -v ON_ERROR_STOP=1 \
   -c "create database ${DB};"
 
 echo "== Applying auth shim + migrations"
-psql -d "$DB" -q -v ON_ERROR_STOP=1 -f supabase/tests/helpers/local_auth_shim.sql
-for f in supabase/migrations/0*.sql; do
+psql -d "$DB" -q -v ON_ERROR_STOP=1 -f supabase/lex/tests/helpers/local_auth_shim.sql
+for f in supabase/lex/migrations/0*.sql; do
   echo "   -> $f"
   psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$f"
 done

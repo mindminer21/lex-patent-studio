@@ -14,10 +14,10 @@ import { ProviderGatewayAdapter } from "./gateway";
  * here runs. The exact enabling actions (all Jeff, per PRD §20 /
  * PRD-wepatent §17):
  *
- *  1. Create the private Supabase project; apply supabase/migrations/;
+ *  1. Create the private Supabase project; apply supabase/lex/migrations/;
  *     set LEX_SUPABASE_URL / LEX_SUPABASE_ANON_KEY /
  *     LEX_SUPABASE_SERVICE_ROLE_KEY / LEX_DATABASE_URL.
- *  2. Create the corpus project; apply supabase/corpus-migrations/;
+ *  2. Create the corpus project; apply supabase/lex/corpus-migrations/;
  *     set LEX_CORPUS_* (separate credentials; §6.3).
  *  3. Create the Stripe account; set LEX_STRIPE_*; approve pricing
  *     (§20.14) and live billing (§17.4) before enabling top-ups.

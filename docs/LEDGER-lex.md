@@ -176,3 +176,35 @@ Everything above is committed. Re-verify with:
 (build first; Chromium pinned at /opt/pw-browsers/chromium-1194). The only
 open items are the §20 approval-gated actions listed above and the
 non-blocking follow-ups.
+
+## Reconciliation (2026-08-02)
+
+The `track/lex-app` and `track/wepatent-app` branches were merged into one tree on
+`track/wepatent-app-reconciled`. The PRDs require the two products to remain separable
+(distinct deployments/identities); Lex keeps every namespace it owned, and wepatent moved
+under its own namespaces. Lex behavior is unchanged.
+
+What stayed (Lex-owned, unchanged):
+- Routes: `/` and all root marketing/legal pages, `/app/**` workspace, Lex `/api/**`
+  (matters, runs, exports, knowledge, review-queue, …).
+- Libraries: `src/lib/env`, `src/lib/domain`, `src/lib/adapters`, `src/lib/api`,
+  `src/lib/eval`, `src/lib/export`, `src/lib/knowledge` — untouched.
+- The `LEX_*` env contract; local mode still boots with zero credentials.
+
+What moved (repo layout only, no Lex behavior change):
+- Migrations/pgTAP: `supabase/migrations|corpus-migrations|tests` → `supabase/lex/...`;
+  `scripts/test-rls.sh` → `scripts/test-rls-lex.sh` (package script `test:rls:lex`);
+  `scripts/test-production-adapter.sh` updated to the new paths.
+- Tests: E2E specs `e2e/*.spec.ts` → `e2e/lex/`, run via `playwright.lex.config.ts`
+  (`test:e2e:lex`, port 4123); unit suite runs via `vitest.lex.config.mts` (`test:lex`).
+- `/wepatent` + `/wepatent/terms` design proofs and the `/venture` +
+  `/self-service-terms` redirect stubs were replaced by the real wepatent product pages
+  and `next.config.ts` 308 redirects (the wepatent track's implementations).
+- `next.config.ts` headers are the union of both policies (Lex's CSP `object-src 'none'`
+  and Permissions-Policy `usb=()` kept; wepatent's `font-src … data:` added).
+
+Verification after reconciliation (2026-08-02, this container): `npm run lint` (0 errors),
+`npx tsc --noEmit` (clean), `npm run test:lex` (409 passed, 8 skipped),
+`npm run test:rls:lex` (96 pgTAP), `npm run test:e2e:lex` (14 passed, Chromium pinned at
+/opt/pw-browsers), `npm run build` (success). See the merge commit on
+`track/wepatent-app-reconciled` for the full evidence run.

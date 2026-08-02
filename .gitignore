@@ -40,6 +40,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Playwright
+# local private-blob storage (FR-4 local adapter) — synthetic data only
+/.local-storage/
+
+# supabase CLI local state
+/supabase/wepatent/.temp/
+/supabase/wepatent/.branches/
+
+# playwright
 /test-results/
 /playwright-report/

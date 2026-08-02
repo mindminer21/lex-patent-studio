@@ -7,32 +7,50 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "test:rls": "scripts/test-rls.sh",
-    "verify": "npm run lint && npm run typecheck && npm test && npm run build",
-    "test:e2e": "playwright test",
-    "test:production-adapter": "scripts/test-production-adapter.sh"
+    "test": "npm run test:lex && npm run test:wepatent",
+    "test:lex": "vitest run --config vitest.lex.config.mts",
+    "test:wepatent": "vitest run --config vitest.wepatent.config.ts",
+    "test:e2e": "npm run test:e2e:lex && npm run test:e2e:wepatent",
+    "test:e2e:lex": "playwright test --config playwright.lex.config.ts",
+    "test:e2e:wepatent": "playwright test --config playwright.wepatent.config.ts",
+    "test:rls": "npm run test:rls:lex && npm run test:rls:wepatent",
+    "test:rls:lex": "bash scripts/test-rls-lex.sh",
+    "test:rls:wepatent": "bash scripts/test-rls-wepatent.sh",
+    "test:production-adapter": "scripts/test-production-adapter.sh",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "scan:secrets": "bash scripts/scan-secrets.sh",
+    "verify": "npm run lint && npm run typecheck && npm run test:lex && npm run test:wepatent && npm run build"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
     "docx": "^9.7.1",
     "next": "16.2.12",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.20.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "supabase": "^2.111.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "postcss": "^8.5.25",
+    "sharp": "^0.35.3"
   }
 }

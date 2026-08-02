@@ -122,7 +122,7 @@ export default async function SettingsPage() {
                 {
                   name: "Supabase (private application project)",
                   envVars: "LEX_SUPABASE_URL / ANON_KEY / SERVICE_ROLE_KEY",
-                  action: "Create project, apply supabase/migrations, set env vars (§17.1 approval)",
+                  action: "Create project, apply supabase/lex/migrations, set env vars (§17.1 approval)",
                 },
                 {
                   name: "Supabase (public corpus project — separate credentials)",
