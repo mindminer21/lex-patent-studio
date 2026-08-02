@@ -49,13 +49,7 @@ import {
   cancelRun as orchestratorCancelRun,
   startRunPlan,
 } from "./orchestrator";
-import {
-  appendAudit,
-  getLocalStore,
-  newId,
-  nowIso,
-  resetLocalStore,
-} from "./store";
+import { appendAudit, getLocalStore, newId, nowIso } from "./store";
 
 /**
  * Local-mode adapters: fully in-memory, zero credentials, synthetic data.
