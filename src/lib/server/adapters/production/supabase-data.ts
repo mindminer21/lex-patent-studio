@@ -534,6 +534,42 @@ export class SupabaseDataAdapter implements DataPort {
     if (error) throw new Error(`supabase_adapter:inventions.softDelete:${error.message}`);
   }
 
+  async listSoftDeletedInventions(organizationId: Id): Promise<InventionRecord[]> {
+    const rows = await many<Row>(
+      this.from("inventions")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("status", "soft_deleted"),
+      "inventions.listSoftDeleted",
+    );
+    return rows.map(mapInvention);
+  }
+
+  async hardDeleteInvention(organizationId: Id, inventionId: Id): Promise<void> {
+    // Child rows (facts, contributors, events, sources, extractions,
+    // drafts, versions, citations, exports, artifacts) are removed by the
+    // ON DELETE CASCADE constraints in supabase/migrations/0003+0006.
+    const { error } = await this.from("inventions")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", inventionId);
+    if (error) throw new Error(`supabase_adapter:inventions.hardDelete:${error.message}`);
+  }
+
+  async updateOrganizationRetention(
+    organizationId: Id,
+    retentionDays: number,
+  ): Promise<OrganizationRecord | null> {
+    const row = await one<Row>(
+      this.from("organizations")
+        .update({ retention_days: retentionDays })
+        .eq("id", organizationId)
+        .select(),
+      "organizations.updateRetention",
+    );
+    return row ? mapOrganization(row) : null;
+  }
+
   async createFact(
     input: Omit<InventionFactRecord, "id" | "updatedAt">,
   ): Promise<InventionFactRecord> {

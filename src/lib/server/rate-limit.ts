@@ -54,5 +54,10 @@ export function resetRateLimits(): void {
   holder[STATE_KEY] = new Map();
 }
 
-/** Auth endpoints (FR-1): 20 attempts per 5 minutes per hashed IP. */
-export const SIGN_IN_LIMIT = { limit: 20, windowMs: 5 * 60 * 1000 };
+/**
+ * Auth endpoints (FR-1), two layers:
+ * - per hashed IP + email: brute-force protection on a single account;
+ * - per hashed IP: a broader spray cap that still admits shared-NAT teams.
+ */
+export const SIGN_IN_EMAIL_LIMIT = { limit: 10, windowMs: 5 * 60 * 1000 };
+export const SIGN_IN_IP_LIMIT = { limit: 100, windowMs: 5 * 60 * 1000 };

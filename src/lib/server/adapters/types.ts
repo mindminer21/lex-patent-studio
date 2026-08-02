@@ -449,6 +449,19 @@ export interface DataPort {
   getInvention(organizationId: Id, inventionId: Id): Promise<InventionRecord | null>;
   listInventions(organizationId: Id): Promise<InventionRecord[]>;
   softDeleteInvention(organizationId: Id, inventionId: Id): Promise<void>;
+  /** FR-3 retention: soft-deleted records awaiting the purge window. */
+  listSoftDeletedInventions(organizationId: Id): Promise<InventionRecord[]>;
+  /**
+   * FR-3 retention purge: permanently removes the invention and all its
+   * content rows (facts, contributors, events, sources, drafts, versions,
+   * exports/artifacts). Audit events are retained as purge evidence.
+   */
+  hardDeleteInvention(organizationId: Id, inventionId: Id): Promise<void>;
+  /** FR-3: owner-adjustable retention window (30–3650 days). */
+  updateOrganizationRetention(
+    organizationId: Id,
+    retentionDays: number,
+  ): Promise<OrganizationRecord | null>;
 
   createFact(
     input: Omit<InventionFactRecord, "id" | "updatedAt">,

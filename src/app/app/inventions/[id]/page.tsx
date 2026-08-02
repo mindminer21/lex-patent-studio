@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { softDeleteInventionAction } from "./actions";
 import { notFound } from "next/navigation";
 import { isUnresolved } from "@/lib/domain/facts";
 import { getAdapters } from "@/lib/server/adapters";
@@ -86,6 +87,20 @@ export default async function InventionOverviewPage({
               </tr>
             </tbody>
           </table>
+        </div>
+        <div className="wp-card" style={{ marginTop: 22 }}>
+          <p className="venture-kicker">Delete this record</p>
+          <p>
+            Deleting moves the record out of active lists immediately (soft delete). It is
+            permanently purged — facts, sources, drafts, and exports removed — after the
+            organization&apos;s retention window ({/* FR-3 */}see Settings).
+          </p>
+          <form action={softDeleteInventionAction}>
+            <input type="hidden" name="inventionId" value={id} />
+            <button className="button button-secondary button-small" type="submit">
+              Soft-delete invention record
+            </button>
+          </form>
         </div>
         <div className="wp-card" style={{ marginTop: 22 }}>
           <p className="venture-kicker">What counsel still decides</p>

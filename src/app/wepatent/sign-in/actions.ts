@@ -1,11 +1,16 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { isLocalMode } from "@/lib/env";
 import { getAdapters } from "@/lib/server/adapters";
 import { incrementCounter, logEvent } from "@/lib/server/observability";
-import { checkRateLimit, SIGN_IN_LIMIT } from "@/lib/server/rate-limit";
+import {
+  checkRateLimit,
+  SIGN_IN_EMAIL_LIMIT,
+  SIGN_IN_IP_LIMIT,
+} from "@/lib/server/rate-limit";
 import { createSession, destroySession, requestIpHash } from "@/lib/server/session";
 
 const emailSchema = z.email();
@@ -29,18 +34,25 @@ const LOCAL_COUNSEL_SEEDS: Record<string, "counsel_intake" | "counsel_attorney">
  * MFA required for counsel administrators).
  */
 export async function signInAction(formData: FormData): Promise<void> {
-  // FR-1: rate limit the auth endpoint per hashed IP (never a raw IP).
+  const rawEmail = String(formData.get("email") ?? "")
+    .trim()
+    .toLowerCase();
+
+  // FR-1: rate limit the auth endpoint. Keys use the hashed IP (never a
+  // raw IP) — a tight per-account layer plus a broader per-IP spray cap.
   const ipHash = await requestIpHash();
-  const rate = checkRateLimit({ key: `signin:${ipHash}`, ...SIGN_IN_LIMIT });
-  if (!rate.allowed) {
+  const emailHash = createHash("sha256").update(rawEmail).digest("hex").slice(0, 16);
+  const perEmail = checkRateLimit({
+    key: `signin:${ipHash}:${emailHash}`,
+    ...SIGN_IN_EMAIL_LIMIT,
+  });
+  const perIp = checkRateLimit({ key: `signin:${ipHash}`, ...SIGN_IN_IP_LIMIT });
+  if (!perEmail.allowed || !perIp.allowed) {
     incrementCounter("auth.rate_limited");
     logEvent({ level: "warn", event: "auth.rate_limited", meta: { ipHash } });
     redirect("/wepatent/sign-in?error=rate_limited");
   }
 
-  const rawEmail = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
   const parsed = emailSchema.safeParse(rawEmail);
   if (!parsed.success) {
     redirect("/wepatent/sign-in?error=invalid_email");

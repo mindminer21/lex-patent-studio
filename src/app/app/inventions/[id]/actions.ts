@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { FACT_PROVENANCE_STATES, type FactProvenance } from "@/lib/domain/facts";
+import { can } from "@/lib/domain/roles";
 import { getAdapters } from "@/lib/server/adapters";
 import { requireOnboarded } from "@/lib/server/session";
 import {
@@ -236,4 +237,29 @@ export async function createExportAction(formData: FormData): Promise<void> {
   redirect(
     `/app/inventions/${inventionId}/export${result.ok ? "" : `?error=${result.error}`}`,
   );
+}
+
+/**
+ * FR-3 soft deletion: the record leaves active lists immediately and is
+ * permanently purged after the organization's retention window (see
+ * Settings → Retention & deletion).
+ */
+export async function softDeleteInventionAction(formData: FormData): Promise<void> {
+  const context = await requireOnboarded();
+  if (!can(context.membership.role, "invention.edit")) {
+    redirect("/app?error=forbidden");
+  }
+  const inventionId = String(formData.get("inventionId") ?? "");
+  const { data } = getAdapters();
+  const invention = await data.getInvention(context.organization.id, inventionId);
+  if (!invention) redirect("/app?error=not_found");
+  await data.softDeleteInvention(context.organization.id, inventionId);
+  await data.appendAuditEvent({
+    organizationId: context.organization.id,
+    actor: `user:${context.user.id}`,
+    action: "invention.soft_deleted",
+    target: inventionId,
+    meta: {},
+  });
+  redirect("/app?deleted=1");
 }

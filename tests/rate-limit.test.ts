@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { checkRateLimit, resetRateLimits, SIGN_IN_LIMIT } from "@/lib/server/rate-limit";
+import {
+  checkRateLimit,
+  resetRateLimits,
+  SIGN_IN_EMAIL_LIMIT,
+  SIGN_IN_IP_LIMIT,
+} from "@/lib/server/rate-limit";
 
 /** FR-1/§11: auth-endpoint rate limiting. */
 
@@ -38,8 +43,9 @@ describe("rate limiter", () => {
   });
 
   it("sign-in policy is bounded and sane", () => {
-    expect(SIGN_IN_LIMIT.limit).toBeGreaterThan(0);
-    expect(SIGN_IN_LIMIT.limit).toBeLessThanOrEqual(50);
-    expect(SIGN_IN_LIMIT.windowMs).toBeGreaterThanOrEqual(60_000);
+    expect(SIGN_IN_EMAIL_LIMIT.limit).toBeGreaterThan(0);
+    expect(SIGN_IN_EMAIL_LIMIT.limit).toBeLessThanOrEqual(20);
+    expect(SIGN_IN_IP_LIMIT.limit).toBeGreaterThan(SIGN_IN_EMAIL_LIMIT.limit);
+    expect(SIGN_IN_IP_LIMIT.windowMs).toBeGreaterThanOrEqual(60_000);
   });
 });

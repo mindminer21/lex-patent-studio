@@ -3,18 +3,33 @@ import { isLocalMode } from "@/lib/env";
 import { getAdapters } from "@/lib/server/adapters";
 import { invitationStatus } from "@/lib/server/services/invitations";
 import { requireOrg } from "@/lib/server/session";
-import { inviteMemberAction, revokeInvitationAction } from "./actions";
+import {
+  inviteMemberAction,
+  revokeInvitationAction,
+  runPurgeAction,
+  updateRetentionAction,
+} from "./actions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   forbidden: "Only owners and admins can manage members.",
   invalid_input: "Enter a valid email address and role.",
   already_member: "That person is already a member of this organization.",
+  retention_forbidden: "Only the organization owner can manage retention.",
+  retention_invalid_input: "Retention must be between 30 and 3650 days.",
 };
 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; invited?: string; token?: string; existing?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    invited?: string;
+    token?: string;
+    existing?: string;
+    retention?: string;
+    purged?: string;
+    pending?: string;
+  }>;
 }) {
   const params = await searchParams;
   const context = await requireOrg();
@@ -28,7 +43,9 @@ export default async function SettingsPage({
   );
   const invitations = await data.listInvitations(context.organization.id);
   const audit = await data.listAuditEvents(context.organization.id);
+  const softDeleted = await data.listSoftDeletedInventions(context.organization.id);
   const canManage = can(context.membership.role, "org.members.manage");
+  const canManageOrg = can(context.membership.role, "org.manage");
 
   return (
     <>
@@ -52,13 +69,63 @@ export default async function SettingsPage({
               </tr>
               <tr>
                 <td>Retention</td>
-                <td>
-                  {context.organization.retentionDays} days (default). Retention-aware purge and
-                  deletion workflows ship with the production data plane.
-                </td>
+                <td>{context.organization.retentionDays} days</td>
               </tr>
             </tbody>
           </table>
+
+          <h2 style={{ marginTop: 26 }}>Retention &amp; deletion</h2>
+          {params.retention === "updated" && (
+            <p className="form-success" role="status">
+              Retention window updated and audited.
+            </p>
+          )}
+          {params.purged !== undefined && (
+            <p className="form-success" role="status">
+              Purge complete: {params.purged} record(s) permanently deleted
+              {params.pending && Number(params.pending) > 0
+                ? `; ${params.pending} soft-deleted record(s) remain inside the retention window`
+                : ""}
+              . Audit evidence retained.
+            </p>
+          )}
+          {params.error?.startsWith("retention_") && (
+            <p className="form-error" role="alert">
+              {ERROR_MESSAGES[params.error] ?? "Retention update failed."}
+            </p>
+          )}
+          <p>
+            Soft-deleted invention records: {softDeleted.length}. A soft-deleted record is
+            permanently purged (facts, sources, drafts, and exports removed) once it has been
+            deleted for longer than the retention window; audit evidence is kept.
+          </p>
+          {canManageOrg ? (
+            <>
+              <form action={updateRetentionAction} className="wp-inline-form">
+                <label htmlFor="retention-days">Retention window (days)</label>
+                <input
+                  id="retention-days"
+                  name="retentionDays"
+                  type="number"
+                  min={30}
+                  max={3650}
+                  defaultValue={context.organization.retentionDays}
+                  required
+                  style={{ width: 110, marginLeft: 8, marginRight: 8 }}
+                />
+                <button className="button button-secondary button-small" type="submit">
+                  Update retention
+                </button>
+              </form>
+              <form action={runPurgeAction} style={{ marginTop: 10 }}>
+                <button className="button button-secondary button-small" type="submit">
+                  Run retention purge now
+                </button>
+              </form>
+            </>
+          ) : (
+            <p className="consent-legal">Only the organization owner can manage retention.</p>
+          )}
           <h2 style={{ marginTop: 26 }}>Members</h2>
           <table className="wp-table">
             <thead>

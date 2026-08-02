@@ -274,6 +274,59 @@ export class LocalDataAdapter implements DataPort {
     }
   }
 
+  async listSoftDeletedInventions(organizationId: Id): Promise<InventionRecord[]> {
+    return [...tables().inventions.values()].filter(
+      (i) => i.organizationId === organizationId && i.status === "soft_deleted",
+    );
+  }
+
+  async hardDeleteInvention(organizationId: Id, inventionId: Id): Promise<void> {
+    const t = tables();
+    const invention = t.inventions.get(inventionId);
+    if (!invention || invention.organizationId !== organizationId) return;
+
+    const draftIds = new Set(
+      [...t.drafts.values()]
+        .filter((d) => d.organizationId === organizationId && d.inventionId === inventionId)
+        .map((d) => d.id),
+    );
+    const exportIds = new Set(
+      [...t.exports.values()]
+        .filter((e) => e.organizationId === organizationId && e.inventionId === inventionId)
+        .map((e) => e.id),
+    );
+
+    for (const [id, fact] of t.facts) {
+      if (fact.inventionId === inventionId) t.facts.delete(id);
+    }
+    for (const [id, contributor] of t.contributors) {
+      if (contributor.inventionId === inventionId) t.contributors.delete(id);
+    }
+    for (const [id, event] of t.disclosureEvents) {
+      if (event.inventionId === inventionId) t.disclosureEvents.delete(id);
+    }
+    for (const [id, source] of t.sources) {
+      if (source.inventionId === inventionId) t.sources.delete(id);
+    }
+    for (const [id, version] of t.draftVersions) {
+      if (draftIds.has(version.draftId)) t.draftVersions.delete(id);
+    }
+    for (const id of draftIds) t.drafts.delete(id);
+    t.exportArtifacts = t.exportArtifacts.filter((a) => !exportIds.has(a.exportId));
+    for (const id of exportIds) t.exports.delete(id);
+    t.inventions.delete(inventionId);
+  }
+
+  async updateOrganizationRetention(
+    organizationId: Id,
+    retentionDays: number,
+  ): Promise<OrganizationRecord | null> {
+    const organization = tables().organizations.get(organizationId) ?? null;
+    if (!organization) return null;
+    organization.retentionDays = retentionDays;
+    return organization;
+  }
+
   async createFact(
     input: Omit<InventionFactRecord, "id" | "updatedAt">,
   ): Promise<InventionFactRecord> {
