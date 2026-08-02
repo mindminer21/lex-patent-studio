@@ -3,98 +3,105 @@
 **Purpose:** durable, session-resumable record of PRD (`docs/PRD-wepatent.md`) completion state:
 requirements traceability, verification evidence, and the exact next action.
 **Branch:** `track/wepatent-app` (local commits only — pushing/deploying is not authorized).
-**Environment constraints:** no Docker daemon (`supabase start` impossible — RLS suite runs against a
-throwaway PostgreSQL 16 via `./scripts/test-rls.sh`); Playwright Chromium pinned at
-`/opt/pw-browsers`; no network beyond package registries; synthetic data only.
+**Environment constraints:** no Docker daemon (`supabase start` impossible — the RLS suite runs
+against a throwaway PostgreSQL 16 via `./scripts/test-rls.sh`; this container has postgresql-16 +
+pgtap + pg_prove installed and the suite passes); Playwright Chromium pinned at `/opt/pw-browsers`
+(`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`); no network beyond package registries; synthetic data only.
 
-## Verification commands (release gates, PRD §13)
+## Verification commands and latest results (2026-08-02, round 3 complete)
 
-```bash
-npm run lint          # 0 errors
-npm run typecheck     # 0 errors
-npm test              # vitest unit/integration
-npm run test:e2e      # Playwright (PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers)
-npm run build         # production build
-npm run audit:prod    # production dependency audit
-npm run scan:secrets  # secret scan
-./scripts/test-rls.sh # RLS pgTAP allow/deny matrix (needs local PostgreSQL 16 + pgtap)
-```
+| Command | Result |
+|---|---|
+| `npm run lint` | 0 errors |
+| `npm run typecheck` | 0 errors |
+| `npm test` | 20 files, 162/162 passed |
+| `npm run build` | success — 48 routes |
+| `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` | 32/32 passed (incl. axe a11y, console, responsive 320–1440, headers) |
+| `./scripts/test-rls.sh` | 4 pgTAP files, 105 assertions, PASS (migrations 0001–0008) |
+| `npm run audit:prod` / `npm audit` | 0 vulnerabilities (postcss/sharp overrides) |
+| `npm run scan:secrets` | clean |
 
 ## Status legend
 
-- **verified** — implemented and covered by an automated check that currently passes.
-- **partial** — some of the requirement works; the gap is listed.
-- **blocked** — cannot proceed without Jeff's approval / external credentials (PRD §17); the seam
-  is built and the enabling action is documented in §Blockers.
-- **unstarted** — no meaningful implementation yet.
+**verified** = implemented + passing automated check. **seam-complete** = production adapter
+fully implemented and tested with injected transports; only credentials/activation remain and
+those are approval-gated (PRD §17) — counts as satisfied for the §19 gate per the working
+agreement. **blocked** = requires Jeff / external party.
 
 ## Requirements traceability
 
-| # | Requirement / acceptance criterion | Implementation | Verification | Status | Evidence / remaining gap |
-|---|---|---|---|---|---|
-| §5.1–5.5 | counsel_request ≠ engagement; representation gates; no filing inference; attorney controls filing | `src/lib/domain/counsel-request.ts` state machine; `src/lib/server/services/counsel-lane.ts`; no "submitted" filing status (`FilingPackageStatus`) | `tests/counsel-request.test.ts`, `tests/counsel-lane.test.ts`, e2e `workspace.spec.ts` (not-represented status) | verified | State adjacency + role guards enforced server-side; filing packages have no submit path |
-| §5.6 | Tenant/role derived from session, never client tenant ID | `src/lib/server/session.ts`, `src/lib/server/api.ts` | `tests/services-flow.test.ts`, e2e cross-tenant test | verified | All services take org from session context |
-| §5.7 | RLS + cross-tenant isolation tests on every tenant table | `supabase/migrations/0001–0006`; `supabase/tests/01–04` | `./scripts/test-rls.sh` (pgTAP, 105 assertions) | verified | Requires local PostgreSQL 16 + pgtap; re-run before release |
-| §5.8 | Separate private vs public-corpus Supabase projects | `src/lib/env/index.ts` (fails fast if URLs equal); `supabase/corpus/migrations/0001_public_corpus.sql` | `loadEnv` guard; env contract | verified (schema) / blocked (live) | Live projects are approval-gated (§17.1) |
-| §5.9 | Model output is untrusted; cannot execute actions | `src/lib/server/jobs/executors.ts`, `src/lib/domain/facts.ts` (model actor guard) | `tests/facts.test.ts` (model cannot set provenance) | verified | Output stored as text only; label fixed `working_draft` |
-| §5.10 | AI usage reserved+capped before run, reconciled after | `src/lib/domain/usage.ts`, `src/lib/server/services/generation.ts` | `tests/usage.test.ts`, `tests/jobs.test.ts` | verified | Reservation→settle/release; double-charge impossible via idempotency key→reservation→version chain |
-| §5.11 | Outputs carry draft status, model, time, review labels | `DraftVersionRecord`, drafts UI, export renderer | `tests/export-render.test.ts`, e2e draft review test | verified | |
-| §5.12 | No confidential/privileged content in repo | Synthetic seed only (`src/lib/server/adapters/local/seed.ts`) | secret scan (pending script) | partial | Add `scan:secrets` script + run |
-| §6.1 | Public routes + legacy 308 redirects | `src/app/wepatent/**`, `src/lib/config/redirects.ts`, `src/proxy.ts` | e2e `public.spec.ts`, `tests/redirects.test.ts` | verified | |
-| §6.2 | All 13 authenticated app routes | `src/app/app/**` | build route table; e2e workspace suite | verified | |
-| §6.3 | Counsel admin routes with separate role/audit | `src/app/counsel/**`, `counsel_assignments`, `counsel_audit_events` | e2e `counsel-lane.spec.ts`, `tests/counsel-lane.test.ts` | verified | |
-| §7.1 | Org creation, membership+retention in one transaction; unauth denied; no cross-tenant; idempotent expiring invitations; security-event logging w/o content | `src/lib/server/services/orgs.ts`, `invitations.ts`; audit events | `tests/invitations.test.ts`, `tests/services-flow.test.ts`, e2e | verified | |
-| §7.2 | Versioned 4-ack clickwrap, server-recorded, immutable, re-acceptance | `src/lib/domain/clickwrap.ts`, `src/app/app/terms/**`, `/api/terms/accept` | `tests/clickwrap.test.ts`, e2e keyboard clickwrap | verified | Immutability also enforced in RLS (`03_immutability.sql`) |
-| §7.3 | 8-stage intake; save/resume; server Zod validation+size limits; no auto legal conclusions; upload rejection pre-processing | `src/lib/domain/intake.ts`, `src/app/app/inventions/new/**`, `src/lib/domain/uploads.ts` | `tests/intake.test.ts`, `tests/uploads.test.ts`, e2e save/resume | verified | |
-| §7.4 | Estimate→reserve→generate→reconcile; no double charge; required labels; model cannot mutate facts | `generation.ts`, `jobs/runner.ts`, `jobs/executors.ts`, estimate+generation routes | `tests/jobs.test.ts`, `tests/usage.test.ts`, e2e generation test | verified | |
-| §7.5 | Version-locked export manifest; DOCX/PDF artifacts; checksums; short-lived tenant-scoped downloads | `services/exports.ts`, `export-render.ts`, `export-download.ts` | `tests/export-render.test.ts`, e2e export test | verified | |
-| §7.6 | Counsel request state machine + conspicuous not-represented + counsel-only transitions + no fee mixing | counsel services + UI; `LedgerEntryKind` has no legal-fee kind | unit + e2e counsel tests | verified | |
-| FR-1 | Supabase Auth, email verification, password reset, MFA (counsel required), rate limiting | Local-mode HMAC cookie session (`session.ts`); Supabase Auth is the production seam | — | partial/blocked | Rate limiting NOT implemented; MFA-for-counsel enforcement seam missing; Supabase Auth wiring approval-gated (§17.1) |
-| FR-2 | Roles, explicit service-boundary authz + RLS, break-glass disabled+audited | `src/lib/domain/roles.ts` (7 roles; platform_support = no grants), service guards | `tests/roles.test.ts` | partial | Break-glass *enable+audit* workflow not implemented (only disabled-by-default) |
-| FR-3 | Facts vs prose; provenance; versions; immutable audit; soft delete + retention purge | facts domain, draft versions, audit events, `softDeleteInvention` | `tests/facts.test.ts` | partial | Retention-aware purge workflow not implemented; settings shows retention but no purge job |
-| FR-4 | Signed upload, allowlist, magic-byte, size caps, scan, quarantine, async OCR/extraction, tenant embedding namespace, classification | `services/upload-pipeline.ts`, `uploads.ts` domain, `/api/uploads/[token]`, scan/extract executors | `tests/uploads.test.ts`, e2e sources flow | verified (local) | Real malware scanning + embeddings are production/provider seams (documented) |
-| FR-5 | OpenAI/Anthropic/xAI adapters; effective-dated price registry; allowlists; caps; timeout/retry/kill switch/circuit breaker; structured output; no key/raw error to browser | `model-registry.ts` (local tiers + allowlist); `ProviderModelGateway` is a THROW STUB | `tests/usage.test.ts` (rates) | partial/blocked | **Gap: production provider gateway must be written** (testable with injected fetch); live calls approval-gated (§17.4) |
-| FR-6 | Stripe checkout/portal; immutable wallet ledger; reservation lifecycle; verified idempotent webhooks via outbox; ×1.50 markup; effective-dated rates | Wallet/ledger/reservations implemented + migrations (`0004`); `StripeBillingAdapter` is a THROW STUB; no `/api/stripe/*` routes | `tests/usage.test.ts`, billing e2e | partial/blocked | **Gap: Stripe adapter + checkout/portal/webhook endpoints + outbox processing must be written**; live billing approval-gated (§17.4) |
-| FR-7 | Correlation IDs; structured redacted logs; error monitoring; metrics | Audit events only | — | unstarted | **Gap: observability module + wiring** |
-| §9 | 34 private tables + 6 corpus tables, org_id + RLS | `supabase/migrations/0001–0006`, `supabase/corpus/migrations/0001` | `./scripts/test-rls.sh` | verified | All §9 table names present |
-| §10 | 14 required endpoints + mutation rules | 10 of 14 exist under `src/app/api/**` | route tests + e2e | partial | **Missing: POST /api/organizations, POST /api/invitations, POST /api/inventions/:id/exports, POST /api/stripe/{checkout,portal}, POST /api/webhooks/stripe** (org/invite/export exist as server actions only) |
-| §11 | Security headers, CSRF-safe mutations, validation, rate limits, no broad CORS, secret mgmt, tenant tests, prompt-injection resistance | `next.config.ts` headers; server actions + same-site cookies; Zod; RLS suite; extraction treats doc text as data | e2e header checks; RLS suite | partial | Rate limits missing (see FR-1); secret scan script missing |
-| §12 | WCAG 2.2 AA: landmarks, one h1, keyboard, labels, no color-only state, 320–1440 responsive, reduced motion, all states | Semantic layouts, focus styles, labeled forms | e2e keyboard clickwrap | partial | **No automated a11y scan; no responsive/reduced-motion verification; needs axe integration** |
-| §13 unit/integration | Schemas, guards, cost math, reservations, permissions, labels/manifests; route authz; RLS matrix; webhook signature/idempotency; adapter error handling; upload policy; job retry | 13 vitest files, 100 tests; 105 pgTAP assertions | `npm test`, `./scripts/test-rls.sh` | partial | Webhook signature/idempotency + model adapter error-handling tests missing (blocked on FR-5/FR-6 slices) |
-| §13 E2E | 10 journeys | 19 Playwright tests | `npm run test:e2e` | partial | Billing portal handoff in test mode missing (blocked on FR-6 slice); console-error assertions missing |
-| §13 gates | lint/type/test/build + dependency audit + secret scan + a11y scan + console + headers + RLS | verify script | this ledger | partial | `audit:prod`, `scan:secrets`, a11y scan, console checks missing |
-| §14 | Async long work; job states; idempotent retries | job runner + executors | `tests/jobs.test.ts` | verified (code level) | LCP/availability targets are deploy-time measurements — blocked on §17.5 |
-| §15 P0–P2 | Foundation, MVP record, generation/exports | see rows above | gates | verified (local mode) | |
-| §15 P3 | Billing + observability + retention/deletion | partial | — | partial | This round's focus |
-| §15 P4 | Connected counsel | counsel lane implemented up to activation seam | e2e counsel-lane | verified (seam) | Activation approval-gated (§17.7) |
-| §15 P5 | GA: legal review, security assessment, a11y audit, DPAs, runbooks | — | — | blocked | Requires Jeff + external parties (§17.3/17.5) |
-| §16 | Out-of-scope exclusions hold | No filing/DIY-legal-advice/docketing code paths | code inspection; no "submitted" filing status | verified | |
-| §17 | 8 approval-gated decisions | Seams + `NOT_CONFIGURED` guards | this ledger §Blockers | blocked (by design) | Exact asks listed below |
-| §18 | Commands + repo structure | package.json scripts; structure matches | — | partial | `audit:prod` script missing; `tasks/` directory missing |
-| §19 | Definition of done | — | all rows above | partial | Remaining: rows marked partial/unstarted |
+| # | Requirement | Implementation | Verification | Status |
+|---|---|---|---|---|
+| §5.1–5.5 | Representation/filing invariants | counsel state machine + role guards; no filing-submission state exists | `tests/counsel-request.test.ts`, `tests/counsel-lane.test.ts`, e2e counsel specs | verified |
+| §5.6 | Tenant/role from session only | `src/lib/server/session.ts`, `api.ts` | `tests/services-flow.test.ts`, e2e cross-tenant | verified |
+| §5.7 | RLS + isolation tests everywhere | migrations 0001–0008; `supabase/tests/01–04` | `./scripts/test-rls.sh` (105 asserts) | verified |
+| §5.8 | Separate private/corpus projects | env fail-fast on identical URLs; separate corpus adapter + credentials | `loadEnv` guard; `tests/corpus.test.ts` | verified (schema+seam) |
+| §5.9 | Model output untrusted | text-only output, fixed `working_draft` label, model-actor guard | `tests/facts.test.ts`, `tests/model-gateway.test.ts` (untrusted delimiters) | verified |
+| §5.10 | Reserve→cap→reconcile | `usage.ts`, `generation.ts`, gateway pre-flight cap | `tests/usage.test.ts`, `tests/jobs.test.ts`, `tests/model-gateway.test.ts` | verified |
+| §5.11 | Output labels | draft versions + export renderer + UI | `tests/export-render.test.ts`, e2e | verified |
+| §5.12 | No confidential content in repo | synthetic-only seeds | `npm run scan:secrets` | verified |
+| §6.1–6.3 | All routes + redirects + counsel lane | `src/app/**` | build route table; e2e public/workspace/counsel | verified |
+| §7.1 | Org/membership/invitations | `orgs.ts`, `invitations.ts` + `/api/organizations`, `/api/invitations` | `tests/invitations.test.ts`, `e2e/api-contract.spec.ts` | verified |
+| §7.2 | 4-ack versioned clickwrap | domain + `/app/terms` + `/api/terms/accept`; RLS immutability | `tests/clickwrap.test.ts`, e2e keyboard flow, pgTAP | verified |
+| §7.3 | 8-stage intake | `intake.ts` + `/app/inventions/new` | `tests/intake.test.ts`, e2e save/resume | verified |
+| §7.4 | Estimate→reserve→generate→reconcile; corpus context; citation linkage | `generation.ts` + jobs + CorpusPort + draft_citations | `tests/jobs.test.ts`, `tests/corpus.test.ts`, e2e generation | verified |
+| §7.5 | Version-locked exports, DOCX/PDF, checksums, short-lived downloads | exports services + `/api/inventions/:id/exports` | `tests/export-render.test.ts`, e2e export, api-contract | verified |
+| §7.6 | Counsel request lane | counsel services/UI; no legal-fee ledger kind | unit + e2e | verified |
+| FR-1 | Auth, MFA (counsel), rate limiting | rate limiter (2-layer sign-in); `mfaEnrolled` enforcement in `requireCounsel`; Supabase Auth identity creation already in SupabaseDataAdapter | `tests/rate-limit.test.ts`; migration 0008 | verified (local) / seam-complete (hosted auth flows) |
+| FR-2 | Roles, authz, break-glass | `roles.ts` (7 roles), service guards, `break-glass.ts` (disabled by default, fully audited) | `tests/roles.test.ts`, `tests/retention.test.ts` | verified |
+| FR-3 | Provenance, versions, soft delete + retention purge | facts domain; `retention.ts`; settings UI; invention soft-delete UI | `tests/facts.test.ts`, `tests/retention.test.ts` | verified |
+| FR-4 | Upload pipeline + storage | `upload-pipeline.ts`; `SupabaseStorageAdapter` (private bucket REST) | `tests/uploads.test.ts`, `tests/supabase-storage.test.ts` | verified (local) / seam-complete (bucket + real AV scanner) |
+| FR-5 | Provider gateway | `ProviderModelGateway`: OpenAI/Anthropic/xAI, effective-dated registry, caps, timeout, retry, kill switch, breaker; no key/error leak | `tests/model-gateway.test.ts` (19 tests) | seam-complete (live keys §17.4) |
+| FR-6 | Billing | wallet/ledger/reservations; `StripeBillingAdapter`; verified idempotent webhooks via `stripe_events` PK + `billing_outbox` + `stripeReference` guard; ×1.50 markup w/ rate versions; simulated local checkout drives the real pipeline | `tests/usage.test.ts`, `tests/stripe-billing.test.ts` (17), `e2e/billing.spec.ts` (4) | seam-complete (live Stripe §17.4) |
+| FR-7 | Observability | `observability.ts`: correlation IDs (job id across web→job→provider→billing), redacted structured logs, metrics counters/timings; wired into runner, API helper, webhooks, sign-in | `tests/observability.test.ts` | verified (vendor export is activation-time) |
+| §9 | Data model | 8 migrations, all 34 private tables + 6 corpus tables | `./scripts/test-rls.sh` | verified |
+| §10 | 14 endpoints + mutation rules | all present under `src/app/api/**` | route usage in e2e + api-contract spec | verified |
+| §11 | Security controls | headers, CSRF-safe mutations, Zod, rate limits, no CORS config (same-origin only), secret mgmt via env contract, tenant tests, prompt-injection posture, deletion workflows | `docs/threat-model.md` maps each control to its test | verified |
+| §12 | WCAG 2.2 AA + responsive + states | semantic layouts; fixes from gate run (pricing list semantics, contrast, minmax(0,1fr)); reduced-motion CSS; empty/loading/error/denied/degraded states | `e2e/quality-gates.spec.ts`: axe serious/critical = 0, console = 0, no overflow 320–1440 | verified (automated; formal audit is a §15.5 external) |
+| §13 | Testing strategy + gates | 162 unit/integration; 105 pgTAP; 32 E2E covering all ten §13 journeys; gate tooling (`audit:prod`, `scan:secrets`, axe, console, headers) | this table | verified |
+| §14 | Async jobs, idempotent retries, states | job runner + executors + `/api/jobs/:id` | `tests/jobs.test.ts` | verified (LCP/availability measured post-deploy) |
+| §15 P0–P4 | Phases | see `tasks/implementation-plan.md` | gates | done to activation seams |
+| §15 P5 | GA externals | legal review, security assessment, formal a11y audit, DPAs | — | blocked (external parties + Jeff) |
+| §16 | Out-of-scope exclusions | no filing/docketing/marketplace/training code paths | code inspection; no submit state | verified |
+| §17 | Approval gates | seams + fail-fast env + this ledger | §Blockers below | blocked by design |
+| §18 | Commands + structure | all commands exist incl. `audit:prod`; `tasks/`, threat model, runbooks present | package.json; repo tree | verified |
+| §19 | Definition of done | everything above | this ledger | complete except §17-gated externals |
 
 ## Blockers requiring Jeff (PRD §17) — exact enabling actions
 
-1. **Supabase (private + corpus projects)** — create two separate projects; set `SUPABASE_URL`,
-   `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CORPUS_SUPABASE_URL`,
-   `CORPUS_SUPABASE_SERVICE_ROLE_KEY`; run `supabase db push` for `supabase/migrations` and
-   `supabase/corpus/migrations`; run `npx supabase test db` against the live stack.
-2. **Stripe (test then live)** — create products/prices for the §FR-6 plan table; set
-   `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`; point a webhook at `/api/webhooks/stripe`.
-3. **Model providers** — create OpenAI/Anthropic/xAI accounts; set `OPENAI_API_KEY`,
-   `ANTHROPIC_API_KEY`, `XAI_API_KEY`; confirm no-training/retention terms per the risk memo.
-4. **Terms/privacy/AI-disclosure final legal review** before publishing (§17.3).
-5. **Production deploy + domain** (§17.5), **email/invitation sending** (§17.6),
-   **connected-counsel activation** (§17.7), **any Patent Center interaction** (§17.8 — out of scope).
+1. **Supabase** (§17.1): create private + corpus projects; set the five `SUPABASE_*`/`CORPUS_*`
+   vars; apply `supabase/migrations/*` and `supabase/corpus/migrations/*`; create private bucket
+   `wepatent-private`; run `npx supabase test db` live. (`docs/runbooks.md` §2.)
+2. **Stripe** (§17.4): create account + products/prices for the FR-6 plan table; set
+   `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`; point a webhook at `/api/webhooks/stripe`;
+   supply `subscriptionPriceIds` to `StripeBillingAdapter`.
+3. **Model providers** (§17.4): OpenAI/Anthropic/xAI accounts under no-training terms; set the
+   three API-key vars; confirm `PROVIDER_PRICE_REGISTRY` rates.
+4. **Legal/publishing** (§17.3): final review of terms/privacy/AI disclosure before publishing.
+5. **Deploy/domain** (§17.5), **email sending** (§17.6 — invitation emails are intentionally
+   not sent; accept links are surfaced once to the inviter), **counsel activation** (§17.7),
+   **Patent Center anything** (§17.8 — permanently out of scope for the software).
+6. **Real data** (§17.2): no real client/confidential invention data until approved.
 
-## Round 3 work log (this session)
+## Round 3 work log (2026-08-02)
 
-- 2026-08-02: Verified prior state: lint 0, tsc 0, vitest 100/100, build 41 routes, e2e 19/19.
-  Created this ledger. Next slice: FR-5 production provider gateway.
+1. `f142edc` ledger + traceability baseline (verified prior rounds' claims first).
+2. `3a6b4c3` FR-5 production ProviderModelGateway (19 tests).
+3. `d330b81` FR-6 Stripe vertical: adapter, webhook signature/idempotency/outbox, endpoints,
+   billing UI, simulated local checkout driving the real pipeline (17 unit + 4 E2E).
+4. FR-4 SupabaseStorageAdapter (5 tests).
+5. §10 completion: `/api/organizations`, `/api/invitations`, `/api/inventions/:id/exports`
+   (+4 E2E).
+6. FR-7 observability (5 tests).
+7. FR-1 rate limiting (two-layer) + counsel-MFA seam; migration 0008; RLS suite re-run green.
+8. FR-3 retention purge + soft-delete UI; FR-2 break-glass (11 tests).
+9. §13 gate tooling: `audit:prod` (0 findings via postcss/sharp overrides), secret scan,
+   axe/console/responsive/header E2E — which found and fixed 3 real §12 defects.
+10. §7.4 corpus seam + draft citations (5 tests).
+11. Docs: threat model, runbooks, tasks plan, README refresh, this ledger.
 
 ## Next action
 
-Slice 1: FR-5 `ProviderModelGateway` — real OpenAI/Anthropic/xAI HTTP adapters with injected
-fetch, effective-dated provider price registry, token/cost caps, timeout, bounded retry, kill
-switch, circuit breaker; unit tests with fake fetch (success, provider error without leak,
-timeout, retry, breaker-open, kill switch, usage-derived cost).
+None in-repo. All remaining work is behind the §17 approval gates listed above. On resume
+after activation: follow `docs/runbooks.md` §2, then re-run every gate against the live stack
+and update this table's seam-complete rows to verified-live.

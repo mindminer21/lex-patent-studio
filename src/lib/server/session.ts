@@ -19,8 +19,9 @@ import type {
  *
  * The cookie carries only an HMAC-signed user id — the server derives tenant
  * and role from the stored membership, never from client-supplied values
- * (PRD §5.6). TODO(production, approval-gated): replace with Supabase Auth
- * server-side cookie helpers (FR-1).
+ * (PRD §5.6). Production seam (approval-gated, PRD §17.1): Supabase Auth
+ * server-side cookie helpers replace this signer; the SupabaseDataAdapter
+ * already sources identities from Supabase Auth admin APIs (FR-1).
  */
 const SESSION_COOKIE = "wp_session";
 

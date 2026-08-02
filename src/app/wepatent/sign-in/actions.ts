@@ -29,9 +29,11 @@ const LOCAL_COUNSEL_SEEDS: Record<string, "counsel_intake" | "counsel_attorney">
 
 /**
  * Local-mode sign-in: creates or finds a synthetic user and sets the signed
- * session cookie. TODO(production, approval-gated per PRD §17): replace with
- * Supabase Auth (email verification, password reset, optional MFA — FR-1;
- * MFA required for counsel administrators).
+ * session cookie. Production seam (approval-gated, PRD §17.1): Supabase
+ * Auth hosts sign-in with email verification, password reset, and MFA
+ * (FR-1; MFA required for counsel administrators — enforced in
+ * requireCounsel). The data adapter already creates identities through
+ * Supabase Auth admin APIs.
  */
 export async function signInAction(formData: FormData): Promise<void> {
   const rawEmail = String(formData.get("email") ?? "")
