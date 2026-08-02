@@ -10,39 +10,46 @@ export const metadata: Metadata = {
 
 const WORKFLOWS = [
   {
+    href: "/product/invention-disclosures",
+    eyebrow: "Intake",
+    title: "Invention disclosures",
+    text: "Structured interviews and uploads become a fact ledger with provenance, contributor attribution, and missing-fact prompts.",
+  },
+  {
     href: "/product/application-drafting",
     eyebrow: "Tier B — draft for review",
     title: "Application drafting",
     text: "From an approved fact ledger to specification sections, claim trees with fallback positions, and deterministic dependency and antecedent-basis checks.",
-    live: true,
   },
   {
     href: "/product/office-actions",
     eyebrow: "Tier B/C — analysis and decision support",
     title: "Office-action response",
     text: "Evidence-linked rejection matrices, response-path options with tradeoff and estoppel flags, and MPEP-style amendment markup separated from arguments.",
-    live: true,
   },
   {
-    href: null,
-    eyebrow: "Tier B",
-    title: "Search reports and IDS preparation",
-    text: "Public-data search orchestration with per-reference rationale; IDS packets with SB/08 field validation routed for attorney review.",
-    live: false,
+    href: "/product/claim-strategy",
+    eyebrow: "Tier B/C — drafting and strategy",
+    title: "Claim strategy",
+    text: "Claim trees with planned-retreat fallbacks, deterministic checks, and strategy selection recorded as a practitioner decision.",
   },
   {
-    href: null,
+    href: "/product/patent-research",
     eyebrow: "Tier B",
-    title: "Cited research memos",
+    title: "Patent research",
     text: "Primary-authority-first retrieval with effective dates, supersession checks, labeled analysis, and refusal when the record is insufficient.",
-    live: false,
   },
   {
-    href: null,
-    eyebrow: "Tier A",
-    title: "Prepare-tier work",
-    text: "Formalities, routine dependent claims per an established strategy, and status digests — operator-reviewable, always labeled.",
-    live: false,
+    href: "/product/portfolio-analysis",
+    eyebrow: "Practitioner dashboards",
+    title: "Portfolio analysis",
+    text: "Cross-matter status, coverage-gap signals, and advisory priorities over your own record — never a docket of record.",
+  },
+  {
+    href: "/product/prepare-and-file",
+    eyebrow: "Tier A/B — preparation only",
+    title: "Prepare & file",
+    text: "USPTO-formatted DOCX/PDF exports with version-locked manifests and SB/08-validated IDS packets. Filing stays human.",
   },
 ] as const;
 
@@ -63,19 +70,10 @@ export default function ProductPage() {
               <div>
                 <p className="eyebrow">{w.eyebrow}</p>
                 <h3>
-                  {w.href ? (
-                    <Link href={w.href} className="underline underline-offset-4">
-                      {w.title}
-                    </Link>
-                  ) : (
-                    w.title
-                  )}
+                  <Link href={w.href} className="underline underline-offset-4">
+                    {w.title}
+                  </Link>
                 </h3>
-                {!w.live && (
-                  <p className="m-0 text-[0.72rem] font-bold uppercase tracking-[0.1em] text-[var(--muted)]">
-                    In evaluation — ships after its quality gate
-                  </p>
-                )}
               </div>
               <p>{w.text}</p>
             </article>

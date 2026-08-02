@@ -12,9 +12,12 @@ import Link from "next/link";
 
 const NAV = [
   { href: "/product", label: "Product" },
+  { href: "/professionals", label: "Professionals" },
+  { href: "/teams", label: "Teams" },
   { href: "/pricing", label: "Pricing" },
   { href: "/models", label: "Models" },
   { href: "/security", label: "Security" },
+  { href: "/resources", label: "Resources" },
 ] as const;
 
 export function MarketingShell({ children }: { children: React.ReactNode }) {
@@ -32,9 +35,14 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        <Link className="button button-small" href="/app">
-          Open the workspace
-        </Link>
+        <span className="flex items-center gap-3">
+          <Link href="/login" className="text-[0.85rem] underline underline-offset-4">
+            Sign in
+          </Link>
+          <Link className="button button-small" href="/app">
+            Open the workspace
+          </Link>
+        </span>
       </header>
 
       <main>{children}</main>
@@ -56,6 +64,9 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/legal/ai-disclosure" className="underline underline-offset-4">
             AI disclosure
+          </Link>
+          <Link href="/patent-counsel" className="underline underline-offset-4">
+            Patent counsel
           </Link>
         </nav>
       </footer>
