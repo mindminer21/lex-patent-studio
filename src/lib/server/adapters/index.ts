@@ -68,7 +68,10 @@ export function getAdapters(): Adapters {
         appUrl: env.NEXT_PUBLIC_APP_URL,
         getCustomerId: (organizationId) => getAdapters().data.getStripeCustomerId(organizationId),
       }),
-      storage: new SupabaseStorageAdapter(),
+      storage: new SupabaseStorageAdapter({
+        url: env.SUPABASE_URL!,
+        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!,
+      }),
     };
     return cached;
   }
