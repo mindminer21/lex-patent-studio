@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { formatGeometrySummary, parseStlGeometry } from "@/lib/wepatent/domain/stl";
 import { interpretationClassFor } from "@/lib/wepatent/domain/uploads";
 import { release, reserve, settle } from "@/lib/wepatent/domain/usage";
 import { getAdapters } from "../adapters";
@@ -114,6 +115,44 @@ export async function runInterpretation(params: {
 
   // Honest stored_uninterpreted for classes without an M1 interpreter.
   if (interpretationClass === "model3d" || interpretationClass === "stored_only") {
+    // M2 3D hardening: a CLEAN pure-JS STL parse yields a deterministic
+    // geometry summary — a NON-MODEL interpretation artifact with zero
+    // spend. STEP/OBJ/3MF (no clean parser here) and unparseable STL stay
+    // honestly stored_uninterpreted.
+    const filename = (source.originalFilename ?? source.name).toLowerCase();
+    if (interpretationClass === "model3d" && filename.endsWith(".stl") && source.storagePath) {
+      const stlBytes = await storage.get(source.storagePath);
+      const geometry = stlBytes ? parseStlGeometry(stlBytes) : null;
+      if (geometry) {
+        const priorArtifacts = await data.listExtractionArtifactsForSource(
+          params.organizationId,
+          params.sourceId,
+        );
+        if (!priorArtifacts.some((artifact) => artifact.type === "geometry_summary")) {
+          await data.createExtractionArtifact({
+            organizationId: params.organizationId,
+            inventionId: source.inventionId,
+            sourceId: source.id,
+            type: "geometry_summary",
+            content: formatGeometrySummary(source.name, geometry),
+            modelId: null, // deterministic code, no model, no cost
+            costReservationId: null,
+          });
+        }
+        await data.updateSource(params.organizationId, params.sourceId, {
+          interpretationStatus: "interpreted",
+        });
+        await data.appendAuditEvent({
+          organizationId: params.organizationId,
+          actor: "system",
+          action: "source.geometry_summarized",
+          target: source.id,
+          meta: { triangles: geometry.triangleCount, format: geometry.format },
+        });
+        return { ok: true, sourceId: source.id, status: "interpreted", artifactCount: 1 };
+      }
+    }
+
     const existing = await data.listExtractionArtifactsForSource(
       params.organizationId,
       params.sourceId,
@@ -131,7 +170,7 @@ export async function runInterpretation(params: {
         type: "status_note",
         content:
           interpretationClass === "model3d"
-            ? "Stored, not auto-interpreted: 3D model rendering and vision interpretation ship in M2. The raw file is retained for the counsel package. Please describe what the model shows in your record so counsel has the context."
+            ? "Stored, not auto-interpreted: this 3D file did not parse cleanly with the deterministic geometry reader (clean STL files get a code-computed geometry summary; STEP/OBJ/3MF have no clean parser here, and visual 3D interpretation awaits an approved renderer). The raw file is retained for the counsel package. Please describe what the model shows in your record so counsel has the context."
             : "Stored, not auto-interpreted: no automated interpreter exists for this file type. The file is retained for the counsel package. Please describe its contents in your record.",
         modelId: null,
         costReservationId: null,

@@ -1,4 +1,13 @@
 import { isUnresolved } from "@/lib/wepatent/domain/facts";
+import {
+  deterministicQuestionText,
+  isInterviewStage,
+  STAGE_TOPICS,
+  topicRef,
+  coverageRef,
+  type QuestionTarget,
+} from "@/lib/wepatent/domain/interview";
+import type { CoverageDimension } from "@/lib/wepatent/domain/coverage";
 import { getModelTier, type ModelTier } from "../../model-registry";
 import type {
   DistillationOutput,
@@ -10,6 +19,11 @@ import type {
   ModelGenerationResult,
   ModelInterpretationRequest,
   ModelInterpretationResult,
+  ModelQuestionDraftRequest,
+  ModelQuestionDraftResult,
+  ModelTurnExtractionRequest,
+  ModelTurnExtractionResult,
+  TurnExtractionOutput,
 } from "../types";
 
 /**
@@ -284,6 +298,138 @@ export class LocalModelGateway implements ModelGatewayPort {
       Math.ceil(JSON.stringify(output).length / 4),
     );
     return { output, inputTokens, outputTokens, ...this.cost(tier, inputTokens, outputTokens) };
+  }
+
+  /**
+   * Deterministic synthetic question drafter (FR-INT-6, local mode). The
+   * ENGINE chose the target; this only words the question — exactly the
+   * contract the production Advanced-tier drafter honors. `knownSummary`
+   * and `avoidStatements` are untrusted data and are ignored except for
+   * token accounting (they can never alter the target or stage).
+   */
+  async draftInterviewQuestion(
+    request: ModelQuestionDraftRequest,
+  ): Promise<ModelQuestionDraftResult> {
+    const tier = this.requireTier(request.modelId);
+    const target = this.reconstructTarget(request);
+    const drafted = deterministicQuestionText(target);
+    const questionText =
+      target.kind === "coverage_gap" && request.solutionStatement
+        ? `${drafted.questionText} (Solution: “${request.solutionStatement.slice(0, 120)}”)`
+        : drafted.questionText;
+
+    const inputChars =
+      request.targetPurpose.length + request.knownSummary.length + 200;
+    const inputTokens = Math.max(100, Math.ceil(inputChars / 4));
+    const outputTokens = Math.min(
+      request.maxOutputTokens,
+      Math.ceil((questionText.length + drafted.followups.join(" ").length) / 4),
+    );
+    return {
+      questionText,
+      followups: drafted.followups,
+      inputTokens,
+      outputTokens,
+      ...this.cost(tier, inputTokens, outputTokens),
+    };
+  }
+
+  /**
+   * Deterministic synthetic post-answer extraction (FR-INT-7, local mode).
+   * Proposals only: new problems/solutions/components from explicit
+   * markers, and a proposed-edit object when the answer uses the
+   * "Update solution:" marker against a confirmed/edited pair. The answer
+   * is EVIDENCE — instructions inside it are inert content (invariant 16),
+   * and this function has no way to set a confirmed state.
+   */
+  async extractInterviewAnswer(
+    request: ModelTurnExtractionRequest,
+  ): Promise<ModelTurnExtractionResult> {
+    const tier = this.requireTier(request.modelId);
+    const output: TurnExtractionOutput = {
+      problems: [],
+      solutions: [],
+      proposedEdits: [],
+      components: [],
+    };
+
+    for (const raw of request.answerText.split(/\r?\n/)) {
+      const line = raw.trim();
+      const problem = line.match(/^problem\s*:\s*(.+)$/i);
+      if (problem) output.problems.push({ statement: problem[1].trim() });
+      const solution = line.match(/^solution\s*:\s*(.+)$/i);
+      if (solution) output.solutions.push({ statement: solution[1].trim() });
+      const component = line.match(/^component\s*:\s*(.+)$/i);
+      if (component) {
+        const [name, ...rest] = component[1].split(/\s+[—–-]\s+/);
+        output.components.push({
+          name: name.trim(),
+          description: rest.join(" — ").trim() || "Component named in an interview answer.",
+        });
+      }
+      const update = line.match(/^update\s+solution\s*:\s*(.+)$/i);
+      if (update) {
+        const editable = request.existingPairs.find(
+          (pair) =>
+            pair.kind === "solution" &&
+            (pair.state === "user_confirmed" || pair.state === "user_edited"),
+        );
+        if (editable) {
+          output.proposedEdits.push({
+            pairId: editable.id,
+            proposedStatement: update[1].trim(),
+          });
+        } else {
+          output.solutions.push({ statement: update[1].trim() });
+        }
+      }
+    }
+
+    const inputChars = request.answerText.length + request.question.length + 200;
+    const inputTokens = Math.max(120, Math.ceil(inputChars / 4));
+    const outputTokens = Math.min(
+      request.maxOutputTokens,
+      Math.ceil(JSON.stringify(output).length / 4),
+    );
+    return {
+      output,
+      inputTokens,
+      outputTokens,
+      ...this.cost(tier, inputTokens, outputTokens),
+    };
+  }
+
+  /** Rebuild the engine target from its machine-readable ref. */
+  private reconstructTarget(request: ModelQuestionDraftRequest): QuestionTarget {
+    const parts = request.targetRef.split(":");
+    if (parts[0] === "coverage" && parts.length >= 3 && isInterviewStage(request.stage)) {
+      return {
+        kind: "coverage_gap",
+        stage: request.stage,
+        solutionId: parts[1],
+        dimension: parts.slice(2).join(":") as CoverageDimension,
+        ref: coverageRef(parts[1], parts.slice(2).join(":") as CoverageDimension),
+      };
+    }
+    if (parts[0] === "topic" && parts.length >= 3 && isInterviewStage(parts[1])) {
+      const stage = parts[1];
+      const topic = STAGE_TOPICS[stage].find((candidate) => candidate.id === parts[2]);
+      if (topic) {
+        return { kind: "stage_topic", stage, topic, ref: topicRef(stage, topic.id) };
+      }
+    }
+    // Unknown ref: fall back to a generic topic-shaped target using the
+    // engine-authored purpose (still deterministic).
+    return {
+      kind: "stage_topic",
+      stage: isInterviewStage(request.stage) ? request.stage : "context_field",
+      topic: {
+        id: "generic",
+        purpose: request.targetPurpose || "the next fact about your invention",
+        followupPurposes: request.followupPurposes,
+      },
+      ref: request.targetRef,
+    };
   }
 
   private requireTier(modelId: string): ModelTier {

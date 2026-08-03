@@ -53,6 +53,13 @@ const envSchema = z.object({
   XAI_API_KEY: z.string().optional(),
   /** FR-5 kill switch: "1" refuses every model run at the gateway. */
   MODEL_GATEWAY_KILL_SWITCH: z.enum(["0", "1"]).default("0"),
+
+  /**
+   * Interview session spend-cap default in cents (Intake Studio FR-INT-10).
+   * $5.00 by default; model-touching interview turns halt when a session's
+   * settled spend reaches its cap, with an in-product path to raise it.
+   */
+  INTERVIEW_SESSION_SPEND_CAP_CENTS: z.coerce.number().int().min(0).default(500),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -87,6 +94,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY,
     XAI_API_KEY: source.XAI_API_KEY,
     MODEL_GATEWAY_KILL_SWITCH: source.MODEL_GATEWAY_KILL_SWITCH,
+    INTERVIEW_SESSION_SPEND_CAP_CENTS: source.INTERVIEW_SESSION_SPEND_CAP_CENTS,
   });
 
   if (parsed.APP_MODE === "production") {

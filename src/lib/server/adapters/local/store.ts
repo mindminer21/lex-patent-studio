@@ -24,6 +24,8 @@ import type {
   FilingPackageRecord,
   Id,
   IntakeSessionRecord,
+  InterviewSessionRecord,
+  InterviewTurnRecord,
   InvitationRecord,
   InventionFactRecord,
   InventionRecord,
@@ -95,6 +97,8 @@ type Tables = {
   associations: Map<Id, AssociationRecord>;
   extractionArtifacts: ExtractionArtifactRecord[];
   enablementCoverage: EnablementCoverageRecord[];
+  interviewSessions: Map<Id, InterviewSessionRecord>;
+  interviewTurns: Map<Id, InterviewTurnRecord>;
 };
 
 function emptyTables(): Tables {
@@ -139,6 +143,8 @@ function emptyTables(): Tables {
     associations: new Map(),
     extractionArtifacts: [],
     enablementCoverage: [],
+    interviewSessions: new Map(),
+    interviewTurns: new Map(),
   };
 }
 
@@ -641,6 +647,88 @@ export class LocalDataAdapter implements DataPort {
       if (!existing || row.computedAt >= existing.computedAt) latest.set(key, row);
     }
     return [...latest.values()];
+  }
+
+  /* -------- Intake Studio M2: interview sessions/turns (FR-INT-6/7) ------ */
+
+  async createInterviewSession(
+    input: Omit<InterviewSessionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<InterviewSessionRecord> {
+    const record: InterviewSessionRecord = {
+      ...input,
+      id: randomUUID(),
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    tables().interviewSessions.set(record.id, record);
+    return record;
+  }
+
+  async getInterviewSession(
+    organizationId: Id,
+    sessionId: Id,
+  ): Promise<InterviewSessionRecord | null> {
+    const record = tables().interviewSessions.get(sessionId);
+    if (!record || record.organizationId !== organizationId) return null;
+    return record;
+  }
+
+  async listInterviewSessions(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<InterviewSessionRecord[]> {
+    return [...tables().interviewSessions.values()]
+      .filter((s) => s.organizationId === organizationId && s.inventionId === inventionId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async updateInterviewSession(
+    organizationId: Id,
+    sessionId: Id,
+    patch: Partial<
+      Pick<InterviewSessionRecord, "stage" | "status" | "sessionSpendCapCents" | "spentCents">
+    >,
+  ): Promise<InterviewSessionRecord | null> {
+    const record = tables().interviewSessions.get(sessionId);
+    if (!record || record.organizationId !== organizationId) return null;
+    Object.assign(record, patch, { updatedAt: now() });
+    return record;
+  }
+
+  async createInterviewTurn(
+    input: Omit<InterviewTurnRecord, "id" | "createdAt">,
+  ): Promise<InterviewTurnRecord> {
+    const record: InterviewTurnRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().interviewTurns.set(record.id, record);
+    return record;
+  }
+
+  async getInterviewTurn(organizationId: Id, turnId: Id): Promise<InterviewTurnRecord | null> {
+    const record = tables().interviewTurns.get(turnId);
+    if (!record || record.organizationId !== organizationId) return null;
+    return record;
+  }
+
+  async listInterviewTurns(organizationId: Id, sessionId: Id): Promise<InterviewTurnRecord[]> {
+    return [...tables().interviewTurns.values()]
+      .filter((t) => t.organizationId === organizationId && t.sessionId === sessionId)
+      .sort((a, b) => a.turnIndex - b.turnIndex);
+  }
+
+  async updateInterviewTurn(
+    organizationId: Id,
+    turnId: Id,
+    patch: Partial<
+      Pick<
+        InterviewTurnRecord,
+        "answerText" | "answerKind" | "skipped" | "attachmentSourceIds" | "extractionJobId"
+      >
+    >,
+  ): Promise<InterviewTurnRecord | null> {
+    const record = tables().interviewTurns.get(turnId);
+    if (!record || record.organizationId !== organizationId) return null;
+    Object.assign(record, patch);
+    return record;
   }
 
   async createDraft(input: Omit<DraftRecord, "id" | "createdAt">): Promise<DraftRecord> {

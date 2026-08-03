@@ -28,6 +28,8 @@ import type {
   FilingPackageRecord,
   Id,
   IntakeSessionRecord,
+  InterviewSessionRecord,
+  InterviewTurnRecord,
   InvitationRecord,
   InventionFactRecord,
   InventionRecord,
@@ -153,6 +155,7 @@ const mapFact = (row: Row): InventionFactRecord => ({
   statement: s(row, "statement"),
   provenance: s(row, "provenance") as FactProvenance,
   createdBy: s(row, "created_by_actor") as InventionFactRecord["createdBy"],
+  originRef: sOrNull(row, "origin_ref"),
   updatedAt: s(row, "updated_at"),
 });
 
@@ -596,6 +599,7 @@ export class SupabaseDataAdapter implements DataPort {
             statement: input.statement,
             provenance: input.provenance,
             created_by_actor: input.createdBy,
+            origin_ref: input.originRef ?? null,
           })
           .select(),
         "facts.insert",
@@ -2302,12 +2306,202 @@ export class SupabaseDataAdapter implements DataPort {
     }
     return [...latest.values()];
   }
+
+  /* ------- Intake Studio M2: interview sessions/turns (0009 + 0010) ------ */
+
+  async createInterviewSession(
+    input: Omit<InterviewSessionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<InterviewSessionRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("interview_sessions")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            user_id: input.userId,
+            stage: input.stage,
+            status: input.status,
+            session_spend_cap_cents: input.sessionSpendCapCents,
+            spent_cents: input.spentCents,
+          })
+          .select(),
+        "interview_sessions.insert",
+      ),
+      "interview_sessions.insert",
+    );
+    return mapInterviewSession(row);
+  }
+
+  async getInterviewSession(
+    organizationId: Id,
+    sessionId: Id,
+  ): Promise<InterviewSessionRecord | null> {
+    const row = await one<Row>(
+      this.from("interview_sessions")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("id", sessionId),
+      "interview_sessions.get",
+    );
+    return row ? mapInterviewSession(row) : null;
+  }
+
+  async listInterviewSessions(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<InterviewSessionRecord[]> {
+    const rows = await many<Row>(
+      this.from("interview_sessions")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "interview_sessions.list",
+    );
+    return rows.map(mapInterviewSession);
+  }
+
+  async updateInterviewSession(
+    organizationId: Id,
+    sessionId: Id,
+    patch: Partial<
+      Pick<InterviewSessionRecord, "stage" | "status" | "sessionSpendCapCents" | "spentCents">
+    >,
+  ): Promise<InterviewSessionRecord | null> {
+    const payload: Row = { updated_at: new Date().toISOString() };
+    if (patch.stage !== undefined) payload.stage = patch.stage;
+    if (patch.status !== undefined) payload.status = patch.status;
+    if (patch.sessionSpendCapCents !== undefined) {
+      payload.session_spend_cap_cents = patch.sessionSpendCapCents;
+    }
+    if (patch.spentCents !== undefined) payload.spent_cents = patch.spentCents;
+    const row = await one<Row>(
+      this.from("interview_sessions")
+        .update(payload)
+        .eq("organization_id", organizationId)
+        .eq("id", sessionId)
+        .select(),
+      "interview_sessions.update",
+    );
+    return row ? mapInterviewSession(row) : null;
+  }
+
+  async createInterviewTurn(
+    input: Omit<InterviewTurnRecord, "id" | "createdAt">,
+  ): Promise<InterviewTurnRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("interview_turns")
+          .insert({
+            organization_id: input.organizationId,
+            session_id: input.sessionId,
+            turn_index: input.turnIndex,
+            stage: input.stage,
+            question: input.question,
+            followups: input.followups,
+            target_ref: input.targetRef,
+            answer_text: input.answerText,
+            answer_kind: input.answerKind,
+            skipped: input.skipped,
+            attachment_source_ids: input.attachmentSourceIds,
+            extraction_job_id: input.extractionJobId,
+          })
+          .select(),
+        "interview_turns.insert",
+      ),
+      "interview_turns.insert",
+    );
+    return mapInterviewTurn(row);
+  }
+
+  async getInterviewTurn(organizationId: Id, turnId: Id): Promise<InterviewTurnRecord | null> {
+    const row = await one<Row>(
+      this.from("interview_turns")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("id", turnId),
+      "interview_turns.get",
+    );
+    return row ? mapInterviewTurn(row) : null;
+  }
+
+  async listInterviewTurns(organizationId: Id, sessionId: Id): Promise<InterviewTurnRecord[]> {
+    const rows = await many<Row>(
+      this.from("interview_turns")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("session_id", sessionId)
+        .order("turn_index", { ascending: true }),
+      "interview_turns.list",
+    );
+    return rows.map(mapInterviewTurn);
+  }
+
+  async updateInterviewTurn(
+    organizationId: Id,
+    turnId: Id,
+    patch: Partial<
+      Pick<
+        InterviewTurnRecord,
+        "answerText" | "answerKind" | "skipped" | "attachmentSourceIds" | "extractionJobId"
+      >
+    >,
+  ): Promise<InterviewTurnRecord | null> {
+    const payload: Row = {};
+    if (patch.answerText !== undefined) payload.answer_text = patch.answerText;
+    if (patch.answerKind !== undefined) payload.answer_kind = patch.answerKind;
+    if (patch.skipped !== undefined) payload.skipped = patch.skipped;
+    if (patch.attachmentSourceIds !== undefined) {
+      payload.attachment_source_ids = patch.attachmentSourceIds;
+    }
+    if (patch.extractionJobId !== undefined) payload.extraction_job_id = patch.extractionJobId;
+    const row = await one<Row>(
+      this.from("interview_turns")
+        .update(payload)
+        .eq("organization_id", organizationId)
+        .eq("id", turnId)
+        .select(),
+      "interview_turns.update",
+    );
+    return row ? mapInterviewTurn(row) : null;
+  }
 }
 
 function stringArray(row: Row, key: string): string[] {
   const value = row[key];
   return Array.isArray(value) ? value.map(String) : [];
 }
+
+const mapInterviewSession = (row: Row): InterviewSessionRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  userId: s(row, "user_id"),
+  stage: s(row, "stage") as InterviewSessionRecord["stage"],
+  status: s(row, "status") as InterviewSessionRecord["status"],
+  // Legacy pre-0010 rows may carry a null cap; the env default is 500¢.
+  sessionSpendCapCents: nOrNull(row, "session_spend_cap_cents") ?? 500,
+  spentCents: n(row, "spent_cents"),
+  createdAt: s(row, "created_at"),
+  updatedAt: s(row, "updated_at"),
+});
+
+const mapInterviewTurn = (row: Row): InterviewTurnRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  sessionId: s(row, "session_id"),
+  turnIndex: n(row, "turn_index"),
+  stage: s(row, "stage") as InterviewTurnRecord["stage"],
+  question: s(row, "question"),
+  followups: stringArray(row, "followups"),
+  targetRef: sOrNull(row, "target_ref"),
+  answerText: sOrNull(row, "answer_text"),
+  answerKind: sOrNull(row, "answer_kind") as InterviewTurnRecord["answerKind"],
+  skipped: b(row, "skipped"),
+  attachmentSourceIds: stringArray(row, "attachment_source_ids"),
+  extractionJobId: sOrNull(row, "extraction_job_id"),
+  createdAt: s(row, "created_at"),
+});
 
 const mapPsPair = (row: Row): PsPairRecord => ({
   id: s(row, "id"),

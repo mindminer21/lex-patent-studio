@@ -14,6 +14,11 @@ import type {
   PsState,
 } from "@/lib/wepatent/domain/ps-ledger";
 import type { CoverageDimension, CoverageStatus } from "@/lib/wepatent/domain/coverage";
+import type {
+  AnswerKind,
+  InterviewSessionStatus,
+  InterviewStage,
+} from "@/lib/wepatent/domain/interview";
 import type { InterpretationStatus } from "@/lib/wepatent/domain/uploads";
 import type { Reservation } from "@/lib/wepatent/domain/usage";
 
@@ -93,6 +98,11 @@ export interface InventionFactRecord {
   statement: string;
   provenance: FactProvenance;
   createdBy: FactActor;
+  /**
+   * Provenance origin ref (Intake Studio §8): traces a fact to an upload
+   * or interview turn, e.g. "turn:<interview_turn_id>". Optional/additive.
+   */
+  originRef?: string | null;
   updatedAt: string;
 }
 
@@ -521,7 +531,9 @@ export interface AssociationRecord {
 export type ExtractionArtifactType =
   | "interpretation_summary"
   | "text_excerpt"
-  | "status_note";
+  | "status_note"
+  /** Deterministic non-model 3D geometry parse (M2 STL hardening). */
+  | "geometry_summary";
 
 /** Per-source interpretation output with model + cost provenance. */
 export interface ExtractionArtifactRecord {
@@ -534,6 +546,48 @@ export interface ExtractionArtifactRecord {
   modelId: string | null;
   /** Reservation the producing model run settled against (cost provenance). */
   costReservationId: Id | null;
+  createdAt: string;
+}
+
+/**
+ * Adaptive interview session (feature PRD §6, FR-INT-6). Stage/status are
+ * engine-owned; `spentCents` is the settled model spend attributed to this
+ * session (question drafting + per-turn extraction), maintained by trusted
+ * server logic only (FR-INT-10).
+ */
+export interface InterviewSessionRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  userId: Id;
+  stage: InterviewStage;
+  status: InterviewSessionStatus;
+  sessionSpendCapCents: number;
+  spentCents: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * One interview turn: an engine-targeted question and (once submitted) its
+ * answer. `targetRef` is the machine-readable target the engine selected
+ * (`topic:<stage>:<id>` or `coverage:<solutionId>:<dimension>`).
+ */
+export interface InterviewTurnRecord {
+  id: Id;
+  organizationId: Id;
+  sessionId: Id;
+  turnIndex: number;
+  stage: InterviewStage;
+  question: string;
+  followups: string[];
+  targetRef: string | null;
+  answerText: string | null;
+  /** Null while the question is pending an answer. */
+  answerKind: AnswerKind | null;
+  skipped: boolean;
+  attachmentSourceIds: string[];
+  extractionJobId: Id | null;
   createdAt: string;
 }
 
@@ -684,6 +738,41 @@ export interface DataPort {
     organizationId: Id,
     inventionId: Id,
   ): Promise<EnablementCoverageRecord[]>;
+
+  // Intake Studio M2: adaptive interview sessions/turns (FR-INT-6/7).
+  createInterviewSession(
+    input: Omit<InterviewSessionRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<InterviewSessionRecord>;
+  getInterviewSession(
+    organizationId: Id,
+    sessionId: Id,
+  ): Promise<InterviewSessionRecord | null>;
+  listInterviewSessions(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<InterviewSessionRecord[]>;
+  updateInterviewSession(
+    organizationId: Id,
+    sessionId: Id,
+    patch: Partial<
+      Pick<InterviewSessionRecord, "stage" | "status" | "sessionSpendCapCents" | "spentCents">
+    >,
+  ): Promise<InterviewSessionRecord | null>;
+  createInterviewTurn(
+    input: Omit<InterviewTurnRecord, "id" | "createdAt">,
+  ): Promise<InterviewTurnRecord>;
+  getInterviewTurn(organizationId: Id, turnId: Id): Promise<InterviewTurnRecord | null>;
+  listInterviewTurns(organizationId: Id, sessionId: Id): Promise<InterviewTurnRecord[]>;
+  updateInterviewTurn(
+    organizationId: Id,
+    turnId: Id,
+    patch: Partial<
+      Pick<
+        InterviewTurnRecord,
+        "answerText" | "answerKind" | "skipped" | "attachmentSourceIds" | "extractionJobId"
+      >
+    >,
+  ): Promise<InterviewTurnRecord | null>;
 
   // Drafts
   createDraft(input: Omit<DraftRecord, "id" | "createdAt">): Promise<DraftRecord>;
@@ -946,12 +1035,82 @@ export interface ModelDistillationResult {
   providerCostCents: number;
 }
 
+/* -------------- Intake Studio M2: interview model passes ----------------- */
+
+/**
+ * Question-drafting request (FR-INT-6). The engine picked the target;
+ * the model ONLY words the question. `knownSummary` and `avoidStatements`
+ * are untrusted user-derived data and must be delimited accordingly.
+ */
+export interface ModelQuestionDraftRequest {
+  modelId: string;
+  stage: string;
+  targetRef: string;
+  /** Engine-authored purpose: what the question must gather. */
+  targetPurpose: string;
+  /** Engine-authored follow-up purposes to group under the question. */
+  followupPurposes: string[];
+  /** Solution statement excerpt for coverage-gap targets (untrusted). */
+  solutionStatement: string | null;
+  /** Brief summary of what is already known (untrusted). */
+  knownSummary: string;
+  /** Rejected AI framings to steer away from (untrusted). */
+  avoidStatements: string[];
+  maxOutputTokens: number;
+}
+
+export interface ModelQuestionDraftResult {
+  questionText: string;
+  followups: string[];
+  inputTokens: number;
+  outputTokens: number;
+  providerCostCents: number;
+}
+
+/**
+ * Post-answer extraction request (FR-INT-7, Fast tier). The answer is
+ * untrusted EVIDENCE: instructions inside it carry no authority. Output is
+ * proposals only — new items land `ai_proposed`; edits to confirmed/edited
+ * items are proposed-edit objects, never mutations.
+ */
+export interface ModelTurnExtractionRequest {
+  modelId: string;
+  stage: string;
+  question: string;
+  /** The inventor's answer (untrusted evidence). */
+  answerText: string;
+  existingPairs: Array<{ id: Id; kind: PsPairKind; statement: string; state: PsState }>;
+  componentNames: string[];
+  maxOutputTokens: number;
+}
+
+export interface TurnExtractionOutput {
+  problems: Array<{ statement: string }>;
+  solutions: Array<{ statement: string }>;
+  /** Proposed edits to existing pairs — NEVER applied silently. */
+  proposedEdits: Array<{ pairId: string; proposedStatement: string }>;
+  components: Array<{ name: string; description: string }>;
+}
+
+export interface ModelTurnExtractionResult {
+  output: TurnExtractionOutput;
+  inputTokens: number;
+  outputTokens: number;
+  providerCostCents: number;
+}
+
 export interface ModelGatewayPort {
   generate(request: ModelGenerationRequest): Promise<ModelGenerationResult>;
   /** Intake Studio per-source interpretation pass (FR-INT-3). */
   interpret(request: ModelInterpretationRequest): Promise<ModelInterpretationResult>;
   /** Intake Studio record-level distillation pass (FR-INT-4). */
   distill(request: ModelDistillationRequest): Promise<ModelDistillationResult>;
+  /** Interview question drafting for an engine-chosen target (FR-INT-6). */
+  draftInterviewQuestion(request: ModelQuestionDraftRequest): Promise<ModelQuestionDraftResult>;
+  /** Post-answer live extraction — proposals only (FR-INT-7). */
+  extractInterviewAnswer(
+    request: ModelTurnExtractionRequest,
+  ): Promise<ModelTurnExtractionResult>;
 }
 
 export type CheckoutRequest =
