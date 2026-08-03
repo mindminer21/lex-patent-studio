@@ -171,8 +171,10 @@ export default async function StudioPage({
             <p>
               Documents (PDF, DOCX, PPTX, XLSX, TXT/MD, SVG), images (PNG, JPEG, TIFF, HEIC), and
               3D models (STL, STEP, OBJ, 3MF). Every file passes type validation, quarantine, and
-              a scan before anything reads it. 3D models are stored for counsel and flagged
-              &ldquo;stored, not auto-interpreted&rdquo; until automated 3D interpretation ships.
+              a scan before anything reads it. STL models that parse cleanly get a deterministic
+              geometry summary (dimensions, triangles, bounding box, symmetries — computed by
+              code, no AI); other 3D formats are stored for counsel and honestly flagged
+              &ldquo;stored, not auto-interpreted&rdquo;.
             </p>
             <UploadForm inventionId={id} />
           </div>
@@ -198,6 +200,23 @@ export default async function StudioPage({
                 Interpret {interpretable.length > 0 ? `${interpretable.length} file(s)` : "uploads"}
               </button>
             </form>
+          </div>
+
+          <div className="wp-card" style={{ marginTop: 18 }}>
+            <h2>Adaptive interview</h2>
+            <p>
+              Answer Slusky-guided questions — general to specific — that target exactly the
+              coverage gaps shown on the right. Answers accept file attachments, skips are
+              recorded honestly, and the ledger fills in live as you talk.
+            </p>
+            <p>
+              <a
+                className="button venture-button"
+                href={`/wepatent/app/inventions/${id}/interview`}
+              >
+                Open the interview
+              </a>
+            </p>
           </div>
 
           <div className="wp-card" style={{ marginTop: 18 }}>
@@ -307,8 +326,8 @@ export default async function StudioPage({
                     (dimension) => coverage.dimensions[dimension].status === "gap",
                   ).map((dimension) => (
                     <li key={dimension} className="hint">
-                      Gap: {COVERAGE_DIMENSION_LABELS[dimension]} — the interview will ask (next
-                      milestone), or add it as a fact now.
+                      Gap: {COVERAGE_DIMENSION_LABELS[dimension]} — the interview targets this,
+                      or add it as a fact now.
                     </li>
                   ))}
                 </ul>

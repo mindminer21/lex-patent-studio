@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { requireOnboarded } from "@/lib/server/session";
-import { startUploadPathAction } from "./actions";
+import { startInterviewPathAction, startUploadPathAction } from "./actions";
 
 /**
  * Path chooser (Intake Studio §4.1, FR-INT-1). The two paths are
- * composable, not exclusive — most complete records use both. Path B's
- * adaptive interview ships in M2; until then it routes to the guided form
- * intake, which writes to the same record and ledgers (no forked model).
+ * composable, not exclusive — most complete records use both. Path B is
+ * the M2 adaptive Slusky-guided interview; the guided form intake remains
+ * available and writes to the same record and ledgers (no forked model).
  */
 export default async function StartInventionPage({
   searchParams,
@@ -69,13 +69,42 @@ export default async function StartInventionPage({
           <p className="venture-kicker">Path B</p>
           <h2>Answer questions about your invention</h2>
           <p>
-            Work through structured questions that capture the problem, your solution, components,
-            contributors, timeline, and ownership facts. The adaptive interview (question-by-
-            question, shaped by what you have already provided) arrives in the next milestone;
-            today this is the guided form intake — it writes to the same record.
+            An adaptive, Slusky-guided interview: seven stages from general to specific
+            (context → problem → concept → implementation → alternatives → subsidiary problems →
+            boundaries), shaped by what your record already contains. Answers can carry file
+            attachments, you can pause anytime, and the Problem/Solution ledger fills in as you
+            talk.
+          </p>
+          <form action={startInterviewPathAction} className="wp-form">
+            {error === "invalid_interview_name" && (
+              <p className="form-error" role="alert">
+                Give the invention a working name (2–300 characters). You can change it anytime.
+              </p>
+            )}
+            <div className="field">
+              <label htmlFor="interview-working-name">Working name to start the interview</label>
+              <input
+                id="interview-working-name"
+                name="interviewWorkingName"
+                type="text"
+                required
+                minLength={2}
+                maxLength={300}
+                placeholder="e.g. Self-sealing irrigation valve"
+              />
+            </div>
+            <div>
+              <button className="button venture-button" type="submit">
+                Create record and start the interview
+              </button>
+            </div>
+          </form>
+          <p className="hint">
+            Prefer a fixed form? The guided form intake is still available and writes to the
+            same record.
           </p>
           <p>
-            <Link className="button venture-button" href="/wepatent/app/inventions/new">
+            <Link className="button button-small" href="/wepatent/app/inventions/new">
               Start the guided questions
             </Link>
           </p>
