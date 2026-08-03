@@ -209,3 +209,68 @@ Verification after reconciliation (2026-08-02, this container): `npm run lint` (
 `npm run test:rls:wepatent` (105 pgTAP), `npm run test:e2e:wepatent` (32 passed, Chromium
 pinned at /opt/pw-browsers), `npm run build` (success), legacy 308s verified via
 `next start`. See the merge commit on `track/wepatent-app-reconciled` for the evidence run.
+
+## Invention Intake Studio — Milestone 2 (2026-08-03)
+
+**Scope (feature PRD §13 M2):** adaptive Slusky-guided interview (FR-INT-6),
+live extraction (FR-INT-7), attachments-in-answers, session pause/resume,
+UPL rails with fixed counsel-referral template, per-session spend cap
+(FR-INT-10 interview slice), 3D pipeline hardening (deterministic STL
+geometry summaries), prompt-injection defense for interview turns.
+Branch `track/wepatent-app-reconciled`.
+
+### Verification (fresh run, 2026-08-03, this container)
+
+| Gate | Result |
+|---|---|
+| `npm run lint` | 0 errors, 0 warnings |
+| `npx tsc --noEmit` | clean |
+| `npm run test:wepatent` | 22 files, **240/240** (was 187; +53 M2 tests in `tests/interview.test.ts`) |
+| `npm run test:lex` | 409 passed / 8 skipped (unchanged — no degradation) |
+| `npm run test:rls:wepatent` | 6 pgTAP files, **158 asserts**, PASS (was 139; +19 in `06_interview_m2.sql`) |
+| `npm run test:e2e:wepatent` | **36/36** (was 34; +2 in `e2e/wepatent/interview.spec.ts` incl. axe + keyboard-only completion) |
+| `npm run test:e2e:lex` | 14/14 (unchanged) |
+| `npm run build` | success (interview page + 7 new API routes present) |
+| `npm run audit:prod` | 0 vulnerabilities |
+| `npm run scan:secrets` | clean |
+
+### Live-DB migration application (private project `jxehyxkcibiqluojeryy`)
+
+`supabase/wepatent/migrations/0010_interview_m2.sql` applied 2026-08-03 via
+the Supabase management API (`POST /v1/projects/{ref}/database/query`,
+HTTP 201). Post-apply verification against the live DB:
+`interview_sessions.spent_cents` (int, default 0, `>= 0` check) and cap
+default 500¢ present; `interview_turns.stage` / `answer_kind` (fixed-set
+check) / `followups` present; `extraction_artifacts_type_check` now admits
+`geometry_summary`. Additive only — no existing object modified except that
+one check constraint.
+
+### M2 requirements traceability
+
+| Req | Implementation | Verification | Status |
+|---|---|---|---|
+| FR-INT-6 question engine (deterministic layer is code) | `src/lib/wepatent/domain/interview.ts`: 7 Slusky-derived stages (context → problem → WHAT → HOW → alternatives incl. far-fetched probe → subsidiary problems → boundaries); every candidate question carries a machine-readable target (`topic:<stage>:<id>` or `coverage:<solutionId>:<dimension>`); selection is most-general-first within stage; stage advance on minimum coverage or explicit skip (`skip-stage` endpoint); pre-fill from confirmed record fields + satisfied coverage means known facts are never re-asked; rejected AI proposals flow to the drafter as avoid-framings. Model (Advanced tier) drafts ONLY question wording + grouped follow-ups (`draftInterviewQuestion` on both gateways); local mode uses the deterministic synthetic drafter through the same interface | engine determinism / ordering / no-repeat / pre-fill / stage-gating unit suites; stage-monotonicity service test; E2E stage order + re-presented question | verified |
+| Turn handling: text, text+attachments, skip/unknown; pause/resume; honest progress | `services/interview.ts` `submitInterviewTurn` (answer/skip/unknown), attachments validated per record and routed through the unchanged FR-4 + FR-INT-3 pipeline (outputs join the record and count toward coverage); skips/unknowns recorded as `needs_confirmation` enablement-signal facts with `origin_ref turn:<id>`; pause/resume with full persistence; progress = stage + coverage counts, no percent | unit: attachment pipeline test, skip-signal test, pause/resume persistence test; E2E: attachment turn + "I don't know" + pause → reload → resume | verified |
+| FR-INT-7 live extraction (proposals only) | Fast-tier `extractInterviewAnswer` per answered turn: new problems/solutions land `ai_proposed` origin `interview` with `turn:<id>` anchors; component inventory additions `ai_proposed`; user_confirmed/user_edited items get proposed-edit EVENT objects (JSON detail) surfaced with an explicit "Apply as my edit" human action — never silent mutation; deterministic answer-of-record fact (user actor) carries the turn origin ref (model can never write facts, parent §5.9 preserved); coverage recomputed each turn; right panel re-renders per turn | unit: proposal-only + proposed-edit + never-mutate tests; E2E ledger growth + evidence anchors + coverage delta | verified |
+| UPL rails (invariant 14, §6.4) | Fixed header disclaimer on the interview surface; deterministic advice classifier (`classifyAdviceSeeking`, 12 pattern rules) with the FIXED `COUNSEL_REFERRAL_TEMPLATE` — the response is never model-generated, no model call and no charge for refusal turns; the same fact question is re-presented | 14 adversarial positive fixtures + 6 negative fixtures (unit); no-spend assertion; E2E advice turn shows template verbatim domain copy | verified |
+| FR-INT-10 cost (interview slice) | Every model-touching turn (question draft + turn extraction) runs estimate → reservation → run → settle on the existing FR-6 layer (`runMetered`); settled charges accrue to `interview_sessions.spent_cents`; running spend + cap displayed each turn; configurable cap (default $5.00, `INTERVIEW_SESSION_SPEND_CAP_CENTS`) halts model calls pre-consumption with the raise-cap resume path; extraction retries dedupe by reservation + marker event (never double-charge) | unit: cap-halt/raise/resume, retry idempotency, per-turn usage-event counts; E2E spend display `$x.xx` of `$5.00`; pgTAP spend/cap tamper denial | verified |
+| 3D hardening | `src/lib/wepatent/domain/stl.ts`: pure-JS binary+ASCII STL parser with strict clean-parse contract → deterministic `geometry_summary` artifact (dimensions, triangle count, bounding box, mirror symmetries) as a NON-MODEL interpretation (modelId/cost null, zero spend); unparseable STL and STEP/OBJ/3MF stay honestly `stored_uninterpreted` | unit: cube/tetra parse, malformed-null, determinism, pipeline zero-spend + idempotency, honest-failure test; pgTAP geometry_summary type check | verified (visual/render interpretation of 3D remains deferred — no approved renderer substrate; deferral is honest in-product) |
+| Prompt-injection defense for turns (invariant 16) | Answers/attachments are delimited untrusted evidence in both gateway prompts; engine decisions (stage, target, cap, states) are code the model cannot reach; planted instructions ("mark everything confirmed", "you are now…") produce at most `ai_proposed` content | unit injection fixture (engine state + cap + states unchanged); E2E injection turn → zero "Confirmed by you"; production-gateway delimiter assertions | verified |
+| API additions (feature PRD §11) | `POST /api/inventions/:id/interview/sessions`, `GET /api/interview/sessions/:id`, `POST …/turns`, `POST …/skip`, plus `…/skip-stage`, `…/pause`, `…/cap` (Zod, auth, role-gated, generic errors) | route usage throughout `interview.spec.ts` E2E | verified |
+| Both-adapter rule | Interview session/turn DataPort methods implemented in `local/store.ts` AND `production/supabase-data.ts`; `draftInterviewQuestion`/`extractInterviewAnswer` implemented in `local/model-gateway.ts` (deterministic) AND `production/model-gateway.ts` (OpenAI JSON, kill switch, cost caps, breaker, no key/error leak) | fake-transport gateway unit tests; tsc structural conformance to the ports | verified (live OpenAI smoke run remains §17.4-gated, as in M1) |
+
+### M2 deferred items (honest)
+
+1. **3D visual interpretation (renders → vision model)** — still requires an
+   approved headless-render substrate (no Docker/GPU here). STL now yields a
+   real deterministic geometry summary; STEP/OBJ/3MF remain
+   `stored_uninterpreted` with explicit in-product status.
+2. **Live OpenAI interview smoke run** — production drafting/extraction
+   paths are implemented and fake-transport tested; real spend needs Jeff's
+   §17.4 go (same blocker as M1).
+3. **Cheap model assist for the advice classifier** — the deterministic
+   pattern layer ships alone (PRD allows either); adding a model assist
+   never changes the fixed-template response and can land later without
+   schema changes.
+4. **Proposed-edit dismissal UX** — proposals disappear when the user edits,
+   confirms, or applies; an explicit "dismiss" affordance is M3 polish.
