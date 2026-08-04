@@ -90,9 +90,10 @@ async function uploadFile(
   });
 }
 
-async function createRecord(page: Page, name: string): Promise<string> {
+async function createRecord(page: Page): Promise<string> {
+  // No naming step on the path chooser: records start with a neutral
+  // placeholder title and the working title arrives via distillation.
   await page.goto("/wepatent/app/inventions/start");
-  await page.getByLabel("Working name for this invention").fill(name);
   await page.getByRole("button", { name: "Create record and upload files" }).click();
   await page.waitForURL(/\/studio$/);
   return page.url().split("?")[0];
@@ -146,7 +147,7 @@ test("region drawing: AI-proposed overlays, mouse draw, keyboard-only variant, e
 }) => {
   test.setTimeout(240_000);
   await onboardFreshTenant(page, "m3-regions");
-  const studioUrl = await createRecord(page, "Region journey (e2e)");
+  const studioUrl = await createRecord(page);
 
   await uploadFile(page, { name: "memo.md", mimeType: "text/markdown", buffer: Buffer.from(MEMO_MD) });
   await uploadFile(page, { name: "photo.png", mimeType: "image/png", buffer: PNG_BYTES });
@@ -252,7 +253,7 @@ test("audio journey: upload → synthetic transcription → transcript feeds dis
 }) => {
   test.setTimeout(240_000);
   await onboardFreshTenant(page, "m3-audio");
-  const studioUrl = await createRecord(page, "Audio journey (e2e)");
+  const studioUrl = await createRecord(page);
 
   const spoken = [
     "Problem: Manual crimping tools slip on wet cable jackets.",
@@ -294,7 +295,7 @@ test("re-distill with new material: diff-style review with bulk accept; confirme
 }) => {
   test.setTimeout(240_000);
   await onboardFreshTenant(page, "m3-rediff");
-  const studioUrl = await createRecord(page, "Re-distill journey (e2e)");
+  const studioUrl = await createRecord(page);
 
   await uploadFile(page, { name: "memo.md", mimeType: "text/markdown", buffer: Buffer.from(MEMO_MD) });
   await waitForCleared(page, studioUrl, 1);
@@ -377,7 +378,7 @@ test("3D viewer: browser software render (no WebGL), user-triggered snapshot vie
 }) => {
   test.setTimeout(240_000);
   await onboardFreshTenant(page, "m3-mesh");
-  const studioUrl = await createRecord(page, "Mesh journey (e2e)");
+  const studioUrl = await createRecord(page);
 
   await uploadFile(page, {
     name: "bracket.stl",

@@ -5,15 +5,12 @@ import { startInterviewPathAction, startUploadPathAction } from "./actions";
 /**
  * Path chooser (Intake Studio §4.1, FR-INT-1). The two paths are
  * composable, not exclusive — most complete records use both. Path B is
- * the M2 adaptive Slusky-guided interview; the guided form intake remains
- * available and writes to the same record and ledgers (no forked model).
+ * the M2 adaptive Slusky-guided interview; the classic form intake remains
+ * reachable and writes to the same record and ledgers (no forked model).
+ * Records start with a neutral placeholder title — the AI proposes a
+ * working title from your uploads or interview answers, and you confirm it.
  */
-export default async function StartInventionPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const { error } = await searchParams;
+export default async function StartInventionPage() {
   await requireOnboarded();
 
   return (
@@ -28,7 +25,9 @@ export default async function StartInventionPage({
       </div>
       <p style={{ maxWidth: 760 }}>
         Two ways in — <strong>you can do both; most complete records use both.</strong> Either path
-        creates the invention record and everything lands in the same Problem/Solution ledger.
+        creates the invention record and everything lands in the same Problem/Solution ledger. No
+        need to name anything yet: a working title is proposed from what you upload or say, and
+        you confirm or change it anytime.
       </p>
       <div className="wp-grid cols-2" style={{ marginTop: 18, alignItems: "stretch" }}>
         <div className="wp-card">
@@ -41,23 +40,6 @@ export default async function StartInventionPage({
             interpret are stored honestly and flagged.
           </p>
           <form action={startUploadPathAction} className="wp-form">
-            {error === "invalid_name" && (
-              <p className="form-error" role="alert">
-                Give the invention a working name (2–300 characters). You can change it anytime.
-              </p>
-            )}
-            <div className="field">
-              <label htmlFor="working-name">Working name for this invention</label>
-              <input
-                id="working-name"
-                name="workingName"
-                type="text"
-                required
-                minLength={2}
-                maxLength={300}
-                placeholder="e.g. Self-sealing irrigation valve"
-              />
-            </div>
             <div>
               <button className="button venture-button" type="submit">
                 Create record and upload files
@@ -68,45 +50,16 @@ export default async function StartInventionPage({
         <div className="wp-card">
           <p className="venture-kicker">Path B</p>
           <h2>Answer questions about your invention</h2>
-          <p>
-            An adaptive, Slusky-guided interview: seven stages from general to specific
-            (context → problem → concept → implementation → alternatives → subsidiary problems →
-            boundaries), shaped by what your record already contains. Answers can carry file
-            attachments, you can pause anytime, and the Problem/Solution ledger fills in as you
-            talk.
-          </p>
           <form action={startInterviewPathAction} className="wp-form">
-            {error === "invalid_interview_name" && (
-              <p className="form-error" role="alert">
-                Give the invention a working name (2–300 characters). You can change it anytime.
-              </p>
-            )}
-            <div className="field">
-              <label htmlFor="interview-working-name">Working name to start the interview</label>
-              <input
-                id="interview-working-name"
-                name="interviewWorkingName"
-                type="text"
-                required
-                minLength={2}
-                maxLength={300}
-                placeholder="e.g. Self-sealing irrigation valve"
-              />
-            </div>
             <div>
               <button className="button venture-button" type="submit">
-                Create record and start the interview
+                Start the guided questions
               </button>
             </div>
           </form>
           <p className="hint">
-            Prefer a fixed form? The guided form intake is still available and writes to the
-            same record.
-          </p>
-          <p>
-            <Link className="button button-small" href="/wepatent/app/inventions/new">
-              Start the guided questions
-            </Link>
+            Prefer a fixed form?{" "}
+            <Link href="/wepatent/app/inventions/new">Use the classic form intake</Link>
           </p>
         </div>
       </div>

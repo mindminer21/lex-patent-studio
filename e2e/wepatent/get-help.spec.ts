@@ -21,10 +21,16 @@ test("get-help page: records list, both buttons, disclaimer, receipt upload", as
   await onboardFreshTenant(page, "gethelp");
 
   // Create an invention record so the draft-applications list has a row.
+  // The path chooser has no naming step; confirming a working title in the
+  // studio renames the record itself (title linkage under test).
   await page.goto("/wepatent/app/inventions/start");
-  await page.getByLabel("Working name for this invention").fill("Receipt-test valve (e2e)");
   await page.getByRole("button", { name: "Create record and upload files" }).click();
   await page.waitForURL(/\/studio$/);
+  await page.getByText("Edit working title").click();
+  await page.getByLabel("Working title", { exact: true }).fill("Receipt-test valve (e2e)");
+  await page.getByRole("button", { name: "Save title" }).click();
+  await page.waitForURL(/\/studio$/);
+  await expect(page.getByTestId("working-title")).toHaveText("Receipt-test valve (e2e)");
 
   // Sidebar label renamed; the page keeps its route.
   await page.goto("/wepatent/app");

@@ -294,6 +294,18 @@ export class LocalDataAdapter implements DataPort {
     return record;
   }
 
+  async updateInventionTitle(
+    organizationId: Id,
+    inventionId: Id,
+    title: string,
+  ): Promise<InventionRecord | null> {
+    const record = await this.getInvention(organizationId, inventionId);
+    if (!record) return null;
+    record.title = title;
+    record.updatedAt = now();
+    return record;
+  }
+
   async listInventions(organizationId: Id): Promise<InventionRecord[]> {
     return [...tables().inventions.values()].filter(
       (i) => i.organizationId === organizationId && i.status === "active",

@@ -18,10 +18,11 @@ const ATTACHMENT_MD = [
   "Component: Retainer clip — spring steel clip",
 ].join("\n");
 
-async function createRecordAndOpenInterview(page: Page, name: string): Promise<void> {
+async function createRecordAndOpenInterview(page: Page): Promise<void> {
+  // Single Path B button: no naming step — the record is auto-created with
+  // a neutral placeholder title and the user lands in the adaptive interview.
   await page.goto("/wepatent/app/inventions/start");
-  await page.getByLabel("Working name to start the interview").fill(name);
-  await page.getByRole("button", { name: "Create record and start the interview" }).click();
+  await page.getByRole("button", { name: "Start the guided questions" }).click();
   await page.waitForURL(/\/interview$/);
   await expect(page.getByTestId("interview-disclaimer")).toContainText(
     "does not give legal advice",
@@ -44,7 +45,7 @@ test("interview journey: turns, attachment, skip, advice template, injection, le
 }) => {
   test.setTimeout(240_000);
   await onboardFreshTenant(page, "interview");
-  await createRecordAndOpenInterview(page, "Self-sealing valve (interview e2e)");
+  await createRecordAndOpenInterview(page);
 
   // --- Start the session (metered turns disclosed up front) ---------------
   await expect(page.getByTestId("interview-start")).toContainText("provider cost × 1.50");
@@ -174,10 +175,10 @@ test("keyboard-only interview: create, start, answer, skip, and complete without
   test.setTimeout(240_000);
   await onboardFreshTenant(page, "interview-kbd");
 
-  // Create the record from the path chooser using only the keyboard.
+  // Create the record from the path chooser using only the keyboard: the
+  // single Path B button starts the adaptive interview directly.
   await page.goto("/wepatent/app/inventions/start");
-  await page.getByLabel("Working name to start the interview").focus();
-  await page.keyboard.type("Keyboard-only probe");
+  await page.getByRole("button", { name: "Start the guided questions" }).focus();
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/interview$/);
 

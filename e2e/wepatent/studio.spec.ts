@@ -53,14 +53,18 @@ test("studio journey: chooser → uploads → interpret → distill → ledger C
   await expect(
     page.getByRole("heading", { name: "Answer questions about your invention" }),
   ).toBeVisible();
-  // Both paths are composable, and the guided form remains available.
-  await expect(page.getByRole("link", { name: "Start the guided questions" })).toHaveAttribute(
+  // Path B's single button starts the adaptive interview; the classic form
+  // intake stays reachable through a text link (no dedicated button).
+  await expect(page.getByRole("button", { name: "Start the guided questions" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Use the classic form intake" })).toHaveAttribute(
     "href",
     "/wepatent/app/inventions/new",
   );
+  // No naming step: the record starts with a neutral placeholder title and
+  // the AI proposes a working title from uploads or interview answers.
+  await expect(page.getByLabel(/Working name/)).toHaveCount(0);
 
   // Path A creates the record on first commit and lands in the studio.
-  await page.getByLabel("Working name for this invention").fill("Self-sealing valve (e2e)");
   await page.getByRole("button", { name: "Create record and upload files" }).click();
   await page.waitForURL(/\/studio$/);
   await expect(page.getByText("Working draft — counsel review required").first()).toBeVisible();
@@ -255,7 +259,6 @@ test("path chooser + studio pages pass axe and stay responsive at 320px", async 
       .map((violation) => violation.id),
   ).toEqual([]);
 
-  await page.getByLabel("Working name for this invention").fill("Responsive probe");
   await page.getByRole("button", { name: "Create record and upload files" }).click();
   await page.waitForURL(/\/studio$/);
 

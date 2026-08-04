@@ -533,6 +533,22 @@ export class SupabaseDataAdapter implements DataPort {
     return row ? mapInvention(row) : null;
   }
 
+  async updateInventionTitle(
+    organizationId: Id,
+    inventionId: Id,
+    title: string,
+  ): Promise<InventionRecord | null> {
+    const row = await one<Row>(
+      this.from("inventions")
+        .update({ title, updated_at: new Date().toISOString() })
+        .eq("organization_id", organizationId)
+        .eq("id", inventionId)
+        .select(),
+      "inventions.updateTitle",
+    );
+    return row ? mapInvention(row) : null;
+  }
+
   async listInventions(organizationId: Id): Promise<InventionRecord[]> {
     const rows = await many<Row>(
       this.from("inventions")

@@ -200,7 +200,14 @@ export async function linkPairs(params: {
   return { ok: true, link };
 }
 
-/** User working-title change: appended to the proposal history. */
+/**
+ * User working-title change: appended to the proposal history. Saving a
+ * working title is the user's confirmation of it, so the invention record
+ * title updates to match — a record created with the neutral placeholder
+ * picks up the real title the moment the user confirms one. The record
+ * title column allows 3–200 characters, so longer working titles are
+ * truncated on the record only (the full text stays in the ledger).
+ */
 export async function setWorkingTitle(params: {
   organizationId: Id;
   userId: Id;
@@ -219,6 +226,7 @@ export async function setWorkingTitle(params: {
     state: "user_edited",
     createdByActor: "user",
   });
+  await data.updateInventionTitle(params.organizationId, params.inventionId, text.slice(0, 200));
   await data.appendPsEvent({
     organizationId: params.organizationId,
     inventionId: params.inventionId,

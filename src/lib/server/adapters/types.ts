@@ -661,6 +661,12 @@ export interface DataPort {
     input: Omit<InventionRecord, "id" | "createdAt" | "updatedAt" | "status">,
   ): Promise<InventionRecord>;
   getInvention(organizationId: Id, inventionId: Id): Promise<InventionRecord | null>;
+  /** Renames the record (e.g. when a working title is confirmed). */
+  updateInventionTitle(
+    organizationId: Id,
+    inventionId: Id,
+    title: string,
+  ): Promise<InventionRecord | null>;
   listInventions(organizationId: Id): Promise<InventionRecord[]>;
   softDeleteInvention(organizationId: Id, inventionId: Id): Promise<void>;
   /** FR-3 retention: soft-deleted records awaiting the purge window. */

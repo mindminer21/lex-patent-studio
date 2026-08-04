@@ -660,6 +660,24 @@ describe("distillation service (FR-INT-4) and ledger (FR-INT-5)", () => {
     // Proposal history retained: model proposal + user edit.
     const titles = await context.data.listWorkingTitles(context.org.id, context.invention.id);
     expect(titles.length).toBeGreaterThanOrEqual(2);
+
+    // Confirming a working title renames the invention record itself, so a
+    // record created with the neutral placeholder gets the real title.
+    const renamed = await context.data.getInvention(context.org.id, context.invention.id);
+    expect(renamed?.title).toBe("Self-sealing irrigation valve (working title)");
+
+    // Record title column allows at most 200 chars: longer working titles
+    // are truncated on the record while the ledger keeps the full text.
+    const longText = `Long working title ${"x".repeat(300)}`;
+    const longTitle = await setWorkingTitle({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: context.invention.id,
+      text: longText,
+    });
+    expect(longTitle.ok && longTitle.title.text === longText).toBe(true);
+    const renamedAgain = await context.data.getInvention(context.org.id, context.invention.id);
+    expect(renamedAgain?.title).toBe(longText.slice(0, 200));
   });
 
   it("coverage meter reacts deterministically to ledger edits (FR-INT-8)", async () => {
