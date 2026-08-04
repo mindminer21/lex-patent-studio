@@ -190,6 +190,7 @@ export async function submitIntake(params: {
       checksumSha256: null,
       quarantineReason: null,
       interpretationStatus: null,
+      derivedFromSourceId: null,
     });
   }
 

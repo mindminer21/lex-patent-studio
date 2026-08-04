@@ -80,6 +80,10 @@ export const PS_EVENT_KINDS = [
   "title_proposed",
   "title_edited",
   "title_confirmed",
+  /** M3 ledger polish (feature PRD §5.4): merge/split + dismissal signals. */
+  "merged",
+  "split",
+  "proposal_dismissed",
 ] as const;
 export type PsEventKind = (typeof PS_EVENT_KINDS)[number];
 

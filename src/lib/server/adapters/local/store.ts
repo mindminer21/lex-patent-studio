@@ -505,7 +505,7 @@ export class LocalDataAdapter implements DataPort {
   async updatePsPair(
     organizationId: Id,
     pairId: Id,
-    patch: Partial<Pick<PsPairRecord, "statement" | "state">>,
+    patch: Partial<Pick<PsPairRecord, "statement" | "state" | "sourceAnchors">>,
   ): Promise<PsPairRecord | null> {
     const record = tables().psPairs.get(pairId);
     if (!record || record.organizationId !== organizationId) return null;
@@ -596,6 +596,30 @@ export class LocalDataAdapter implements DataPort {
     return [...tables().associations.values()].filter(
       (a) => a.organizationId === organizationId && a.inventionId === inventionId,
     );
+  }
+
+  async getAssociation(organizationId: Id, associationId: Id): Promise<AssociationRecord | null> {
+    const record = tables().associations.get(associationId);
+    return record && record.organizationId === organizationId ? record : null;
+  }
+
+  async updateAssociation(
+    organizationId: Id,
+    associationId: Id,
+    patch: Partial<Pick<AssociationRecord, "region" | "state">>,
+  ): Promise<AssociationRecord | null> {
+    const record = tables().associations.get(associationId);
+    if (!record || record.organizationId !== organizationId) return null;
+    const updated: AssociationRecord = { ...record, ...patch };
+    tables().associations.set(associationId, updated);
+    return updated;
+  }
+
+  async deleteAssociation(organizationId: Id, associationId: Id): Promise<void> {
+    const record = tables().associations.get(associationId);
+    if (record && record.organizationId === organizationId) {
+      tables().associations.delete(associationId);
+    }
   }
 
   async createExtractionArtifact(

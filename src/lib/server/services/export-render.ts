@@ -14,6 +14,7 @@ import {
   COVERAGE_DIMENSION_LABELS,
   COVERAGE_DIMENSIONS,
 } from "@/lib/wepatent/domain/coverage";
+import { formatRegionAnchor } from "@/lib/wepatent/domain/evidence";
 import { getAdapters } from "../adapters";
 import type { LedgerView } from "./ps-ledger";
 import type {
@@ -132,8 +133,10 @@ export function buildExportSections(input: {
         lines.push(`  Evidence anchors: ${pair.sourceAnchors.join(" · ")}`);
       }
       if (pair.kind === "solution") {
-        const componentNames = ledger.associations
-          .filter((association) => association.solutionId === pair.id)
+        const solutionAssociations = ledger.associations.filter(
+          (association) => association.solutionId === pair.id,
+        );
+        const componentNames = solutionAssociations
           .map((association) =>
             association.componentId
               ? componentById.get(association.componentId)?.name
@@ -142,6 +145,22 @@ export function buildExportSections(input: {
           .filter((name): name is string => Boolean(name));
         if (componentNames.length > 0) {
           lines.push(`  Associated components: ${componentNames.join(", ")}`);
+        }
+        // M3 (FR-INT-9): per-solution evidence listing with anchors.
+        const sourceById = new Map(sources.map((source) => [source.id, source]));
+        for (const association of solutionAssociations) {
+          if (association.region && association.sourceId) {
+            const sourceName =
+              sourceById.get(association.sourceId)?.name ?? association.sourceId;
+            lines.push(
+              `  Evidence (${association.state}): ${formatRegionAnchor(sourceName, association.region)}`,
+            );
+          }
+          if (association.interviewTurnId) {
+            lines.push(
+              `  Evidence (${association.state}): interview turn ${association.interviewTurnId}`,
+            );
+          }
         }
       }
     }

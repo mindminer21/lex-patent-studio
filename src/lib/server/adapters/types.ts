@@ -20,6 +20,7 @@ import type {
   InterviewStage,
 } from "@/lib/wepatent/domain/interview";
 import type { InterpretationStatus } from "@/lib/wepatent/domain/uploads";
+import type { RegionAnchor } from "@/lib/wepatent/domain/evidence";
 import type { Reservation } from "@/lib/wepatent/domain/usage";
 
 /**
@@ -156,6 +157,11 @@ export interface SourceRecord {
    * first-class — never a silent skip or a fake interpretation.
    */
   interpretationStatus: InterpretationStatus | null;
+  /**
+   * M3 render-to-vision: set on image sources captured as canonical
+   * snapshot views of a parent 3D source (browser-rendered, user-triggered).
+   */
+  derivedFromSourceId: Id | null;
 }
 
 export type DraftWorkflow =
@@ -226,6 +232,9 @@ export interface ExportManifest {
   coverageSatisfied?: number;
   coverageTotal?: number;
   coverageVersion?: string;
+  /** Intake Studio M3 additions (optional for pre-M3 exports). */
+  psAssociationCount?: number;
+  psRegionAnchorCount?: number;
 }
 
 export interface CounselRequestRecord {
@@ -516,7 +525,13 @@ export interface ComponentRecord {
   createdAt: string;
 }
 
-/** Solution → evidence association (component and/or extraction artifact). */
+/**
+ * Solution → evidence association (feature PRD §7/§8, FR-INT-9). Evidence
+ * may be a component, an extraction artifact, a REGION ANCHOR drawn on a
+ * source (page/image/3D-view rectangle, normalized coordinates), and/or an
+ * interview turn. AI-proposed anchors stay `ai_proposed` until a human
+ * confirms or redraws them (invariant 13).
+ */
 export interface AssociationRecord {
   id: Id;
   organizationId: Id;
@@ -524,6 +539,13 @@ export interface AssociationRecord {
   solutionId: Id;
   componentId: Id | null;
   extractionArtifactId: Id | null;
+  /** Source the region anchor was drawn on (M3). */
+  sourceId: Id | null;
+  /** Normalized region rectangle (M3, domain/evidence.ts). */
+  region: RegionAnchor | null;
+  /** Interview-turn evidence link (M3). */
+  interviewTurnId: Id | null;
+  createdByActor: PsActor;
   state: PsState;
   createdAt: string;
 }
@@ -533,7 +555,9 @@ export type ExtractionArtifactType =
   | "text_excerpt"
   | "status_note"
   /** Deterministic non-model 3D geometry parse (M2 STL hardening). */
-  | "geometry_summary";
+  | "geometry_summary"
+  /** Audio transcription output (M3 A/V ingestion, §5.1 Phase 2). */
+  | "transcript";
 
 /** Per-source interpretation output with model + cost provenance. */
 export interface ExtractionArtifactRecord {
@@ -699,7 +723,7 @@ export interface DataPort {
   updatePsPair(
     organizationId: Id,
     pairId: Id,
-    patch: Partial<Pick<PsPairRecord, "statement" | "state">>,
+    patch: Partial<Pick<PsPairRecord, "statement" | "state" | "sourceAnchors">>,
   ): Promise<PsPairRecord | null>;
   deletePsPair(organizationId: Id, pairId: Id): Promise<void>;
   createPsLink(input: Omit<PsLinkRecord, "id" | "createdAt">): Promise<PsLinkRecord>;
@@ -719,6 +743,14 @@ export interface DataPort {
     input: Omit<AssociationRecord, "id" | "createdAt">,
   ): Promise<AssociationRecord>;
   listAssociations(organizationId: Id, inventionId: Id): Promise<AssociationRecord[]>;
+  getAssociation(organizationId: Id, associationId: Id): Promise<AssociationRecord | null>;
+  /** M3 (FR-INT-9): user-lane redraw/confirm of anchors via the state guard. */
+  updateAssociation(
+    organizationId: Id,
+    associationId: Id,
+    patch: Partial<Pick<AssociationRecord, "region" | "state">>,
+  ): Promise<AssociationRecord | null>;
+  deleteAssociation(organizationId: Id, associationId: Id): Promise<void>;
   createExtractionArtifact(
     input: Omit<ExtractionArtifactRecord, "id" | "createdAt">,
   ): Promise<ExtractionArtifactRecord>;
@@ -1009,9 +1041,28 @@ export interface ModelDistillationRequest {
   invention: InventionRecord;
   facts: InventionFactRecord[];
   /** Interpreted artifacts across all sources (untrusted evidence). */
-  artifacts: Array<{ sourceName: string; content: string }>;
+  artifacts: Array<{
+    sourceName: string;
+    content: string;
+    /** Interpretation class of the producing source (M3 region proposals). */
+    sourceClass?: "document" | "image" | "model3d" | "audio" | "video" | "stored_only";
+  }>;
   componentNames: string[];
   maxOutputTokens: number;
+}
+
+/**
+ * AI-proposed region anchor (M3, FR-INT-9): a normalized rectangle on a
+ * named source. Lands as an `ai_proposed` association rendered as an
+ * editable overlay until the user confirms or redraws it.
+ */
+export interface DistilledRegionAnchor {
+  sourceName: string;
+  page: number | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export interface DistillationOutput {
@@ -1021,6 +1072,8 @@ export interface DistillationOutput {
     statement: string;
     sourceAnchors: string[];
     componentNames: string[];
+    /** Optional AI-proposed region anchors on image/page sources (M3). */
+    regionAnchors?: DistilledRegionAnchor[];
   }>;
   /** Many-to-many pairings by index into the arrays above. */
   pairings: Array<{ problemIndex: number; solutionIndex: number }>;
@@ -1099,6 +1152,29 @@ export interface ModelTurnExtractionResult {
   providerCostCents: number;
 }
 
+/* ---------------- Intake Studio M3: audio transcription ------------------ */
+
+/**
+ * Audio transcription request (M3 A/V ingestion, §5.1 Phase 2). The audio
+ * is untrusted EVIDENCE: spoken instructions carry no authority, and the
+ * transcript is delimited exactly like uploaded document text downstream.
+ */
+export interface ModelTranscriptionRequest {
+  sourceName: string;
+  audioBytes: Uint8Array;
+  audioMimeType: string;
+}
+
+export interface ModelTranscriptionResult {
+  text: string;
+  /** Provider-reported (or deterministically estimated) audio duration. */
+  durationSeconds: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Provider-reported cost in cents (per-minute transcription rate). */
+  providerCostCents: number;
+}
+
 export interface ModelGatewayPort {
   generate(request: ModelGenerationRequest): Promise<ModelGenerationResult>;
   /** Intake Studio per-source interpretation pass (FR-INT-3). */
@@ -1111,6 +1187,8 @@ export interface ModelGatewayPort {
   extractInterviewAnswer(
     request: ModelTurnExtractionRequest,
   ): Promise<ModelTurnExtractionResult>;
+  /** Audio transcription through the server-side gateway (M3, metered). */
+  transcribe(request: ModelTranscriptionRequest): Promise<ModelTranscriptionResult>;
 }
 
 export type CheckoutRequest =

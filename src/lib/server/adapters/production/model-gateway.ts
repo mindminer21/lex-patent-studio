@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  estimateAudioDurationSeconds,
+  transcriptionProviderCostCents,
+} from "@/lib/wepatent/domain/av";
 import type { ModelRate } from "@/lib/wepatent/domain/usage";
 import type {
   ModelDistillationRequest,
@@ -10,6 +14,8 @@ import type {
   ModelInterpretationResult,
   ModelQuestionDraftRequest,
   ModelQuestionDraftResult,
+  ModelTranscriptionRequest,
+  ModelTranscriptionResult,
   ModelTurnExtractionRequest,
   ModelTurnExtractionResult,
 } from "../types";
@@ -253,8 +259,8 @@ const DISTILLATION_INSTRUCTION = [
   "If the material appears to contain more than one independent inventive concept, add exactly this style of note to observations: it is an observation about the record, never filing advice.",
   "You must not give legal advice, claim scope recommendations, filing strategy, or patentability conclusions, and never produce claim-shaped output.",
   "Respond with ONLY a JSON object of shape:",
-  '{"workingTitle": string, "problems": [{"statement": string, "sourceAnchors": [string]}], "solutions": [{"statement": string, "sourceAnchors": [string], "componentNames": [string]}], "pairings": [{"problemIndex": number, "solutionIndex": number}], "observations": [string]}',
-  "sourceAnchors must reference the source names given in the record. Output nothing but JSON.",
+  '{"workingTitle": string, "problems": [{"statement": string, "sourceAnchors": [string]}], "solutions": [{"statement": string, "sourceAnchors": [string], "componentNames": [string], "regionAnchors": [{"sourceName": string, "page": number|null, "x": number, "y": number, "w": number, "h": number}]}], "pairings": [{"problemIndex": number, "solutionIndex": number}], "observations": [string]}',
+  "sourceAnchors must reference the source names given in the record. regionAnchors are OPTIONAL: only for sources marked class=image or class=document, use normalized 0..1 coordinates locating where the evidence appears; omit the array when unsure. Every anchor is a proposal for human review. Output nothing but JSON.",
 ].join(" ");
 
 /**
@@ -305,6 +311,14 @@ const turnExtractionOutputSchema = z.object({
     .default([]),
 });
 
+/** OpenAI transcription model (per-minute pricing; see domain/av.ts). */
+export const TRANSCRIPTION_MODEL_ID = "whisper-1";
+
+const transcriptionResponseSchema = z.object({
+  text: z.string(),
+  duration: z.number().nonnegative().optional(),
+});
+
 const interpretationOutputSchema = z.object({
   summary: z.string().default(""),
   componentCandidates: z
@@ -325,6 +339,18 @@ const distillationOutputSchema = z.object({
         statement: z.string().min(1),
         sourceAnchors: z.array(z.string()).default([]),
         componentNames: z.array(z.string()).default([]),
+        regionAnchors: z
+          .array(
+            z.object({
+              sourceName: z.string().min(1),
+              page: z.number().int().min(1).nullable().default(null),
+              x: z.number(),
+              y: z.number(),
+              w: z.number(),
+              h: z.number(),
+            }),
+          )
+          .default([]),
       }),
     )
     .default([]),
@@ -514,7 +540,9 @@ export class ProviderModelGateway implements ModelGatewayPort {
     }
     lines.push(`Known component candidates: ${request.componentNames.join(", ") || "(none)"}`);
     for (const artifact of request.artifacts) {
-      lines.push(`--- Interpreted source: ${artifact.sourceName} ---`);
+      lines.push(
+        `--- Interpreted source: ${artifact.sourceName} (class=${artifact.sourceClass ?? "document"}) ---`,
+      );
       lines.push(artifact.content.slice(0, 20_000));
     }
     lines.push("=== END INVENTION RECORD ===");
@@ -644,6 +672,100 @@ export class ProviderModelGateway implements ModelGatewayPort {
       outputTokens: raw.outputTokens,
       providerCostCents: this.finish(entry, raw.content, raw.inputTokens, raw.outputTokens)
         .providerCostCents,
+    };
+  }
+
+  /**
+   * Audio transcription (M3 A/V ingestion, §5.1 Phase 2; OpenAI-only per
+   * the current provider approval). Multipart upload to the OpenAI
+   * transcription API; per-minute pricing from the effective-dated
+   * TRANSCRIPTION_RATE; the provider-reported duration settles the cost.
+   * The audio never leaves the server except to the approved provider, and
+   * spoken content is EVIDENCE — the transcript is delimited downstream
+   * exactly like any uploaded document text (invariant 16).
+   */
+  async transcribe(request: ModelTranscriptionRequest): Promise<ModelTranscriptionResult> {
+    if (this.options.killSwitch) {
+      throw new ModelGatewayError("gateway_disabled", "kill switch active");
+    }
+    const key = this.options.keys.openai;
+    if (!key) {
+      throw new ModelGatewayError(
+        "provider_not_configured",
+        "openai API key missing (approval-gated, PRD §17)",
+      );
+    }
+    // Pre-flight worst-case cost cap (FR-5): deterministic duration
+    // estimate from the bytes, same math the reservation used.
+    const estimatedSeconds = estimateAudioDurationSeconds(
+      request.audioMimeType,
+      request.audioBytes,
+    );
+    const worstCaseCents = transcriptionProviderCostCents(estimatedSeconds * 2);
+    if (worstCaseCents > this.options.maxRunProviderCostCents) {
+      throw new ModelGatewayError(
+        "cost_cap_exceeded",
+        `worst case ${worstCaseCents}c > cap ${this.options.maxRunProviderCostCents}c`,
+      );
+    }
+
+    const raw = await this.withRetries("openai", async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.options.timeoutMs);
+      try {
+        const form = new FormData();
+        form.append(
+          "file",
+          new Blob([new Uint8Array(request.audioBytes)], { type: request.audioMimeType }),
+          request.sourceName.slice(0, 200) || "audio",
+        );
+        form.append("model", TRANSCRIPTION_MODEL_ID);
+        form.append("response_format", "verbose_json");
+        let response: Response;
+        try {
+          response = await this.options.fetchImpl(
+            "https://api.openai.com/v1/audio/transcriptions",
+            {
+              method: "POST",
+              headers: { authorization: `Bearer ${key}` },
+              body: form,
+              signal: controller.signal,
+            },
+          );
+        } catch (error) {
+          if (controller.signal.aborted) {
+            throw new ModelGatewayError("provider_timeout", "openai timed out", true);
+          }
+          throw new ModelGatewayError("provider_error", `network: ${String(error)}`, true);
+        }
+        if (!response.ok) {
+          const retryable = response.status === 429 || response.status >= 500;
+          const body = await response.text().catch(() => "");
+          throw new ModelGatewayError(
+            "provider_error",
+            `openai HTTP ${response.status}: ${body.slice(0, 500)}`,
+            retryable,
+          );
+        }
+        const json = await response.json().catch(() => null);
+        const parsed = transcriptionResponseSchema.safeParse(json);
+        if (!parsed.success) {
+          throw new ModelGatewayError("invalid_provider_response", parsed.error.message);
+        }
+        return parsed.data;
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+
+    const durationSeconds =
+      raw.duration !== undefined && raw.duration > 0 ? raw.duration : estimatedSeconds;
+    return {
+      text: raw.text,
+      durationSeconds,
+      inputTokens: 0,
+      outputTokens: Math.ceil(raw.text.length / 4),
+      providerCostCents: transcriptionProviderCostCents(durationSeconds),
     };
   }
 

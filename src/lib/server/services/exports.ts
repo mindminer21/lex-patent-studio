@@ -65,6 +65,12 @@ export async function createExport(params: {
     coverageSatisfied: ledger.coverage.aggregate.satisfied,
     coverageTotal: ledger.coverage.aggregate.total,
     coverageVersion: ledger.coverage.version,
+    // M3: per-solution evidence travels in the package (FR-INT-9 export
+    // integration); the manifest carries the association/anchor counts.
+    psAssociationCount: ledger.associations.length,
+    psRegionAnchorCount: ledger.associations.filter(
+      (association) => association.region !== null,
+    ).length,
   };
 
   const checksum = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");

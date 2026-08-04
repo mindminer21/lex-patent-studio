@@ -1,6 +1,11 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import {
+  estimateTranscription,
+  transcriptArtifactContent,
+  VIDEO_STORED_STATUS_NOTE,
+} from "@/lib/wepatent/domain/av";
 import { formatGeometrySummary, parseStlGeometry } from "@/lib/wepatent/domain/stl";
 import { interpretationClassFor } from "@/lib/wepatent/domain/uploads";
 import { release, reserve, settle } from "@/lib/wepatent/domain/usage";
@@ -113,6 +118,45 @@ export async function runInterpretation(params: {
     source.originalFilename ?? source.name,
   );
 
+  // Video (M3, §5.1 Phase 2): serverless has no ffmpeg — audio-track and
+  // keyframe interpretation are honestly "not yet available" with a prompt
+  // to describe the contents. Stored for the counsel package, never faked.
+  if (interpretationClass === "video") {
+    if (source.interpretationStatus !== "stored_uninterpreted") {
+      await data.updateSource(params.organizationId, params.sourceId, {
+        interpretationStatus: "stored_uninterpreted",
+      });
+    }
+    const existing = await data.listExtractionArtifactsForSource(
+      params.organizationId,
+      params.sourceId,
+    );
+    if (!existing.some((artifact) => artifact.type === "status_note")) {
+      await data.createExtractionArtifact({
+        organizationId: params.organizationId,
+        inventionId: source.inventionId,
+        sourceId: source.id,
+        type: "status_note",
+        content: VIDEO_STORED_STATUS_NOTE,
+        modelId: null,
+        costReservationId: null,
+      });
+      await data.appendAuditEvent({
+        organizationId: params.organizationId,
+        actor: "system",
+        action: "source.stored_uninterpreted",
+        target: source.id,
+        meta: { interpretationClass },
+      });
+    }
+    return { ok: true, sourceId: source.id, status: "stored_uninterpreted", artifactCount: 1 };
+  }
+
+  // Audio (M3, §5.1 Phase 2): metered transcription through the gateway.
+  if (interpretationClass === "audio") {
+    return runAudioTranscription({ ...params, source });
+  }
+
   // Honest stored_uninterpreted for classes without an M1 interpreter.
   if (interpretationClass === "model3d" || interpretationClass === "stored_only") {
     // M2 3D hardening: a CLEAN pure-JS STL parse yields a deterministic
@@ -170,7 +214,7 @@ export async function runInterpretation(params: {
         type: "status_note",
         content:
           interpretationClass === "model3d"
-            ? "Stored, not auto-interpreted: this 3D file did not parse cleanly with the deterministic geometry reader (clean STL files get a code-computed geometry summary; STEP/OBJ/3MF have no clean parser here, and visual 3D interpretation awaits an approved renderer). The raw file is retained for the counsel package. Please describe what the model shows in your record so counsel has the context."
+            ? "Stored, not auto-interpreted: this 3D file did not parse cleanly with the deterministic geometry reader (clean STL files get a code-computed geometry summary; STEP/3MF have no clean pure-JS parser here). STL and OBJ models can be opened in the 3D viewer to capture snapshot views for AI interpretation — a user-triggered, cost-shown step. The raw file is retained for the counsel package. Please describe what the model shows in your record so counsel has the context."
             : "Stored, not auto-interpreted: no automated interpreter exists for this file type. The file is retained for the counsel package. Please describe its contents in your record.",
         modelId: null,
         costReservationId: null,
@@ -382,6 +426,196 @@ export async function runInterpretation(params: {
     action: "source.interpreted",
     target: source.id,
     meta: { modelId: tier.modelId, reservationId: reservationRecord.id },
+  });
+
+  const artifacts = await data.listExtractionArtifactsForSource(
+    params.organizationId,
+    params.sourceId,
+  );
+  return { ok: true, sourceId: source.id, status: "interpreted", artifactCount: artifacts.length };
+}
+
+/**
+ * Audio transcription (M3, §5.1 Phase 2): estimate → reserve → transcribe
+ * through the gateway → settle (FR-6 semantics, provider cost × 1.50).
+ * The transcript lands as a `transcript` extraction artifact with model +
+ * cost provenance and feeds distillation/coverage like any text source.
+ * Spoken content is EVIDENCE — instructions in a recording are inert
+ * content (invariant 16). A failed run releases the hold, charges nothing,
+ * and stores honestly as stored_uninterpreted (re-runnable).
+ */
+async function runAudioTranscription(params: {
+  organizationId: Id;
+  userId: Id;
+  sourceId: Id;
+  idempotencyKey: string;
+  source: SourceRecord;
+}): Promise<InterpretationRunResult> {
+  const { data, storage, modelGateway } = getAdapters();
+  const { source } = params;
+
+  const bytes = source.storagePath ? await storage.get(source.storagePath) : null;
+  if (!bytes) {
+    await data.updateSource(params.organizationId, params.sourceId, {
+      interpretationStatus: "stored_uninterpreted",
+    });
+    await data.createExtractionArtifact({
+      organizationId: params.organizationId,
+      inventionId: source.inventionId,
+      sourceId: source.id,
+      type: "status_note",
+      content:
+        "Stored, not auto-interpreted: no file bytes are available for this source (metadata-only registration).",
+      modelId: null,
+      costReservationId: null,
+    });
+    return { ok: true, sourceId: source.id, status: "stored_uninterpreted", artifactCount: 1 };
+  }
+
+  const mimeType = source.mimeType ?? "application/octet-stream";
+  const estimate = estimateTranscription(mimeType, bytes);
+
+  const wallet = (await data.getWallet(params.organizationId)) ?? {
+    organizationId: params.organizationId,
+    balanceCents: 0,
+    reservedCents: 0,
+  };
+  const existingReservations = await data.listReservations(params.organizationId);
+  const reserveResult = reserve(
+    { balanceCents: wallet.balanceCents, reservedCents: wallet.reservedCents },
+    existingReservations,
+    {
+      id: randomUUID(),
+      idempotencyKey: params.idempotencyKey,
+      amountCents: estimate.customerHighCents,
+      rateVersion: estimate.rateVersion,
+    },
+  );
+  if (!reserveResult.ok) return { ok: false, error: "insufficient_funds" };
+
+  if (reserveResult.deduplicated) {
+    // Retry of a transcription that already produced its artifact: the
+    // artifact carries the reservation id, so the same key never re-charges.
+    const artifacts = await data.listExtractionArtifactsForSource(
+      params.organizationId,
+      params.sourceId,
+    );
+    const prior = artifacts.find(
+      (artifact) => artifact.costReservationId === reserveResult.reservation.id,
+    );
+    if (prior) {
+      return {
+        ok: true,
+        sourceId: source.id,
+        status: "interpreted",
+        artifactCount: artifacts.length,
+      };
+    }
+  }
+
+  await data.saveWallet({ organizationId: params.organizationId, ...reserveResult.wallet });
+  const reservationRecord = {
+    ...reserveResult.reservation,
+    organizationId: params.organizationId,
+    createdAt: new Date().toISOString(),
+  };
+  await data.saveReservation(reservationRecord);
+
+  let result;
+  try {
+    result = await modelGateway.transcribe({
+      sourceName: source.name,
+      audioBytes: bytes,
+      audioMimeType: mimeType,
+    });
+  } catch {
+    const released = release(reserveResult.wallet, reserveResult.reservation);
+    if (released.ok) {
+      await data.saveWallet({ organizationId: params.organizationId, ...released.wallet });
+      await data.saveReservation({ ...reservationRecord, status: released.reservation.status });
+      await data.appendLedgerEntry({
+        organizationId: params.organizationId,
+        kind: "release",
+        amountCents: 0,
+        reservationId: reservationRecord.id,
+        note: "Transcription failed; reservation released without charge.",
+      });
+    }
+    await data.updateSource(params.organizationId, params.sourceId, {
+      interpretationStatus: "stored_uninterpreted",
+    });
+    await data.createExtractionArtifact({
+      organizationId: params.organizationId,
+      inventionId: source.inventionId,
+      sourceId: source.id,
+      type: "status_note",
+      content:
+        "Stored, not auto-interpreted: the transcription run did not complete. Nothing was charged. The recording remains stored and you can re-run interpretation.",
+      modelId: null,
+      costReservationId: null,
+    });
+    await data.appendAuditEvent({
+      organizationId: params.organizationId,
+      actor: "system",
+      action: "source.transcription_failed",
+      target: source.id,
+      meta: {},
+    });
+    return { ok: true, sourceId: source.id, status: "stored_uninterpreted", artifactCount: 1 };
+  }
+
+  const settled = settle(
+    reserveResult.wallet,
+    reserveResult.reservation,
+    result.providerCostCents,
+  );
+  if (!settled.ok) return { ok: false, error: "interpretation_failed" };
+  await data.saveWallet({ organizationId: params.organizationId, ...settled.wallet });
+  await data.saveReservation({
+    ...reservationRecord,
+    status: settled.reservation.status,
+    settledProviderCostCents: settled.reservation.settledProviderCostCents,
+    settledCustomerChargeCents: settled.reservation.settledCustomerChargeCents,
+  });
+  await data.appendLedgerEntry({
+    organizationId: params.organizationId,
+    kind: "settlement",
+    amountCents: -settled.customerChargeCents,
+    reservationId: reservationRecord.id,
+    note: `Audio transcription settlement (${estimate.rateVersion}); provider cost × 1.50.`,
+  });
+  await data.appendUsageEvent({
+    organizationId: params.organizationId,
+    reservationId: reservationRecord.id,
+    modelId: "transcription",
+    rateVersion: estimate.rateVersion,
+    providerCostCents: result.providerCostCents,
+    customerChargeCents: settled.customerChargeCents,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+  });
+
+  await data.createExtractionArtifact({
+    organizationId: params.organizationId,
+    inventionId: source.inventionId,
+    sourceId: source.id,
+    type: "transcript",
+    content: transcriptArtifactContent(source.name, result.text.slice(0, 100_000)),
+    modelId: "transcription",
+    costReservationId: reservationRecord.id,
+  });
+  await data.updateSource(params.organizationId, params.sourceId, {
+    interpretationStatus: "interpreted",
+  });
+  await data.appendAuditEvent({
+    organizationId: params.organizationId,
+    actor: params.userId,
+    action: "source.transcribed",
+    target: source.id,
+    meta: {
+      reservationId: reservationRecord.id,
+      durationSeconds: Math.round(result.durationSeconds),
+    },
   });
 
   const artifacts = await data.listExtractionArtifactsForSource(

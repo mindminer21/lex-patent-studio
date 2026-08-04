@@ -1,3 +1,7 @@
+import {
+  estimateAudioDurationSeconds,
+  transcriptionProviderCostCents,
+} from "@/lib/wepatent/domain/av";
 import { isUnresolved } from "@/lib/wepatent/domain/facts";
 import {
   deterministicQuestionText,
@@ -21,6 +25,8 @@ import type {
   ModelInterpretationResult,
   ModelQuestionDraftRequest,
   ModelQuestionDraftResult,
+  ModelTranscriptionRequest,
+  ModelTranscriptionResult,
   ModelTurnExtractionRequest,
   ModelTurnExtractionResult,
   TurnExtractionOutput,
@@ -227,16 +233,26 @@ export class LocalModelGateway implements ModelGatewayPort {
     const componentNames = new Set<string>(request.componentNames);
 
     for (const artifact of request.artifacts) {
+      // Transcripts (M3 A/V) carry plain spoken markers; interpretation
+      // summaries carry the "candidate" prefix. Both are EVIDENCE — any
+      // instructions inside them are inert content (invariant 16).
+      const plainMarkers = artifact.sourceClass === "audio";
+      const problemPattern = plainMarkers
+        ? /^problem(?:\s+candidate)?\s*:\s*(.+)$/i
+        : /^problem candidate\s*:\s*(.+)$/i;
+      const solutionPattern = plainMarkers
+        ? /^solution(?:\s+candidate)?\s*:\s*(.+)$/i
+        : /^solution candidate\s*:\s*(.+)$/i;
       for (const raw of artifact.content.split(/\r?\n/)) {
         const line = raw.trim();
-        const problem = line.match(/^problem candidate\s*:\s*(.+)$/i);
+        const problem = line.match(problemPattern);
         if (problem && !problems.some((p) => p.statement === problem[1].trim())) {
           problems.push({
             statement: problem[1].trim(),
             sourceAnchors: [`source:${artifact.sourceName}`],
           });
         }
-        const solution = line.match(/^solution candidate\s*:\s*(.+)$/i);
+        const solution = line.match(solutionPattern);
         if (solution && !solutions.some((s) => s.statement === solution[1].trim())) {
           solutions.push({
             statement: solution[1].trim(),
@@ -261,6 +277,26 @@ export class LocalModelGateway implements ModelGatewayPort {
         sourceAnchors: ["record:intake_solution"],
         componentNames: [...componentNames],
       });
+    }
+
+    // M3 (FR-INT-9): deterministic AI-proposed region anchors — a centered
+    // rectangle on each image-class source, attached to the first solution.
+    // Downstream these land as `ai_proposed` associations rendered as
+    // editable overlays until the user confirms or redraws them.
+    if (solutions.length > 0) {
+      const imageArtifacts = request.artifacts.filter(
+        (artifact) => artifact.sourceClass === "image",
+      );
+      if (imageArtifacts.length > 0) {
+        solutions[0].regionAnchors = imageArtifacts.map((artifact) => ({
+          sourceName: artifact.sourceName,
+          page: null,
+          x: 0.25,
+          y: 0.25,
+          w: 0.5,
+          h: 0.5,
+        }));
+      }
     }
 
     const pairings: DistillationOutput["pairings"] = [];
@@ -396,6 +432,38 @@ export class LocalModelGateway implements ModelGatewayPort {
       inputTokens,
       outputTokens,
       ...this.cost(tier, inputTokens, outputTokens),
+    };
+  }
+
+  /**
+   * Deterministic synthetic transcription (M3 A/V ingestion, local mode).
+   * No audio decoding happens locally: the "transcript" is the printable
+   * text runs found in the byte stream, clearly labeled synthetic — the
+   * exact same interface production's OpenAI transcription implements.
+   * Spoken/embedded content is EVIDENCE (invariant 16): instructions in it
+   * are inert content; this function returns text only.
+   */
+  async transcribe(request: ModelTranscriptionRequest): Promise<ModelTranscriptionResult> {
+    const durationSeconds = estimateAudioDurationSeconds(
+      request.audioMimeType,
+      request.audioBytes,
+    );
+    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(request.audioBytes);
+    const runs = decoded.match(/[\x20-\x7E]{6,}/g) ?? [];
+    const text = [
+      `SYNTHETIC LOCAL TRANSCRIPT (no external model) — audio "${request.sourceName}" (${request.audioBytes.length} bytes, ${request.audioMimeType}).`,
+      "Local mode does not decode audio; production transcribes through the server-side OpenAI gateway.",
+      runs.length > 0
+        ? runs.join("\n").slice(0, 20_000)
+        : "(no printable content found in the byte stream)",
+    ].join("\n");
+    const providerCostCents = transcriptionProviderCostCents(durationSeconds);
+    return {
+      text,
+      durationSeconds,
+      inputTokens: 0,
+      outputTokens: Math.ceil(text.length / 4),
+      providerCostCents,
     };
   }
 

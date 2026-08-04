@@ -30,7 +30,22 @@ export function parseStlGeometry(bytes: Uint8Array): StlGeometrySummary | null {
   return parseAsciiStl(bytes);
 }
 
-function parseBinaryStl(bytes: Uint8Array): StlGeometrySummary | null {
+/**
+ * Clean-parse the raw triangle soup (M3 browser viewer): flat array of
+ * vertex coordinates, 9 numbers per triangle. Same strict clean-parse
+ * contract as the summary — null means "do not pretend to render this".
+ */
+export function parseStlVertices(
+  bytes: Uint8Array,
+): { format: "binary" | "ascii"; vertices: number[] } | null {
+  const binary = parseBinaryStlVertices(bytes);
+  if (binary) return { format: "binary", vertices: binary };
+  const ascii = parseAsciiStlVertices(bytes);
+  if (ascii) return { format: "ascii", vertices: ascii };
+  return null;
+}
+
+function parseBinaryStlVertices(bytes: Uint8Array): number[] | null {
   if (bytes.length < 84) return null;
   // ASCII files start with "solid"; a binary header may too, so we decide
   // by the exact length contract, not the header text.
@@ -52,12 +67,18 @@ function parseBinaryStl(bytes: Uint8Array): StlGeometrySummary | null {
       vertices.push(x, y, z);
     }
   }
-  return summarize("binary", triangleCount, vertices);
+  return vertices;
+}
+
+function parseBinaryStl(bytes: Uint8Array): StlGeometrySummary | null {
+  const vertices = parseBinaryStlVertices(bytes);
+  if (!vertices) return null;
+  return summarize("binary", vertices.length / 9, vertices);
 }
 
 const ASCII_VERTEX = /vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)/g;
 
-function parseAsciiStl(bytes: Uint8Array): StlGeometrySummary | null {
+function parseAsciiStlVertices(bytes: Uint8Array): number[] | null {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -78,7 +99,13 @@ function parseAsciiStl(bytes: Uint8Array): StlGeometrySummary | null {
   }
   // A clean ASCII STL has exactly 3 vertices per facet.
   if (vertices.length !== facetCount * 9) return null;
-  return summarize("ascii", facetCount, vertices);
+  return vertices;
+}
+
+function parseAsciiStl(bytes: Uint8Array): StlGeometrySummary | null {
+  const vertices = parseAsciiStlVertices(bytes);
+  if (!vertices) return null;
+  return summarize("ascii", vertices.length / 9, vertices);
 }
 
 function summarize(

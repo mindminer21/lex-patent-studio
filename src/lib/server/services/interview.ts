@@ -123,9 +123,21 @@ async function buildView(
   ]);
   const pendingTurn = [...turns].reverse().find((turn) => turn.answerKind === null) ?? null;
   const pairById = new Map(ledger.pairs.map((pair) => [pair.id, pair]));
+  // M3: explicit dismissals hide a proposal without touching the pair.
+  const dismissedEventIds = new Set<string>();
+  for (const event of events) {
+    if (event.kind !== "proposal_dismissed") continue;
+    try {
+      const parsed = JSON.parse(event.detail) as { eventId?: string };
+      if (parsed.eventId) dismissedEventIds.add(parsed.eventId);
+    } catch {
+      /* ignore malformed dismissals */
+    }
+  }
   const proposedEdits: InterviewView["proposedEdits"] = [];
   for (const event of events) {
     if (event.kind !== "proposed" || !event.detail.startsWith("{")) continue;
+    if (dismissedEventIds.has(event.id)) continue;
     try {
       const parsed = JSON.parse(event.detail) as {
         type?: string;
@@ -871,6 +883,47 @@ export async function setSessionSpendCap(params: {
     view: await buildView(params.organizationId, fresh ?? session),
     warnings,
   };
+}
+
+/**
+ * Dismiss a proposed edit WITHOUT applying it (M3 affordance, feature PRD
+ * §5.4 review model). Appends an event to the append-only log — the
+ * original proposal event is never mutated, and the pair is untouched.
+ */
+export async function dismissProposedEdit(params: {
+  organizationId: Id;
+  userId: Id;
+  inventionId: Id;
+  eventId: Id;
+}): Promise<{ ok: boolean }> {
+  const { data } = getAdapters();
+  const events = await data.listPsEvents(params.organizationId, params.inventionId);
+  const event = events.find((candidate) => candidate.id === params.eventId);
+  if (!event || event.kind !== "proposed" || !event.detail.startsWith("{")) {
+    return { ok: false };
+  }
+  try {
+    const parsed = JSON.parse(event.detail) as { type?: string; pairId?: string };
+    if (parsed.type !== "proposed_edit") return { ok: false };
+    await data.appendPsEvent({
+      organizationId: params.organizationId,
+      inventionId: params.inventionId,
+      pairId: parsed.pairId ?? null,
+      kind: "proposal_dismissed",
+      actor: `user:${params.userId}`,
+      detail: JSON.stringify({ type: "proposed_edit_dismissed", eventId: event.id }),
+    });
+    await data.appendAuditEvent({
+      organizationId: params.organizationId,
+      actor: params.userId,
+      action: "interview.proposed_edit_dismissed",
+      target: event.id,
+      meta: { pairId: parsed.pairId ?? null },
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
 }
 
 /* ---------------------- extraction proposal writing ---------------------- */

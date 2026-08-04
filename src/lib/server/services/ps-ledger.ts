@@ -5,6 +5,8 @@ import {
   deletionEventKind,
   type PsPairKind,
 } from "@/lib/wepatent/domain/ps-ledger";
+import { formatRegionAnchor, normalizeRegion } from "@/lib/wepatent/domain/evidence";
+import { interpretationClassFor } from "@/lib/wepatent/domain/uploads";
 import {
   aggregateCoverage,
   computeSolutionCoverage,
@@ -340,4 +342,487 @@ export async function recomputeCoverage(
     ),
   );
   return data.appendEnablementCoverage(rows);
+}
+
+/* ------------------- M3: visual evidence associations ------------------- */
+
+export type AssociationMutationResult =
+  | { ok: true; association: AssociationRecord | null }
+  | { ok: false; error: "not_found" | "forbidden_transition" | "invalid_input" };
+
+/**
+ * User-drawn region anchor (FR-INT-9): links a solution to a rectangle on
+ * a source. A human drew it, so it starts `user_confirmed` via the guard.
+ */
+export async function addRegionAssociation(params: {
+  organizationId: Id;
+  userId: Id;
+  solutionId: Id;
+  sourceId: Id;
+  region: unknown;
+}): Promise<AssociationMutationResult> {
+  const region = normalizeRegion(params.region);
+  if (!region) return { ok: false, error: "invalid_input" };
+  const { data } = getAdapters();
+  const solution = await data.getPsPair(params.organizationId, params.solutionId);
+  if (!solution || solution.kind !== "solution") return { ok: false, error: "not_found" };
+  const source = await data.getSource(params.organizationId, params.sourceId);
+  if (!source || source.inventionId !== solution.inventionId) {
+    return { ok: false, error: "not_found" };
+  }
+  const guard = applyPsAction("user", "propose", null);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+  const association = await data.createAssociation({
+    organizationId: params.organizationId,
+    inventionId: solution.inventionId,
+    solutionId: solution.id,
+    componentId: null,
+    extractionArtifactId: null,
+    sourceId: source.id,
+    region,
+    interviewTurnId: null,
+    createdByActor: "user",
+    state: guard.nextState,
+  });
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: solution.inventionId,
+    pairId: solution.id,
+    kind: "linked",
+    actor: `user:${params.userId}`,
+    detail: `region anchor drawn on source:${source.name} (${formatRegionAnchor(source.name, region)})`,
+  });
+  await recomputeCoverage(params.organizationId, solution.inventionId);
+  return { ok: true, association };
+}
+
+/** Redraw/adjust an anchor's region — a user edit through the guard. */
+export async function updateAssociationRegion(params: {
+  organizationId: Id;
+  userId: Id;
+  associationId: Id;
+  region: unknown;
+}): Promise<AssociationMutationResult> {
+  const region = normalizeRegion(params.region);
+  if (!region) return { ok: false, error: "invalid_input" };
+  const { data } = getAdapters();
+  const association = await data.getAssociation(params.organizationId, params.associationId);
+  if (!association) return { ok: false, error: "not_found" };
+  if (!association.sourceId) return { ok: false, error: "invalid_input" };
+  const guard = applyPsAction("user", "edit", association.state);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+  const updated = await data.updateAssociation(params.organizationId, params.associationId, {
+    region,
+    state: guard.nextState,
+  });
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: association.inventionId,
+    pairId: association.solutionId,
+    kind: "edited",
+    actor: `user:${params.userId}`,
+    detail: `region anchor adjusted (association:${association.id})`,
+  });
+  return { ok: true, association: updated };
+}
+
+/** Confirm an AI-proposed anchor (the ONLY path out of ai_proposed). */
+export async function confirmAssociation(params: {
+  organizationId: Id;
+  userId: Id;
+  associationId: Id;
+}): Promise<AssociationMutationResult> {
+  const { data } = getAdapters();
+  const association = await data.getAssociation(params.organizationId, params.associationId);
+  if (!association) return { ok: false, error: "not_found" };
+  const guard = applyPsAction("user", "confirm", association.state);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+  const updated = await data.updateAssociation(params.organizationId, params.associationId, {
+    state: guard.nextState,
+  });
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: association.inventionId,
+    pairId: association.solutionId,
+    kind: "confirmed",
+    actor: `user:${params.userId}`,
+    detail: `association:${association.id}`,
+  });
+  return { ok: true, association: updated };
+}
+
+/** Delete an anchor; rejecting an AI proposal records the rejection signal. */
+export async function deleteAssociation(params: {
+  organizationId: Id;
+  userId: Id;
+  associationId: Id;
+}): Promise<AssociationMutationResult> {
+  const { data } = getAdapters();
+  const association = await data.getAssociation(params.organizationId, params.associationId);
+  if (!association) return { ok: false, error: "not_found" };
+  const guard = applyPsAction("user", "delete", association.state);
+  if (!guard.allowed) return { ok: false, error: "forbidden_transition" };
+  await data.deleteAssociation(params.organizationId, params.associationId);
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: association.inventionId,
+    pairId: association.solutionId,
+    kind: deletionEventKind(association.state),
+    actor: `user:${params.userId}`,
+    detail: `association removed (association:${association.id})`,
+  });
+  await recomputeCoverage(params.organizationId, association.inventionId);
+  return { ok: true, association: null };
+}
+
+/* -------------------- M3: merge / split (feature PRD §5.4) --------------- */
+
+/**
+ * Merge two same-kind pairs: the primary keeps its identity, absorbs the
+ * secondary's statement + anchors, and inherits its links/associations;
+ * the secondary is deleted. A human judgment call → `user_edited`.
+ */
+export async function mergePairs(params: {
+  organizationId: Id;
+  userId: Id;
+  primaryId: Id;
+  secondaryId: Id;
+}): Promise<PsMutationResult> {
+  if (params.primaryId === params.secondaryId) return { ok: false, error: "invalid_input" };
+  const { data } = getAdapters();
+  const primary = await data.getPsPair(params.organizationId, params.primaryId);
+  const secondary = await data.getPsPair(params.organizationId, params.secondaryId);
+  if (!primary || !secondary) return { ok: false, error: "not_found" };
+  if (primary.kind !== secondary.kind || primary.inventionId !== secondary.inventionId) {
+    return { ok: false, error: "invalid_input" };
+  }
+  const guard = applyPsAction("user", "edit", primary.state);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+
+  const mergedStatement = `${primary.statement.trim()} ${secondary.statement.trim()}`.slice(0, 4000);
+  const mergedAnchors = [
+    ...new Set([...primary.sourceAnchors, ...secondary.sourceAnchors]),
+  ].slice(0, 20);
+  const updated = await data.updatePsPair(params.organizationId, params.primaryId, {
+    statement: mergedStatement,
+    state: guard.nextState,
+    sourceAnchors: mergedAnchors,
+  });
+
+  // Re-home the secondary's links and (for solutions) evidence associations
+  // BEFORE the delete cascades them away.
+  const links = await data.listPsLinks(params.organizationId, primary.inventionId);
+  const linkKeys = new Set(links.map((link) => `${link.problemId}:${link.solutionId}`));
+  for (const link of links) {
+    const problemId = link.problemId === secondary.id ? primary.id : link.problemId;
+    const solutionId = link.solutionId === secondary.id ? primary.id : link.solutionId;
+    if (problemId === link.problemId && solutionId === link.solutionId) continue;
+    if (problemId === solutionId) continue;
+    if (linkKeys.has(`${problemId}:${solutionId}`)) continue;
+    linkKeys.add(`${problemId}:${solutionId}`);
+    await data.createPsLink({
+      organizationId: params.organizationId,
+      inventionId: primary.inventionId,
+      problemId,
+      solutionId,
+      state: link.state,
+    });
+  }
+  if (primary.kind === "solution") {
+    const associations = await data.listAssociations(params.organizationId, primary.inventionId);
+    for (const association of associations) {
+      if (association.solutionId !== secondary.id) continue;
+      await data.createAssociation({
+        organizationId: params.organizationId,
+        inventionId: primary.inventionId,
+        solutionId: primary.id,
+        componentId: association.componentId,
+        extractionArtifactId: association.extractionArtifactId,
+        sourceId: association.sourceId,
+        region: association.region,
+        interviewTurnId: association.interviewTurnId,
+        createdByActor: association.createdByActor,
+        state: association.state,
+      });
+    }
+  }
+
+  await data.deletePsPair(params.organizationId, secondary.id);
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: primary.inventionId,
+    pairId: primary.id,
+    kind: "merged",
+    actor: `user:${params.userId}`,
+    detail: `absorbed ${secondary.kind}: ${secondary.statement.slice(0, 200)}`,
+  });
+  await recomputeCoverage(params.organizationId, primary.inventionId);
+  return { ok: true, pair: updated };
+}
+
+/**
+ * Split one pair into several statements: the original keeps the first
+ * statement (with its links/associations); each additional statement
+ * becomes a sibling pair carrying the same source anchors.
+ */
+export async function splitPair(params: {
+  organizationId: Id;
+  userId: Id;
+  pairId: Id;
+  statements: string[];
+}): Promise<PsMutationResult> {
+  const statements = params.statements
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length >= 3 && statement.length <= 4000);
+  if (statements.length < 2 || statements.length > 5) {
+    return { ok: false, error: "invalid_input" };
+  }
+  const { data } = getAdapters();
+  const pair = await data.getPsPair(params.organizationId, params.pairId);
+  if (!pair) return { ok: false, error: "not_found" };
+  const guard = applyPsAction("user", "edit", pair.state);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+
+  const updated = await data.updatePsPair(params.organizationId, params.pairId, {
+    statement: statements[0],
+    state: guard.nextState,
+  });
+  for (const statement of statements.slice(1)) {
+    const sibling = await data.createPsPair({
+      organizationId: params.organizationId,
+      inventionId: pair.inventionId,
+      kind: pair.kind,
+      statement,
+      state: "user_edited",
+      origin: "manual",
+      createdByActor: "user",
+      sourceAnchors: pair.sourceAnchors,
+    });
+    await data.appendPsEvent({
+      organizationId: params.organizationId,
+      inventionId: pair.inventionId,
+      pairId: sibling.id,
+      kind: "split",
+      actor: `user:${params.userId}`,
+      detail: `split from ${pair.kind}:${pair.id}`,
+    });
+  }
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: pair.inventionId,
+    pairId: pair.id,
+    kind: "split",
+    actor: `user:${params.userId}`,
+    detail: `split into ${statements.length} statements`,
+  });
+  await recomputeCoverage(params.organizationId, pair.inventionId);
+  return { ok: true, pair: updated };
+}
+
+/* --------------- M3: re-distillation diff review (bulk acts) ------------- */
+
+/**
+ * Bulk-review the current AI proposals (re-distillation diff review):
+ * confirm-all or reject-all across `ai_proposed` pairs. Each item still
+ * flows through the same per-item guard + event trail as a single action;
+ * confirmed/edited items are untouchable by construction.
+ */
+export async function bulkReviewProposals(params: {
+  organizationId: Id;
+  userId: Id;
+  inventionId: Id;
+  action: "confirm" | "reject";
+}): Promise<{ ok: true; affected: number } | { ok: false; error: "not_found" }> {
+  const { data } = getAdapters();
+  const invention = await data.getInvention(params.organizationId, params.inventionId);
+  if (!invention) return { ok: false, error: "not_found" };
+  const pairs = await data.listPsPairs(params.organizationId, params.inventionId);
+  let affected = 0;
+  for (const pair of pairs) {
+    if (pair.state !== "ai_proposed") continue;
+    const result =
+      params.action === "confirm"
+        ? await confirmPair({
+            organizationId: params.organizationId,
+            userId: params.userId,
+            pairId: pair.id,
+          })
+        : await deletePair({
+            organizationId: params.organizationId,
+            userId: params.userId,
+            pairId: pair.id,
+          });
+    if (result.ok) affected += 1;
+  }
+  return { ok: true, affected };
+}
+
+/* ------------------- M3: solution evidence gallery view ------------------ */
+
+export type EvidenceItem =
+  | {
+      kind: "component";
+      associationId: Id;
+      state: PsPairRecord["state"];
+      componentName: string;
+      componentDescription: string;
+    }
+  | {
+      kind: "region";
+      associationId: Id;
+      state: PsPairRecord["state"];
+      sourceId: Id;
+      sourceName: string;
+      sourceMimeType: string | null;
+      sourceClass: string;
+      region: NonNullable<AssociationRecord["region"]>;
+      locator: string;
+    }
+  | {
+      kind: "text_snippet";
+      anchor: string;
+      sourceId: Id | null;
+      sourceName: string;
+      excerpt: string;
+      artifactType: string;
+    }
+  | {
+      kind: "geometry";
+      sourceId: Id;
+      sourceName: string;
+      summary: string;
+    }
+  | {
+      kind: "interview_turn";
+      turnId: Id;
+      question: string;
+      answerExcerpt: string;
+    };
+
+export type SolutionEvidenceView = {
+  solution: PsPairRecord;
+  items: EvidenceItem[];
+};
+
+/**
+ * Full evidence set for one solution (feature PRD §7): components, region
+ * crops, quoted text snippets with anchors, 3D geometry summaries, and
+ * interview-turn excerpts — each with enough source metadata for the
+ * gallery to open the source viewer at the anchor.
+ */
+export async function getSolutionEvidence(
+  organizationId: Id,
+  solutionId: Id,
+): Promise<SolutionEvidenceView | null> {
+  const { data } = getAdapters();
+  const solution = await data.getPsPair(organizationId, solutionId);
+  if (!solution || solution.kind !== "solution") return null;
+  const [associations, components, sources, artifacts] = await Promise.all([
+    data.listAssociations(organizationId, solution.inventionId),
+    data.listComponents(organizationId, solution.inventionId),
+    data.listSources(organizationId, solution.inventionId),
+    data.listExtractionArtifacts(organizationId, solution.inventionId),
+  ]);
+  const componentById = new Map(components.map((component) => [component.id, component]));
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  const sourceByName = new Map(sources.map((source) => [source.name, source]));
+  const items: EvidenceItem[] = [];
+
+  for (const association of associations) {
+    if (association.solutionId !== solution.id) continue;
+    if (association.componentId) {
+      const component = componentById.get(association.componentId);
+      if (component) {
+        items.push({
+          kind: "component",
+          associationId: association.id,
+          state: association.state,
+          componentName: component.name,
+          componentDescription: component.description,
+        });
+      }
+    }
+    if (association.sourceId && association.region) {
+      const source = sourceById.get(association.sourceId);
+      if (source) {
+        items.push({
+          kind: "region",
+          associationId: association.id,
+          state: association.state,
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceMimeType: source.mimeType,
+          sourceClass: interpretationClassFor(
+            source.mimeType,
+            source.originalFilename ?? source.name,
+          ),
+          region: association.region,
+          locator: formatRegionAnchor(source.name, association.region),
+        });
+      }
+    }
+    if (association.interviewTurnId) {
+      const turn = await data.getInterviewTurn(organizationId, association.interviewTurnId);
+      if (turn) {
+        items.push({
+          kind: "interview_turn",
+          turnId: turn.id,
+          question: turn.question.slice(0, 300),
+          answerExcerpt: (turn.answerText ?? "").slice(0, 300),
+        });
+      }
+    }
+  }
+
+  // Anchor-derived evidence from the solution's own sourceAnchors:
+  // quoted text snippets, geometry summaries, and interview-turn excerpts.
+  for (const anchor of solution.sourceAnchors) {
+    if (anchor.startsWith("source:")) {
+      const sourceName = anchor.slice("source:".length);
+      const source = sourceByName.get(sourceName) ?? null;
+      const artifact = artifacts.find(
+        (candidate) =>
+          (source ? candidate.sourceId === source.id : false) &&
+          (candidate.type === "interpretation_summary" || candidate.type === "transcript"),
+      );
+      const geometry = source
+        ? artifacts.find(
+            (candidate) =>
+              candidate.sourceId === source.id && candidate.type === "geometry_summary",
+          )
+        : undefined;
+      if (geometry && source) {
+        items.push({
+          kind: "geometry",
+          sourceId: source.id,
+          sourceName,
+          summary: geometry.content.slice(0, 600),
+        });
+      }
+      items.push({
+        kind: "text_snippet",
+        anchor,
+        sourceId: source?.id ?? null,
+        sourceName,
+        excerpt: (artifact?.content ?? "No interpreted excerpt available for this source.").slice(
+          0,
+          400,
+        ),
+        artifactType: artifact?.type ?? "none",
+      });
+    }
+    if (anchor.startsWith("turn:")) {
+      const turn = await data.getInterviewTurn(organizationId, anchor.slice("turn:".length));
+      if (turn) {
+        items.push({
+          kind: "interview_turn",
+          turnId: turn.id,
+          question: turn.question.slice(0, 300),
+          answerExcerpt: (turn.answerText ?? "").slice(0, 300),
+        });
+      }
+    }
+  }
+
+  return { solution, items };
 }

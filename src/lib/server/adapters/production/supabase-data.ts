@@ -5,6 +5,7 @@ import type { Role } from "@/lib/wepatent/domain/roles";
 import type { CounselRequestState } from "@/lib/wepatent/domain/counsel-request";
 import type { FactProvenance } from "@/lib/wepatent/domain/facts";
 import type { IntakeState } from "@/lib/wepatent/domain/intake";
+import { normalizeRegion } from "@/lib/wepatent/domain/evidence";
 import type {
   AssociationRecord,
   AuditEventRecord,
@@ -179,6 +180,7 @@ const mapSource = (row: Row): SourceRecord => ({
     row,
     "interpretation_status",
   ) as SourceRecord["interpretationStatus"],
+  derivedFromSourceId: sOrNull(row, "derived_from_source_id"),
 });
 
 const mapDraftVersion = (row: Row): DraftVersionRecord => ({
@@ -748,6 +750,7 @@ export class SupabaseDataAdapter implements DataPort {
             checksum_sha256: input.checksumSha256,
             quarantine_reason: input.quarantineReason,
             interpretation_status: input.interpretationStatus,
+            derived_from_source_id: input.derivedFromSourceId,
           })
           .select(),
         "sources.insert",
@@ -1984,11 +1987,12 @@ export class SupabaseDataAdapter implements DataPort {
   async updatePsPair(
     organizationId: Id,
     pairId: Id,
-    patch: Partial<Pick<PsPairRecord, "statement" | "state">>,
+    patch: Partial<Pick<PsPairRecord, "statement" | "state" | "sourceAnchors">>,
   ): Promise<PsPairRecord | null> {
     const payload: Row = { updated_at: new Date().toISOString() };
     if (patch.statement !== undefined) payload.statement = patch.statement;
     if (patch.state !== undefined) payload.state = patch.state;
+    if (patch.sourceAnchors !== undefined) payload.source_anchors = patch.sourceAnchors;
     const row = await one<Row>(
       this.from("ps_pairs")
         .update(payload)
@@ -2191,6 +2195,10 @@ export class SupabaseDataAdapter implements DataPort {
             solution_id: input.solutionId,
             component_id: input.componentId,
             extraction_artifact_id: input.extractionArtifactId,
+            source_id: input.sourceId,
+            region: input.region,
+            interview_turn_id: input.interviewTurnId,
+            created_by_actor: input.createdByActor,
             state: input.state,
           })
           .select(),
@@ -2210,6 +2218,44 @@ export class SupabaseDataAdapter implements DataPort {
       "associations.list",
     );
     return rows.map(mapAssociation);
+  }
+
+  async getAssociation(organizationId: Id, associationId: Id): Promise<AssociationRecord | null> {
+    const row = await one<Row>(
+      this.from("associations")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("id", associationId),
+      "associations.get",
+    );
+    return row ? mapAssociation(row) : null;
+  }
+
+  async updateAssociation(
+    organizationId: Id,
+    associationId: Id,
+    patch: Partial<Pick<AssociationRecord, "region" | "state">>,
+  ): Promise<AssociationRecord | null> {
+    const payload: Row = {};
+    if (patch.region !== undefined) payload.region = patch.region;
+    if (patch.state !== undefined) payload.state = patch.state;
+    const row = await one<Row>(
+      this.from("associations")
+        .update(payload)
+        .eq("organization_id", organizationId)
+        .eq("id", associationId)
+        .select(),
+      "associations.update",
+    );
+    return row ? mapAssociation(row) : null;
+  }
+
+  async deleteAssociation(organizationId: Id, associationId: Id): Promise<void> {
+    const { error } = await this.from("associations")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", associationId);
+    if (error) throw new Error(`supabase_adapter:associations.delete:${error.message}`);
   }
 
   async createExtractionArtifact(
@@ -2535,6 +2581,10 @@ const mapAssociation = (row: Row): AssociationRecord => ({
   solutionId: s(row, "solution_id"),
   componentId: sOrNull(row, "component_id"),
   extractionArtifactId: sOrNull(row, "extraction_artifact_id"),
+  sourceId: sOrNull(row, "source_id"),
+  region: normalizeRegion(row["region"]),
+  interviewTurnId: sOrNull(row, "interview_turn_id"),
+  createdByActor: s(row, "created_by_actor") as AssociationRecord["createdByActor"],
   state: s(row, "state") as AssociationRecord["state"],
   createdAt: s(row, "created_at"),
 });

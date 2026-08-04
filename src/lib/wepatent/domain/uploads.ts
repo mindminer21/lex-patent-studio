@@ -19,11 +19,23 @@ export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MiB global ceiling
  * Determines which interpretation path a CLEAN, SCANNED file may take:
  * - `document`: text/structure extraction feeds the model interpretation pass
  * - `image`: vision-model description (server-side only)
- * - `model3d`: accepted + stored; automated interpretation requires the M2
- *   render worker, so M1 marks these honestly `stored_uninterpreted`
+ * - `model3d`: accepted + stored; a clean pure-code parse yields a
+ *   deterministic geometry summary (M2); browser-rendered snapshot views can
+ *   be captured as derived image sources for vision interpretation (M3)
+ * - `audio`: transcription through the server-side gateway (M3, §5.1
+ *   Phase 2); the transcript becomes a `transcript` extraction artifact
+ * - `video`: accepted + stored; audio-track/keyframe interpretation is not
+ *   yet available, so video is honestly `stored_uninterpreted` with a
+ *   prompt to describe its contents (the PRD's honest path)
  * - `stored_only`: accepted + stored, never auto-interpreted
  */
-export type InterpretationClass = "document" | "image" | "model3d" | "stored_only";
+export type InterpretationClass =
+  | "document"
+  | "image"
+  | "model3d"
+  | "audio"
+  | "video"
+  | "stored_only";
 
 /** A byte signature checked at a fixed offset (HEIC's lives at offset 4). */
 export type MagicSignature = { offset: number; bytes: readonly number[] };
@@ -177,6 +189,67 @@ export const ALLOWED_UPLOAD_TYPES: readonly AllowedUploadType[] = [
     magic: ZIP_MAGIC,
     acceptOctetStream: true,
     interpretation: "model3d",
+  },
+  // --- Audio (M3 §5.1 Phase 2: server-side transcription) ------------------
+  {
+    mimeType: "audio/mpeg",
+    extensions: [".mp3"],
+    maxBytes: MAX_UPLOAD_BYTES,
+    magic: [
+      { offset: 0, bytes: [0x49, 0x44, 0x33] }, // ID3 tag
+      { offset: 0, bytes: [0xff, 0xfb] }, // MPEG-1 layer III frame sync
+      { offset: 0, bytes: [0xff, 0xf3] }, // MPEG-2 layer III
+      { offset: 0, bytes: [0xff, 0xf2] }, // MPEG-2 layer III (no CRC)
+    ],
+    acceptOctetStream: true,
+    interpretation: "audio",
+  },
+  {
+    mimeType: "audio/wav",
+    extensions: [".wav"],
+    maxBytes: MAX_UPLOAD_BYTES,
+    magic: [{ offset: 0, bytes: [0x52, 0x49, 0x46, 0x46] }], // RIFF
+    acceptOctetStream: true,
+    interpretation: "audio",
+  },
+  {
+    mimeType: "audio/x-wav",
+    extensions: [".wav"],
+    maxBytes: MAX_UPLOAD_BYTES,
+    magic: [{ offset: 0, bytes: [0x52, 0x49, 0x46, 0x46] }],
+    interpretation: "audio",
+  },
+  {
+    mimeType: "audio/mp4",
+    extensions: [".m4a"],
+    maxBytes: MAX_UPLOAD_BYTES,
+    magic: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }], // ISO-BMFF ftyp
+    acceptOctetStream: true,
+    interpretation: "audio",
+  },
+  {
+    mimeType: "audio/x-m4a",
+    extensions: [".m4a"],
+    maxBytes: MAX_UPLOAD_BYTES,
+    magic: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }],
+    interpretation: "audio",
+  },
+  // --- Video (M3): stored + honest status; no transcode/keyframe worker ----
+  {
+    mimeType: "video/mp4",
+    extensions: [".mp4"],
+    maxBytes: MAX_UPLOAD_BYTES,
+    magic: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }],
+    acceptOctetStream: true,
+    interpretation: "video",
+  },
+  {
+    mimeType: "video/quicktime",
+    extensions: [".mov"],
+    maxBytes: MAX_UPLOAD_BYTES,
+    magic: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }],
+    acceptOctetStream: true,
+    interpretation: "video",
   },
 ] as const;
 

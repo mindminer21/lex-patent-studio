@@ -34,6 +34,12 @@ export const signUploadSchema = z.object({
   declaredBytes: z.number().int().positive(),
   kind: z.string().trim().min(1).max(60),
   note: z.string().trim().max(1000).default(""),
+  /**
+   * M3 render-to-vision: links a browser-captured 3D snapshot view to its
+   * parent 3D source. Must reference an existing source of the SAME
+   * invention; anything else is rejected.
+   */
+  derivedFromSourceId: z.string().trim().min(1).max(80).optional(),
 });
 
 type TokenPayload = {
@@ -91,6 +97,15 @@ export async function signUpload(params: {
   });
   if (!validation.ok) return { ok: false, error: validation.reason };
 
+  let derivedFromSourceId: Id | null = null;
+  if (parsed.data.derivedFromSourceId) {
+    const parent = await data.getSource(params.organizationId, parsed.data.derivedFromSourceId);
+    if (!parent || parent.inventionId !== params.inventionId) {
+      return { ok: false, error: "invalid_input" };
+    }
+    derivedFromSourceId = parent.id;
+  }
+
   const source = await data.createSource({
     organizationId: params.organizationId,
     inventionId: params.inventionId,
@@ -106,6 +121,7 @@ export async function signUpload(params: {
     checksumSha256: null,
     quarantineReason: null,
     interpretationStatus: null,
+    derivedFromSourceId,
   });
   const expiresAt = Date.now() + TOKEN_TTL_MS;
   const token = signToken({

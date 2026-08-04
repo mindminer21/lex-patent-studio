@@ -1,7 +1,9 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { normalizeRegion } from "@/lib/wepatent/domain/evidence";
 import { applyPsAction } from "@/lib/wepatent/domain/ps-ledger";
+import { interpretationClassFor } from "@/lib/wepatent/domain/uploads";
 import { release, reserve, settle, type UsageEstimate } from "@/lib/wepatent/domain/usage";
 import { getAdapters } from "../adapters";
 import { getModelTier } from "../model-registry";
@@ -61,8 +63,10 @@ export async function estimateDistillation(
     400;
   return {
     estimate: estimateForTier(tier, Math.max(300, Math.ceil(inputChars / 4))),
-    artifactCount: artifacts.filter((artifact) => artifact.type === "interpretation_summary")
-      .length,
+    artifactCount: artifacts.filter(
+      (artifact) =>
+        artifact.type === "interpretation_summary" || artifact.type === "transcript",
+    ).length,
   };
 }
 
@@ -85,8 +89,11 @@ export async function runDistillation(params: {
     data.listComponents(params.organizationId, params.inventionId),
     data.listSources(params.organizationId, params.inventionId),
   ]);
+  // Transcripts (M3 A/V) join distillation like any text source; their
+  // content stays inside the delimited untrusted evidence blocks.
   const artifacts = allArtifacts.filter(
-    (artifact) => artifact.type === "interpretation_summary",
+    (artifact) =>
+      artifact.type === "interpretation_summary" || artifact.type === "transcript",
   );
   const hasRecordContent =
     invention.problem.trim().length > 0 ||
@@ -96,11 +103,17 @@ export async function runDistillation(params: {
     return { ok: false, error: "nothing_to_distill" };
   }
 
-  const sourceNameById = new Map(sources.map((source) => [source.id, source.name]));
-  const artifactInputs = artifacts.map((artifact) => ({
-    sourceName: sourceNameById.get(artifact.sourceId) ?? artifact.sourceId,
-    content: artifact.content,
-  }));
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  const artifactInputs = artifacts.map((artifact) => {
+    const source = sourceById.get(artifact.sourceId);
+    return {
+      sourceName: source?.name ?? artifact.sourceId,
+      content: artifact.content,
+      sourceClass: source
+        ? interpretationClassFor(source.mimeType, source.originalFilename ?? source.name)
+        : undefined,
+    };
+  });
 
   const inputChars =
     artifactInputs.reduce((sum, artifact) => sum + artifact.content.length, 0) +
@@ -324,6 +337,37 @@ export async function runDistillation(params: {
         solutionId: pair.id,
         componentId: component.id,
         extractionArtifactId: null,
+        sourceId: null,
+        region: null,
+        interviewTurnId: null,
+        createdByActor: "model",
+        state: modelGuard.nextState,
+      });
+    }
+    // M3 (FR-INT-9): AI-proposed REGION anchors on named sources. Each
+    // lands `ai_proposed` and renders as an editable overlay in the source
+    // viewer until the user confirms, redraws, or rejects it.
+    for (const anchor of (solution.regionAnchors ?? []).slice(0, 10)) {
+      const anchorSource = sources.find((candidate) => candidate.name === anchor.sourceName);
+      if (!anchorSource) continue;
+      const region = normalizeRegion({
+        page: anchor.page ?? undefined,
+        x: anchor.x,
+        y: anchor.y,
+        w: anchor.w,
+        h: anchor.h,
+      });
+      if (!region) continue;
+      await data.createAssociation({
+        organizationId: params.organizationId,
+        inventionId: params.inventionId,
+        solutionId: pair.id,
+        componentId: null,
+        extractionArtifactId: null,
+        sourceId: anchorSource.id,
+        region,
+        interviewTurnId: null,
+        createdByActor: "model",
         state: modelGuard.nextState,
       });
     }
