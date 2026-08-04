@@ -1,14 +1,9 @@
 import Link from "next/link";
 import { needsReacceptance } from "@/lib/wepatent/domain/clickwrap";
-import { representationStatus } from "@/lib/wepatent/domain/counsel-request";
 import { isUnresolved } from "@/lib/wepatent/domain/facts";
 import { getAdapters } from "@/lib/server/adapters";
 import { requireUser } from "@/lib/server/session";
 import { createOrganizationAction } from "./actions";
-
-function centsToUsd(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
 
 export default async function DashboardPage({
   searchParams,
@@ -61,8 +56,6 @@ export default async function DashboardPage({
   const acceptance = await data.getLatestAcceptance(organizationId, context.user.id);
   const termsPending = !acceptance || needsReacceptance(acceptance.termsVersion);
   const inventions = await data.listInventions(organizationId);
-  const wallet = await data.getWallet(organizationId);
-  const counselRequests = await data.listCounselRequests(organizationId);
 
   const factSummaries = await Promise.all(
     inventions.map(async (invention) => {
@@ -96,44 +89,9 @@ export default async function DashboardPage({
         </div>
       )}
 
-      <div className="wp-grid cols-3">
-        <div className="wp-card">
-          <p className="venture-kicker">Invention records</p>
-          <h2>{inventions.length}</h2>
-          <p>
-            {factSummaries.reduce((sum, s) => sum + s.unresolved, 0)} unresolved facts across all
-            records.
-          </p>
-        </div>
-        <div className="wp-card">
-          <p className="venture-kicker">AI usage wallet</p>
-          <h2>{wallet ? centsToUsd(wallet.balanceCents - wallet.reservedCents) : "$0.00"}</h2>
-          <p>
-            Available (synthetic local credit). Charges are provider cost × 1.50, shown before every
-            run. <Link href="/wepatent/app/billing">Billing</Link>
-          </p>
-        </div>
-        <div className="wp-card">
-          <p className="venture-kicker">Counsel requests</p>
-          <h2>{counselRequests.length}</h2>
-          {counselRequests.length > 0 ? (
-            <p>
-              Latest: {counselRequests[counselRequests.length - 1].state} —{" "}
-              {representationStatus(counselRequests[counselRequests.length - 1].state).label}.{" "}
-              <Link href="/wepatent/app/counsel">View</Link>
-            </p>
-          ) : (
-            <p>
-              No requests. Requesting counsel never creates representation by itself.{" "}
-              <Link href="/wepatent/app/counsel">Learn more</Link>
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="wp-card" style={{ marginTop: 22 }}>
+      <div className="wp-card">
         <div className="wp-topbar" style={{ marginBottom: 10 }}>
-          <h2>Invention records</h2>
+          <h2>Inventions</h2>
           <div style={{ textAlign: "right" }}>
             <Link className="button venture-button button-small" href="/wepatent/app/inventions/start">
               New invention
@@ -145,8 +103,8 @@ export default async function DashboardPage({
         </div>
         {factSummaries.length === 0 ? (
           <div className="wp-empty">
-            <h2>No invention records yet</h2>
-            <p>Start a patent-ready disclosure: upload files, answer questions, or both.</p>
+            <h2>Click New Invention to start a patent disclosure</h2>
+            <p>Upload files, answer questions about your invention, or both.</p>
             <Link className="button venture-button" href="/wepatent/app/inventions/start">
               New invention
             </Link>
