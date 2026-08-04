@@ -274,3 +274,82 @@ one check constraint.
    schema changes.
 4. **Proposed-edit dismissal UX** — proposals disappear when the user edits,
    confirms, or applies; an explicit "dismiss" affordance is M3 polish.
+
+## Invention Intake Studio — Milestone 3 (2026-08-04)
+
+**Scope (feature PRD §7 + §13 M3 + M2 leftovers):** region-drawing
+associations completing FR-INT-9 (mouse + keyboard-only), evidence
+galleries with viewer-at-anchor navigation and export integration, A/V
+ingestion (audio transcription; honest video status), serverless-compatible
+3D render-to-vision (browser Canvas-2D software renderer + user-triggered
+snapshot capture), re-distillation diff review, proposed-edit dismissal,
+and P/S merge/split. Branch `track/wepatent-app-reconciled`.
+
+### Verification (fresh run, 2026-08-04, this container)
+
+| Gate | Result |
+|---|---|
+| `npm run lint` | 0 errors, 0 warnings |
+| `npx tsc --noEmit` | clean |
+| `npm run test:wepatent` | 23 files, **275/275** (was 240; +35 M3 tests in `tests/intake-studio-m3.test.ts`) |
+| `npm run test:lex` | 409 passed / 8 skipped (unchanged — no degradation) |
+| `npm run test:rls:wepatent` | 7 pgTAP files, **181 asserts**, PASS (was 158; +23 in `07_m3_visual_av.sql`) |
+| `npm run test:e2e:wepatent` | **40/40** (was 36; +4 in `e2e/wepatent/studio-m3.spec.ts`: region-draw incl. keyboard-only variant + axe, evidence-gallery navigation, audio→transcript→ledger with synthetic transport, re-distill diff review with bulk accept, browser 3D viewer→snapshot views) |
+| `npm run test:e2e:lex` | 14/14 (unchanged) |
+| `npm run build` | success (viewer, solution-gallery, raw-bytes + association API routes present) |
+| `npm run audit:prod` | 0 vulnerabilities |
+| `npm run scan:secrets` | clean |
+
+### Live-DB migration application (private project `jxehyxkcibiqluojeryy`)
+
+`supabase/wepatent/migrations/0011_m3_visual_evidence.sql` applied
+2026-08-04 via the Supabase management API
+(`POST /v1/projects/{ref}/database/query`, HTTP 201). Post-apply
+verification against the live DB: `associations.source_id / region /
+interview_turn_id / created_by_actor` present; `associations_have_evidence`
+extended (component OR artifact OR source OR turn) and
+`associations_region_needs_source` added;
+`private_sources.derived_from_source_id` present;
+`extraction_artifacts_type_check` admits `transcript`;
+`ps_events_kind_check` admits `merged`/`split`/`proposal_dismissed`;
+`associations.relrowsecurity = true` (unchanged). Additive only — the only
+modified objects are the two extended CHECK constraints (house pattern).
+
+### M3 requirements traceability
+
+| Req | Implementation | Verification | Status |
+|---|---|---|---|
+| FR-INT-9 completion: region-drawing associations | `domain/evidence.ts` (normalized `RegionAnchor`, strict `normalizeRegion`, keyboard `nudgeRegion` transforms) + `associations` region columns (0011) + source viewer (`/inventions/[id]/sources/[sourceId]/view`, `RegionViewer.tsx`): mouse drag draw AND keyboard-only alternative (focusable surface, `n`/Enter creates, arrows move, Shift+arrows resize, Escape cancels, aria-live announcements — a11y gate); anchors persist through `/api/ps-pairs/:id/associations` + `PATCH/DELETE /api/associations/:id`; documents anchor on an HONEST page proxy (extracted text on page-proportioned surface, labeled approximate); AI-proposed anchors from distillation render as dashed-amber `ai_proposed` editable overlays until confirmed/redrawn/rejected (rejection recorded as signal) | unit: region domain suite, association service suite (user_confirmed on draw, user_edited on adjust, confirm-once guard, rejection events, cross-record denial), distill-proposes-anchors test; pgTAP: region shape constraints, no client write, cross-tenant denial; E2E journey incl. keyboard-only variant + axe on the viewer | verified |
+| Evidence galleries + export integration | `getSolutionEvidence` view model + `/inventions/[id]/solutions/[solutionId]` gallery: CSS-clipped image region crops (client render of stored bytes via the authed raw endpoint — chosen over server-side cropping for zero image-processing dependencies and direct E2E verifiability), quoted text/transcript snippets with anchors, 3D geometry summaries, interview-turn excerpts; every chip opens the source viewer at the anchor (`?focus=` highlight); export: per-solution evidence lines with anchors in `buildExportSections` + manifest `psAssociationCount`/`psRegionAnchorCount` | unit: gallery view-model + export-section tests; E2E gallery navigation → viewer opens at anchor with highlight + axe | verified |
+| A/V ingestion (§5.1 Phase 2) | Allowlist + magic signatures for MP3/WAV/M4A + MP4/MOV through the UNCHANGED FR-4 pipeline; `domain/av.ts` (exact WAV duration from RIFF headers, disclosed bitrate heuristics for MP3/M4A, effective-dated per-minute whisper-1 rate); `ModelGatewayPort.transcribe` implemented in BOTH adapters — production posts multipart to the OpenAI transcription API (kill switch, cost cap, breaker, no key/detail leak), local is a deterministic synthetic transcript through the same interface; `runAudioTranscription` runs estimate→reserve→run→settle, stores a `transcript` artifact with model+cost provenance, and transcripts feed distillation/coverage exactly like text sources; spoken instructions are EVIDENCE (delimited untrusted blocks; injection fixture) | unit: allowlist, duration/pricing math, metered flow, retry no-double-charge, failure→release+honest status, spoken-injection-inert, production-gateway fake-transport suite (multipart, auth, duration pricing, no-leak); pgTAP transcript type; E2E audio→transcript→distill→ledger with zero confirmed states | verified (live OpenAI transcription smoke run remains §17.4-gated) |
+| Video | Accepted (MP4/MOV), stored, honest `stored_uninterpreted` + "audio-track/keyframe interpretation not yet available" + prompt-to-describe; viewer offers playback. WASM ffmpeg was evaluated and REJECTED for serverless: the wasm bundle (~30 MB) plus decode memory/time cannot fit the Vercel function budget verifiably in this environment — the PRD's honest path ships instead, and nothing is faked | unit honest-status + zero-spend test; E2E viewer honest status | verified (honest deferral) |
+| 3D render-to-vision, serverless-compatible | Rendering happens in the BROWSER: `domain/mesh.ts` deterministic Canvas-2D software projector (pure TS view matrices, orthographic projection, flat shading, painter sort — no WebGL, no GPU, no three.js, no server renderer) over the M2 STL parser's triangle soup (`parseStlVertices`) plus a clean pure-JS OBJ parser; `MeshViewer.tsx` renders 6 canonical views (front/back/left/right/top/isometric) and "Generate views for AI interpretation" is USER-TRIGGERED with the 6-view vision estimate shown first (FR-INT-10); snapshots upload as PNG sources `derived_from_source_id`-linked to the parent 3D model through the unchanged FR-4 pipeline and flow through the EXISTING image-interpretation pass; STEP/3MF stay honestly stored (no clean pure-JS parser) | unit: STL/OBJ parse, projection determinism + canvas-fit + painter order + shading bounds, mocked-canvas render plumbing, derived-source linkage + foreign-parent denial; E2E: viewer renders (Canvas-2D pixel assertion — no WebGL flags needed), estimate visible before capture, 6 derived sources land in the interpret queue | verified |
+| Re-distillation UX | Distill affordance relabels "Re-distill with new material" after the first run; diff-style review panel lists current `ai_proposed` proposals against the count of reviewed items, with per-item confirm/reject (existing) plus bulk accept/reject (`bulkReviewProposals` — every item still passes the per-item guard + event trail); confirmed/edited items structurally untouchable (M1 add-only distillation unchanged) | unit bulk suite (only ai_proposed affected; rejection signals); E2E: distill → bulk accept → new material → re-distill → only new proposals listed, confirmed count unchanged → bulk accept | verified |
+| Proposed-edit dismissal + merge/split (M2 leftover + §5.4) | `dismissProposedEdit` appends a `proposal_dismissed` event (append-only; pair untouched; audit keeps proposal + decision) and the interview view filters dismissed proposals; "Dismiss" button beside "Apply as my edit"; `mergePairs` (absorbs statement + anchors, re-homes links/associations before the cascade delete, `merged` event) and `splitPair` (2–5 statements, siblings keep anchors, `split` events) with studio forms | unit: dismiss flow via interview view, merge (link re-homing, cross-kind refusal), split (sibling creation, bounds); pgTAP new event kinds accepted/junk rejected | verified |
+| Guided-form retirement decision (§13 M3) | **Not retired — decision note:** both paths remain live and write to the same ledgers (`/inventions/new` guided form; studio + interview). Usage data does not yet exist to justify removal, and retiring a working intake path is a product decision reserved to Jeff. If he directs retirement, it is a routing change (remove the chooser's Path B link + redirect) with no data-model impact | FR-INT-1 E2E still exercises the chooser's guided-form link | decision documented; awaiting Jeff |
+
+### M3 deferred items (honest)
+
+1. **Video audio-track/keyframe interpretation** — needs either a worker
+   with ffmpeg (not serverless) or a verified in-function WASM decode that
+   fits Vercel limits; neither is verifiable from this container. Video is
+   stored with the honest in-product status and prompt-to-describe.
+2. **True PDF page rendering in the viewer** — document regions are drawn
+   on an honest extracted-text page proxy (labeled approximate). Faithful
+   layout rendering needs pdf.js; anchors' normalized page coordinates are
+   forward-compatible with it.
+3. **STEP/3MF viewer support** — no clean pure-JS parser; honest stored
+   status remains (STL + OBJ render).
+4. **Live OpenAI smoke runs** (vision interpretation of snapshot views +
+   whisper transcription) — implemented and fake-transport tested; real
+   spend stays behind Jeff's §17.4 approval, as in M1/M2.
+
+### Deploy notes (Vercel serverless)
+
+No new server dependencies and no new env vars. 3D rendering is entirely
+client-side; transcription is a single in-memory multipart POST to OpenAI
+from the existing gateway (uploads are capped at 20 MiB, inside function
+limits); the raw-bytes viewer endpoint streams from the existing StoragePort.
+Migration 0011 is already applied to `jxehyxkcibiqluojeryy`; deploying the
+app code is the only remaining step and needs no coordination window
+(schema is additive and backward-compatible with the running M2 build).
