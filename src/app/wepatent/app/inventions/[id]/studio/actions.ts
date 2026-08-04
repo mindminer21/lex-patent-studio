@@ -14,9 +14,12 @@ import {
   editPair,
   linkPairs,
   mergePairs,
-  setWorkingTitle,
   splitPair,
 } from "@/lib/server/services/ps-ledger";
+
+// The working title no longer has a server-action save path: it autosaves
+// through PUT /api/inventions/:id/working-title (design rule: minimal
+// human input — no Save button, debounced save + save on blur).
 
 function studioPath(inventionId: string, suffix = ""): string {
   return `/wepatent/app/inventions/${inventionId}/studio${suffix}`;
@@ -137,18 +140,6 @@ export async function linkPairsAction(formData: FormData): Promise<void> {
     userId: context.user.id,
     problemId: String(formData.get("problemId") ?? ""),
     solutionId: String(formData.get("solutionId") ?? ""),
-  });
-  redirect(studioPath(inventionId, result.ok ? "" : `?error=${result.error}`));
-}
-
-export async function setTitleAction(formData: FormData): Promise<void> {
-  const context = await requireOnboarded();
-  const inventionId = String(formData.get("inventionId") ?? "");
-  const result = await setWorkingTitle({
-    organizationId: context.organization.id,
-    userId: context.user.id,
-    inventionId,
-    text: String(formData.get("text") ?? ""),
   });
   redirect(studioPath(inventionId, result.ok ? "" : `?error=${result.error}`));
 }

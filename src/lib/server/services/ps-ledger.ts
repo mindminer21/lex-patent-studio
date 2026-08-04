@@ -238,6 +238,95 @@ export async function setWorkingTitle(params: {
   return { ok: true, title };
 }
 
+/**
+ * Accept the current AI-proposed working title unchanged (the minimal-step
+ * acceptance: blurring the auto-saving title field without edits). Goes
+ * through the same guard as any other confirm — only an `ai_proposed`
+ * title can be confirmed, and the history stays append-only: acceptance
+ * appends a `user_confirmed` row and records `title_confirmed`, so the
+ * provenance (AI proposal accepted vs. user edited) is durable.
+ */
+export async function confirmWorkingTitle(params: {
+  organizationId: Id;
+  userId: Id;
+  inventionId: Id;
+}): Promise<
+  { ok: true; title: WorkingTitleRecord } | { ok: false; error: "not_found" | "forbidden_transition" }
+> {
+  const { data } = getAdapters();
+  const invention = await data.getInvention(params.organizationId, params.inventionId);
+  if (!invention) return { ok: false, error: "not_found" };
+  const titles = await data.listWorkingTitles(params.organizationId, params.inventionId);
+  const current = titles.length > 0 ? titles[titles.length - 1] : null;
+  if (!current) return { ok: false, error: "not_found" };
+  const guard = applyPsAction("user", "confirm", current.state);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+  const title = await data.createWorkingTitle({
+    organizationId: params.organizationId,
+    inventionId: params.inventionId,
+    text: current.text,
+    state: guard.nextState,
+    createdByActor: "user",
+  });
+  await data.updateInventionTitle(
+    params.organizationId,
+    params.inventionId,
+    current.text.slice(0, 200),
+  );
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: params.inventionId,
+    pairId: null,
+    kind: "title_confirmed",
+    actor: `user:${params.userId}`,
+    detail: current.text.slice(0, 200),
+  });
+  return { ok: true, title };
+}
+
+export type TitleAutosaveOutcome = "ai_proposal_accepted" | "edited" | "unchanged";
+
+/**
+ * Autosave entry point for the inline working-title field (design rule:
+ * minimize human steps and inputs — no Save button). Provenance is decided
+ * here, server-side:
+ *
+ * - text equals the current `ai_proposed` proposal → acceptance
+ *   (`user_confirmed` + `title_confirmed`);
+ * - text equals the current user-reviewed title → idempotent no-op (the
+ *   debounce and blur saves may both fire; no duplicate history rows);
+ * - anything else → a user edit (`user_edited` + `title_edited`), which
+ *   also renames the invention record via setWorkingTitle.
+ */
+export async function autosaveWorkingTitle(params: {
+  organizationId: Id;
+  userId: Id;
+  inventionId: Id;
+  text: string;
+}): Promise<
+  | { ok: true; title: WorkingTitleRecord; outcome: TitleAutosaveOutcome }
+  | { ok: false; error: "not_found" | "forbidden_transition" | "invalid_input" }
+> {
+  const text = params.text.trim();
+  if (text.length < 3 || text.length > 400) return { ok: false, error: "invalid_input" };
+  const { data } = getAdapters();
+  const invention = await data.getInvention(params.organizationId, params.inventionId);
+  if (!invention) return { ok: false, error: "not_found" };
+  const titles = await data.listWorkingTitles(params.organizationId, params.inventionId);
+  const current = titles.length > 0 ? titles[titles.length - 1] : null;
+  if (current && current.text.trim() === text) {
+    if (current.state === "ai_proposed") {
+      const confirmed = await confirmWorkingTitle(params);
+      return confirmed.ok
+        ? { ok: true, title: confirmed.title, outcome: "ai_proposal_accepted" }
+        : confirmed;
+    }
+    return { ok: true, title: current, outcome: "unchanged" };
+  }
+  const saved = await setWorkingTitle({ ...params, text });
+  return saved.ok ? { ok: true, title: saved.title, outcome: "edited" } : saved;
+}
+
 /* ------------------------- ledger read model ---------------------------- */
 
 export type LedgerView = {

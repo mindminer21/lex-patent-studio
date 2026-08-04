@@ -1,4 +1,5 @@
 import Link from "next/link";
+import RetentionField from "@/components/wepatent/RetentionField";
 import { can } from "@/lib/wepatent/domain/roles";
 import { openPortalAction } from "../billing/actions";
 import { isLocalMode } from "@/lib/wepatent/env";
@@ -9,7 +10,6 @@ import {
   inviteMemberAction,
   revokeInvitationAction,
   runPurgeAction,
-  updateRetentionAction,
 } from "./actions";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -95,11 +95,6 @@ export default async function SettingsPage({
           </table>
 
           <h2 style={{ marginTop: 26 }}>Retention &amp; deletion</h2>
-          {params.retention === "updated" && (
-            <p className="form-success" role="status">
-              Retention window updated and audited.
-            </p>
-          )}
           {params.purged !== undefined && (
             <p className="form-success" role="status">
               Purge complete: {params.purged} record(s) permanently deleted
@@ -121,22 +116,11 @@ export default async function SettingsPage({
           </p>
           {canManageOrg ? (
             <>
-              <form action={updateRetentionAction} className="wp-inline-form">
-                <label htmlFor="retention-days">Retention window (days)</label>
-                <input
-                  id="retention-days"
-                  name="retentionDays"
-                  type="number"
-                  min={30}
-                  max={3650}
-                  defaultValue={context.organization.retentionDays}
-                  required
-                  style={{ width: 110, marginLeft: 8, marginRight: 8 }}
-                />
-                <button className="button button-secondary button-small" type="submit">
-                  Update retention
-                </button>
-              </form>
+              {/* Design rule (minimal human input): the retention window
+                  autosaves — no Update button. The purge button stays: it
+                  permanently deletes content and must remain an explicit,
+                  deliberate action. */}
+              <RetentionField initialDays={context.organization.retentionDays} />
               <form action={runPurgeAction} style={{ marginTop: 10 }}>
                 <button className="button button-secondary button-small" type="submit">
                   Run retention purge now

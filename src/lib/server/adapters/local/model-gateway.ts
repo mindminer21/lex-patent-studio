@@ -3,6 +3,7 @@ import {
   transcriptionProviderCostCents,
 } from "@/lib/wepatent/domain/av";
 import { isUnresolved } from "@/lib/wepatent/domain/facts";
+import { PLACEHOLDER_RECORD_TITLE } from "@/lib/wepatent/domain/ps-ledger";
 import {
   deterministicQuestionText,
   isInterviewStage,
@@ -313,9 +314,13 @@ export class LocalModelGateway implements ModelGatewayPort {
       );
     }
 
+    // A record still carrying the neutral placeholder has no user-chosen
+    // name — propose a real title from the material instead of echoing
+    // the placeholder back as an "AI proposal".
+    const recordTitle = request.invention.title.trim();
     const output: DistillationOutput = {
       workingTitle:
-        request.invention.title.trim() ||
+        (recordTitle !== PLACEHOLDER_RECORD_TITLE ? recordTitle : "") ||
         solutions[0]?.statement.slice(0, 80) ||
         "Untitled invention (synthetic local distillation)",
       problems,

@@ -7,6 +7,13 @@
  * can never confirm, edit, delete, or otherwise upgrade an item's state.
  */
 
+/**
+ * Neutral placeholder title an invention record starts with (no naming
+ * step — design rule: minimize human steps and inputs). The record picks
+ * up its real title the moment a working title is accepted or edited.
+ */
+export const PLACEHOLDER_RECORD_TITLE = "Untitled invention";
+
 export const PS_PAIR_KINDS = ["problem", "solution"] as const;
 export type PsPairKind = (typeof PS_PAIR_KINDS)[number];
 

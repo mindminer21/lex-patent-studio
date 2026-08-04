@@ -21,16 +21,16 @@ test("get-help page: records list, both buttons, disclaimer, receipt upload", as
   await onboardFreshTenant(page, "gethelp");
 
   // Create an invention record so the draft-applications list has a row.
-  // The path chooser has no naming step; confirming a working title in the
-  // studio renames the record itself (title linkage under test).
+  // The path chooser has no naming step; typing into the studio's
+  // auto-saving title field (design rule: no Save button) renames the
+  // record itself (title linkage under test).
   await page.goto("/wepatent/app/inventions/start");
   await page.getByRole("button", { name: "Create record and upload files" }).click();
   await page.waitForURL(/\/studio$/);
-  await page.getByText("Edit working title").click();
-  await page.getByLabel("Working title", { exact: true }).fill("Receipt-test valve (e2e)");
-  await page.getByRole("button", { name: "Save title" }).click();
-  await page.waitForURL(/\/studio$/);
-  await expect(page.getByTestId("working-title")).toHaveText("Receipt-test valve (e2e)");
+  await page.getByTestId("working-title").fill("Receipt-test valve (e2e)");
+  await expect(page.getByTestId("title-status")).toContainText("Saved", { timeout: 10_000 });
+  await page.reload();
+  await expect(page.getByTestId("working-title")).toHaveValue("Receipt-test valve (e2e)");
 
   // Sidebar label renamed; the page keeps its route.
   await page.goto("/wepatent/app");
@@ -95,13 +95,15 @@ test("get-help page: records list, both buttons, disclaimer, receipt upload", as
   await expect(page.getByRole("button", { name: "Create draft request" })).toHaveCount(0);
 
   // Upload a filing receipt (fixture PDF) through the FR-4 pipeline.
+  // Design rule (minimal human input): choosing the file starts the upload
+  // — there is no "Upload filing receipt" button anymore.
   await expect(record.getByText("No filing receipts uploaded yet.", { exact: false })).toBeVisible();
+  await expect(record.getByRole("button", { name: "Upload filing receipt" })).toHaveCount(0);
   await record.getByLabel(/Upload a filing receipt/).setInputFiles({
     name: "uspto-filing-receipt.pdf",
     mimeType: "application/pdf",
     buffer: RECEIPT_PDF,
   });
-  await record.getByRole("button", { name: "Upload filing receipt" }).click();
   await expect(page.getByTestId("filing-receipt-message")).toContainText(
     "Filing receipt uploaded",
     { timeout: 15_000 },

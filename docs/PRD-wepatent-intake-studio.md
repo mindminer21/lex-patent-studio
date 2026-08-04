@@ -221,3 +221,16 @@ Claim drafting or claim-shaped output in wepatent; patentability/novelty opinion
 3. Interview session spend cap default.
 4. A/V ingestion enablement (M3).
 5. Any change to the advice-refusal template language (counsel-reviewed copy).
+
+### Design rule: minimal human input (Jeff, 2026-08-04, app-wide)
+
+**Minimize human steps and inputs throughout the app.** Where an input can
+save itself, it must (no Save buttons for plain fields — the working title
+is the canonical example: an inline auto-saving field; blurring an
+untouched AI-proposed title accepts it, with provenance recorded). Where a
+step can be inferred or defaulted, prefer that. The rule explicitly does
+NOT remove: clickwrap acknowledgements, `ai_proposed` confirmations for
+substantive ledger content, cost-estimate consent before model spend,
+counsel gates, or destructive-action confirmations — those exist for
+UPL/ethics and safety reasons. The step-by-step inventory and the open
+removal candidates live in `docs/FRICTION-AUDIT.md`.

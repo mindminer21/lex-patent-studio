@@ -256,6 +256,13 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .wp-badge.draft-label { color: #8a5a00; border-color: #e0b96a; background: #fdf6e5; }
 .wp-badge.synthetic { color: #6b21a8; border-color: #d8b4fe; background: #faf5ff; }
 .wp-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+/* Auto-saving working-title field (design rule: minimal human input). */
+.wp-title-field label { display: block; margin-bottom: 6px; }
+.wp-title-input { width: 100%; min-width: 0; box-sizing: border-box; min-height: 46px; padding: 10px 12px; border: 1px solid #93a5c0; background: #fdfefe; font: inherit; font-weight: 700; letter-spacing: -0.01em; color: var(--venture-ink); }
+.wp-title-input.ai_proposed { border: 2px dashed #8a5a00; background: #fdf6e5; }
+.wp-title-field .hint { margin: 6px 0 0; }
+/* Auto-saving retention field (settings). */
+.wp-autosave-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .wp-inline-form { display: inline; }
 .wp-form { display: grid; gap: 18px; max-width: 760px; }
 .wp-form fieldset { border: 1px solid var(--venture-line); padding: 18px; display: grid; gap: 14px; margin: 0; }

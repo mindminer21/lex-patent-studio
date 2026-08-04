@@ -32,9 +32,11 @@ async function uploadFile(
   page: Page,
   file: { name: string; mimeType: string; buffer: Buffer },
 ): Promise<void> {
+  // Design rule (minimal human input): choosing a file starts the upload —
+  // there is no "Upload to quarantine" button anymore. The success message
+  // names the file, so each upload is asserted individually.
   await page.getByLabel(/^File \(documents/).setInputFiles(file);
-  await page.getByRole("button", { name: "Upload to quarantine" }).click();
-  await expect(page.getByTestId("upload-message")).toContainText("Uploaded", {
+  await expect(page.getByTestId("upload-message")).toContainText(`Uploaded ${file.name}`, {
     timeout: 15_000,
   });
 }
@@ -129,6 +131,41 @@ test("studio journey: chooser → uploads → interpret → distill → ledger C
   // Leave the job-progress URL so the poller cannot race the interactions.
   const studioUrl = page.url().split("?")[0];
   await page.goto(studioUrl);
+
+  // --- Working title autosave (design rule: minimal human input) ----------
+  // The AI proposal is pre-filled in the inline auto-saving field — no
+  // Save button — with ai_proposed styling and the acceptance hint.
+  const titleField = page.getByTestId("working-title");
+  await expect(titleField).toHaveClass(/ai_proposed/);
+  await expect(page.getByText("AI-proposed — edit or click away to keep")).toBeVisible();
+  const proposedTitle = await titleField.inputValue();
+  expect(proposedTitle.trim().length).toBeGreaterThanOrEqual(3);
+
+  // 1. Blurring without edits IS the acceptance (minimal-step accept):
+  //    provenance lands as user_confirmed via title_confirmed.
+  await titleField.click();
+  await titleField.blur();
+  await expect(page.getByTestId("title-status")).toContainText("Saved", { timeout: 10_000 });
+  await page.goto(studioUrl);
+  await expect(page.getByTestId("working-title")).toHaveValue(proposedTitle);
+  await expect(page.getByTestId("working-title")).not.toHaveClass(/ai_proposed/);
+  await expect(page.getByText("Confirmed by you").first()).toBeVisible();
+
+  // 2. Editing then pausing: the debounced save (~800 ms after typing
+  //    stops) persists with NO button — verified across a real reload.
+  await titleField.fill("Self-sealing irrigation valve (autosaved)");
+  await expect(page.getByTestId("title-status")).toContainText("Saved", { timeout: 10_000 });
+  await page.goto(studioUrl);
+  await expect(page.getByTestId("working-title")).toHaveValue(
+    "Self-sealing irrigation valve (autosaved)",
+  );
+  await expect(page.getByText("Edited by you").first()).toBeVisible();
+
+  // 3. Escape reverts to the last saved value without saving.
+  await titleField.click();
+  await titleField.fill("zzz discarded text");
+  await titleField.press("Escape");
+  await expect(titleField).toHaveValue("Self-sealing irrigation valve (autosaved)");
 
   // --- Coverage meter v1 (FR-INT-8, AC 5) ----------------------------------
   const meter = page.getByTestId("coverage-meter");

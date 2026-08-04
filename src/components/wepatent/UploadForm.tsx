@@ -31,6 +31,10 @@ const REJECTION_MESSAGES: Record<string, string> = {
  * validates the type allowlist, extension, size cap, and magic bytes;
  * accepted files always pass through quarantine and scanning before
  * extraction.
+ *
+ * Design rule (minimal human input): selecting a file starts the upload —
+ * there is no separate "Upload" button. Set kind/note first if you want
+ * them recorded; both are optional metadata.
  */
 export default function UploadForm({ inventionId }: { inventionId: string }) {
   const router = useRouter();
@@ -40,13 +44,9 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  async function handleFileSelected() {
     const file = fileRef.current?.files?.[0];
-    if (!file) {
-      setMessage({ kind: "error", text: "Choose a file first." });
-      return;
-    }
+    if (!file) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -88,7 +88,7 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
       }
       setMessage({
         kind: "ok",
-        text: "Uploaded. The file is quarantined and will be scanned before extraction.",
+        text: `Uploaded ${file.name}. The file is quarantined and will be scanned before extraction.`,
       });
       if (fileRef.current) fileRef.current.value = "";
       setNote("");
@@ -101,25 +101,13 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="wp-form" data-testid="upload-form">
+    <div className="wp-form" data-testid="upload-form">
       <div className="field">
-        <label htmlFor="upload-file">
-          File (documents: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG · images: PNG, JPEG, TIFF, HEIC ·
-          3D models: STL, STEP, OBJ, 3MF · audio: MP3, WAV, M4A · video: MP4, MOV)
-        </label>
-        <input
-          id="upload-file"
-          ref={fileRef}
-          type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf,.mp3,.wav,.m4a,.mp4,.mov"
-          required
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="upload-kind">Kind</label>
+        <label htmlFor="upload-kind">Kind (optional — set before choosing a file)</label>
         <select
           id="upload-kind"
           value={kind}
+          disabled={busy}
           onChange={(event) => setKind(event.target.value)}
         >
           {KIND_OPTIONS.map((option) => (
@@ -130,14 +118,33 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
         </select>
       </div>
       <div className="field">
-        <label htmlFor="upload-note">Note (optional)</label>
+        <label htmlFor="upload-note">Note (optional — set before choosing a file)</label>
         <input
           id="upload-note"
           value={note}
           maxLength={1000}
+          disabled={busy}
           onChange={(event) => setNote(event.target.value)}
         />
       </div>
+      <div className="field">
+        <label htmlFor="upload-file">
+          File (documents: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG · images: PNG, JPEG, TIFF, HEIC ·
+          3D models: STL, STEP, OBJ, 3MF · audio: MP3, WAV, M4A · video: MP4, MOV) — the upload
+          starts as soon as you choose a file
+        </label>
+        <input
+          id="upload-file"
+          ref={fileRef}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf,.mp3,.wav,.m4a,.mp4,.mov"
+          disabled={busy}
+          onChange={() => void handleFileSelected()}
+        />
+      </div>
+      <p aria-live="polite" className="hint" data-testid="upload-progress">
+        {busy ? "Uploading…" : ""}
+      </p>
       {message && (
         <p
           className={message.kind === "error" ? "form-error" : "wp-boundary-banner"}
@@ -147,16 +154,11 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
           {message.text}
         </p>
       )}
-      <div>
-        <button className="button venture-button" type="submit" disabled={busy}>
-          {busy ? "Uploading…" : "Upload to quarantine"}
-        </button>
-      </div>
       <p className="hint">
         Uploads are validated (type allowlist, extension, size, content signature), stored
         privately, quarantined, and scanned before extraction. File contents are treated as
         untrusted data — instructions inside documents carry no authority.
       </p>
-    </form>
+    </div>
   );
 }

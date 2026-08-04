@@ -1,17 +1,18 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { PLACEHOLDER_RECORD_TITLE } from "@/lib/wepatent/domain/ps-ledger";
 import { can } from "@/lib/wepatent/domain/roles";
 import { getAdapters } from "@/lib/server/adapters";
 import { requireOnboarded } from "@/lib/server/session";
 
 /**
  * Records start with an honest neutral placeholder (DB constraint: 3–200
- * chars). The AI proposes a working title after upload distillation or the
- * interview, and confirming a working title in the studio updates the
- * record title (see setWorkingTitle in services/ps-ledger).
+ * chars; shared constant in domain/ps-ledger). The AI proposes a working
+ * title after upload distillation or the interview, and accepting/editing
+ * a working title in the studio's auto-saving field updates the record
+ * title (see autosaveWorkingTitle in services/ps-ledger).
  */
-const PLACEHOLDER_TITLE = "Untitled invention";
 
 async function createRecordForPath(path: "upload" | "interview"): Promise<string> {
   const context = await requireOnboarded();
@@ -21,7 +22,7 @@ async function createRecordForPath(path: "upload" | "interview"): Promise<string
   const { data } = getAdapters();
   const invention = await data.createInvention({
     organizationId: context.organization.id,
-    title: PLACEHOLDER_TITLE,
+    title: PLACEHOLDER_RECORD_TITLE,
     summary: "",
     businessContext: "",
     problem: "",

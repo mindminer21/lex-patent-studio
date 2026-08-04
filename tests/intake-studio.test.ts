@@ -3,6 +3,7 @@ import {
   applyPsAction,
   deletionEventKind,
   initialPsState,
+  PLACEHOLDER_RECORD_TITLE,
 } from "@/lib/wepatent/domain/ps-ledger";
 import {
   aggregateCoverage,
@@ -27,7 +28,9 @@ import { runInterpretation } from "@/lib/server/services/interpretation";
 import { runDistillation } from "@/lib/server/services/distillation";
 import {
   addManualPair,
+  autosaveWorkingTitle,
   confirmPair,
+  confirmWorkingTitle,
   deletePair,
   editPair,
   getLedger,
@@ -678,6 +681,123 @@ describe("distillation service (FR-INT-4) and ledger (FR-INT-5)", () => {
     expect(longTitle.ok && longTitle.title.text === longText).toBe(true);
     const renamedAgain = await context.data.getInvention(context.org.id, context.invention.id);
     expect(renamedAgain?.title).toBe(longText.slice(0, 200));
+  });
+
+  it("title autosave: unchanged AI proposal → accepted; changed → edited; provenance recorded", async () => {
+    const context = await interpretedRecord();
+    await runDistillation({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: context.invention.id,
+      idempotencyKey: "distill-title-autosave",
+    });
+    const ledger = await getLedger(context.org.id, context.invention.id);
+    expect(ledger.currentTitle?.state).toBe("ai_proposed");
+    const proposalText = ledger.currentTitle!.text;
+
+    // Blur-without-edits acceptance (design rule: minimal human input):
+    // same text as the pending proposal → user_confirmed + title_confirmed.
+    const accepted = await autosaveWorkingTitle({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: context.invention.id,
+      text: proposalText,
+    });
+    expect(accepted.ok && accepted.outcome).toBe("ai_proposal_accepted");
+    expect(accepted.ok && accepted.title.state).toBe("user_confirmed");
+    let events = await context.data.listPsEvents(context.org.id, context.invention.id);
+    expect(events.some((event) => event.kind === "title_confirmed")).toBe(true);
+    // Acceptance renames the record, and the append-only history keeps
+    // BOTH rows: the model proposal and the user confirmation.
+    const renamed = await context.data.getInvention(context.org.id, context.invention.id);
+    expect(renamed?.title).toBe(proposalText.slice(0, 200));
+    const titlesAfterAccept = await context.data.listWorkingTitles(
+      context.org.id,
+      context.invention.id,
+    );
+    expect(titlesAfterAccept[titlesAfterAccept.length - 2]?.state).toBe("ai_proposed");
+    expect(titlesAfterAccept[titlesAfterAccept.length - 2]?.createdByActor).toBe("model");
+    expect(titlesAfterAccept[titlesAfterAccept.length - 1]?.createdByActor).toBe("user");
+
+    // Idempotent no-op: the debounce save and the blur save may both fire
+    // with the same text — no duplicate history rows, no extra events.
+    const resend = await autosaveWorkingTitle({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: context.invention.id,
+      text: proposalText,
+    });
+    expect(resend.ok && resend.outcome).toBe("unchanged");
+    expect(
+      (await context.data.listWorkingTitles(context.org.id, context.invention.id)).length,
+    ).toBe(titlesAfterAccept.length);
+
+    // Editing then blurring saves the edited version as a user edit.
+    const edited = await autosaveWorkingTitle({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: context.invention.id,
+      text: "Autosaved edited working title",
+    });
+    expect(edited.ok && edited.outcome).toBe("edited");
+    expect(edited.ok && edited.title.state).toBe("user_edited");
+    events = await context.data.listPsEvents(context.org.id, context.invention.id);
+    expect(events.some((event) => event.kind === "title_edited")).toBe(true);
+
+    // A reviewed title cannot be "confirmed" again — same guard as pairs.
+    const reconfirm = await confirmWorkingTitle({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: context.invention.id,
+    });
+    expect(reconfirm.ok).toBe(false);
+
+    // Bounds still enforced through the autosave path.
+    const tooShort = await autosaveWorkingTitle({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: context.invention.id,
+      text: "ab",
+    });
+    expect(tooShort.ok).toBe(false);
+  });
+
+  it("distillation on a placeholder-titled record proposes a real title, not the placeholder", async () => {
+    const context = await setup();
+    // Same shape the studio path chooser creates: neutral placeholder title.
+    const invention = await context.data.createInvention({
+      organizationId: context.org.id,
+      title: PLACEHOLDER_RECORD_TITLE,
+      summary: "",
+      businessContext: "",
+      problem: "",
+      solution: "",
+      synthetic: false,
+    });
+    const sourceId = await uploadThroughPipeline(
+      context,
+      invention,
+      "memo.md",
+      "text/plain",
+      new TextEncoder().encode(MEMO_MD),
+    );
+    await runInterpretation({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      sourceId,
+      idempotencyKey: `interpret:${sourceId}`,
+    });
+    const result = await runDistillation({
+      organizationId: context.org.id,
+      userId: context.user.id,
+      inventionId: invention.id,
+      idempotencyKey: "distill-placeholder-title",
+    });
+    expect(result.ok).toBe(true);
+    const ledger = await getLedger(context.org.id, invention.id);
+    expect(ledger.currentTitle?.state).toBe("ai_proposed");
+    expect(ledger.currentTitle?.text).not.toBe(PLACEHOLDER_RECORD_TITLE);
+    expect((ledger.currentTitle?.text ?? "").length).toBeGreaterThanOrEqual(3);
   });
 
   it("coverage meter reacts deterministically to ledger edits (FR-INT-8)", async () => {

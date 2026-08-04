@@ -353,3 +353,63 @@ limits); the raw-bytes viewer endpoint streams from the existing StoragePort.
 Migration 0011 is already applied to `jxehyxkcibiqluojeryy`; deploying the
 app code is the only remaining step and needs no coordination window
 (schema is additive and backward-compatible with the running M2 build).
+
+---
+
+## 2026-08-04 — Design rule "minimal human input": title autosave + friction audit
+
+### New app-wide design rule (Jeff, 2026-08-04)
+
+**Minimize human steps and inputs throughout the app.** Specifically
+directed: the invention/working title must NOT have a Save button — the
+inventor simply edits a text field and it auto-saves. Recorded in
+`docs/PRD-wepatent-intake-studio.md` §15 ("Design rule: minimal human
+input") with the explicit carve-outs: clickwrap acknowledgements,
+`ai_proposed` confirmations for substantive ledger content, cost-estimate
+consent before model spend, counsel gates, and destructive-action
+confirmations are NOT removable friction (UPL/ethics). Full step-by-step
+inventory: `docs/FRICTION-AUDIT.md`.
+
+### What changed
+
+| Change | Implementation | Verification |
+|---|---|---|
+| Working-title autosave (no Save button) | `WorkingTitleField.tsx` (client): debounced save ~800 ms after typing stops + save on blur, Escape reverts, aria-live "Saving…/Saved/error + Retry" status, keyboard accessible, label + `aria-describedby`. AI-proposed titles pre-fill the same field with dashed-amber `ai_proposed` styling and the hint "AI-proposed — edit or click away to keep"; blurring without edits accepts (that IS the minimal-step acceptance — replaces any separate accept affordance), editing then blurring saves the edit. Server: `PUT /api/inventions/:id/working-title` (auth + `invention.edit` + Zod 3–400) → `autosaveWorkingTitle` in `services/ps-ledger.ts`, which decides provenance server-side: text == pending `ai_proposed` proposal → `confirmWorkingTitle` (guarded `applyPsAction` confirm; appends `user_confirmed` row + `title_confirmed` event); changed text → `setWorkingTitle` (`user_edited` + `title_edited`); unchanged reviewed text → idempotent no-op (debounce+blur double-fire can't duplicate history). Record rename on accept/edit unchanged. Old `setTitleAction` + `<details>` form removed. No schema change: `working_titles` is append-only `ps_state`, and `ps_events_kind_check` already admits `title_confirmed` (migration 0009) — no migration, pgTAP untouched | unit: autosave provenance suite (accept → `user_confirmed` + `title_confirmed` + rename + append-only history keeps model row; unchanged → no-op no new rows; edit → `user_edited` + `title_edited`; re-confirm refused by guard; bounds); E2E studio journey: proposal pre-filled with `ai_proposed` class + hint → blur-accepts (badge "Confirmed by you" after reload) → typed edit persists via debounce across a real reload → Escape reverts; axe gate unchanged |
+| Local gateway: no placeholder echo | Synthetic distillation no longer proposes the record's neutral placeholder back as the "AI title" — placeholder-titled records get a title derived from the first solution. `PLACEHOLDER_RECORD_TITLE` moved to `domain/ps-ledger.ts` (shared by start actions + local gateway) | unit: placeholder-titled record distills to a real `ai_proposed` title |
+| Upload buttons removed (studio + filing receipts) | `UploadForm.tsx` and `FilingReceiptUpload.tsx`: choosing a file starts the validated upload (same FR-4 sign → PUT → quarantine → scan pipeline; kind/note stay optional, set before choosing). Matches the interview-attachment pattern that already auto-uploads. Success message now names the file so sequential uploads are individually assertable | E2E helpers updated in `studio.spec.ts`, `studio-m3.spec.ts`, `get-help.spec.ts` (also asserts the button is gone) |
+| Settings retention autosave | `RetentionField.tsx` + `PUT /api/settings/retention` → existing `updateRetentionPolicy` (owner-only, 30–3650 bounds, audited on every change — only the click was removed). "Run retention purge now" button KEPT (irreversible deletion = deliberate action). Old `updateRetentionAction` removed | new E2E (workspace.spec): autosave persists across reload, out-of-range refused client-side and not saved, `retention.policy_updated` visible in the audit trail, Update button gone |
+| API contract | The two new autosave endpoints refuse unauthenticated callers (401) | api-contract.spec addition |
+| Friction audit | `docs/FRICTION-AUDIT.md`: every human step/input in dashboard → intake → studio → interview → export → get-help → billing → settings, classified REMOVED (4) / KEEP (15 groups, compliance) / CANDIDATE (7, awaiting Jeff) | doc review |
+
+### Boundary notes
+
+Nothing in the KEEP category was touched: clickwrap, spend-consent
+(interpret/distill/interview/top-up), `ai_proposed` ledger confirmations,
+counsel-request gates, and the purge button all retain their explicit
+human actions. The title accept-on-blur is not a weakening of invariant
+13: acceptance still requires a human focus+blur gesture on the field, is
+guarded by the same `applyPsAction("user","confirm", …)` transition, and
+is durably distinguished from edits in `working_titles` state +
+`ps_events` (`title_confirmed` vs `title_edited`).
+
+### Verification (fresh, 2026-08-04)
+
+| Command | Result |
+|---|---|
+| `npm run lint` | 0 errors |
+| `npm run typecheck` | 0 errors |
+| `npm run test:wepatent` | 23 files, 278/278 passed (was 276; +2: title-autosave provenance, placeholder-title distillation) |
+| `npm run test:lex` | untouched — see gate run below |
+| `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e:wepatent` | 42/42 (was 41; +1 settings-retention autosave; 0 did-not-run) |
+| `npm run test:e2e:lex` | 14/14 (unchanged) |
+| `npm run build` | success |
+| pgTAP | not run — no schema change (verified: `title_confirmed` already in `ps_events_kind_check` from 0009; `working_titles.state` is `ps_state`) |
+
+### Deploy notes
+
+No new dependencies, no new env vars, no migration. Two new API routes
+(`PUT /api/inventions/:id/working-title`, `PUT /api/settings/retention`)
+deploy with the app code; both adapters already implement every port used
+(`createWorkingTitle` / `listWorkingTitles` / `updateInventionTitle` /
+`appendPsEvent`, `updateOrganizationRetention`) — no adapter surface
+changed. Backward compatible with the live schema.

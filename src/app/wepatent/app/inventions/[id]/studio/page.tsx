@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import StudioJobProgress from "@/components/wepatent/StudioJobProgress";
 import UploadForm from "@/components/wepatent/UploadForm";
+import WorkingTitleField from "@/components/wepatent/WorkingTitleField";
 import {
   COVERAGE_DIMENSION_LABELS,
   COVERAGE_DIMENSIONS,
@@ -23,7 +24,6 @@ import {
   interpretSourcesAction,
   linkPairsAction,
   mergePairsAction,
-  setTitleAction,
   splitPairAction,
 } from "./actions";
 
@@ -351,41 +351,15 @@ export default async function StudioPage({
         {/* ------------- Right: always-visible P/S ledger panel ------------- */}
         <section className="wp-studio-right" aria-label="Problem/Solution ledger">
           <div className="wp-card">
-            <p className="venture-kicker">Working title</p>
-            {ledger.currentTitle ? (
-              <>
-                <h2 data-testid="working-title">{ledger.currentTitle.text}</h2>
-                <p>
-                  <span
-                    className={`wp-badge ${ledger.currentTitle.state === "ai_proposed" ? "needs_confirmation" : "source_supported"}`}
-                  >
-                    {STATE_LABELS[ledger.currentTitle.state]}
-                  </span>
-                </p>
-              </>
-            ) : (
-              <p>No working title yet — distillation proposes one, or set it yourself.</p>
-            )}
-            <details>
-              <summary>Edit working title</summary>
-              <form action={setTitleAction} className="wp-form">
-                <input type="hidden" name="inventionId" value={id} />
-                <div className="field">
-                  <label htmlFor="title-text">Working title</label>
-                  <input
-                    id="title-text"
-                    name="text"
-                    required
-                    minLength={3}
-                    maxLength={400}
-                    defaultValue={ledger.currentTitle?.text ?? ""}
-                  />
-                </div>
-                <button className="button venture-button button-small" type="submit">
-                  Save title
-                </button>
-              </form>
-            </details>
+            {/* Design rule (minimal human input): the working title is an
+                inline auto-saving field — no Save button. Blurring an
+                untouched AI proposal accepts it; edits save on debounce/blur
+                with user_edited provenance. */}
+            <WorkingTitleField
+              inventionId={id}
+              initialText={ledger.currentTitle?.text ?? ""}
+              initialState={ledger.currentTitle?.state ?? null}
+            />
           </div>
 
           <div className="wp-card" style={{ marginTop: 18 }} data-testid="coverage-meter">

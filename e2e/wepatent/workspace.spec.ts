@@ -187,6 +187,31 @@ test("billing view shows wallet, ledger, and settled usage", async ({ page }) =>
   await expect(page.getByText(/promotional credit/i).first()).toBeVisible();
 });
 
+test("settings retention window autosaves without an Update button", async ({ page }) => {
+  // Design rule (minimal human input): the owner edits the number and it
+  // saves + audits automatically — verified across a real reload.
+  await signIn(page, FOUNDER_EMAIL, "E2E Founder");
+  await page.goto("/wepatent/app/settings");
+  const retention = page.getByTestId("retention-days");
+  await expect(retention).toBeVisible();
+  await expect(page.getByRole("button", { name: /Update retention/ })).toHaveCount(0);
+  await retention.fill("180");
+  await expect(page.getByTestId("retention-status")).toContainText("Saved and audited", {
+    timeout: 10_000,
+  });
+  await page.reload();
+  await expect(page.getByTestId("retention-days")).toHaveValue("180");
+  await expect(page.getByText("180 days")).toBeVisible();
+  // Out-of-range input is refused client-side and never saved.
+  await page.getByTestId("retention-days").fill("5");
+  await page.getByTestId("retention-days").blur();
+  await expect(page.getByTestId("retention-status")).toContainText("30–3650");
+  await page.reload();
+  await expect(page.getByTestId("retention-days")).toHaveValue("180");
+  // The audit trail shows the policy update.
+  await expect(page.getByText("retention.policy_updated").first()).toBeVisible();
+});
+
 test("cross-tenant access is denied by URL and API tampering", async ({ browser, page }) => {
   // Tenant A: capture a real invention id.
   await signIn(page, FOUNDER_EMAIL, "E2E Founder");

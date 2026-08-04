@@ -16,6 +16,14 @@ test("§10 endpoints refuse unauthenticated callers", async ({ request }) => {
     const response = await request.post(path, { data: body });
     expect(response.status(), path).toBe(401);
   }
+  // Autosave endpoints (minimal-input design rule) are equally protected.
+  for (const [path, body] of [
+    ["/api/inventions/some-id/working-title", { text: "A valid title" }],
+    ["/api/settings/retention", { retentionDays: 90 }],
+  ] as const) {
+    const response = await request.put(path, { data: body });
+    expect(response.status(), path).toBe(401);
+  }
 });
 
 test("organization creation via API is validated and single-org enforced", async ({ page }) => {

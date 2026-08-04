@@ -20,6 +20,9 @@ const REJECTION_MESSAGES: Record<string, string> = {
  * with kind="filing_receipt" so receipts are listed separately from other
  * private sources. No new upload surface: same allowlist, size caps, and
  * content-signature validation as every other upload.
+ *
+ * Design rule (minimal human input): choosing the file starts the upload —
+ * no separate "Upload filing receipt" button.
  */
 export default function FilingReceiptUpload({ inventionId }: { inventionId: string }) {
   const router = useRouter();
@@ -27,13 +30,9 @@ export default function FilingReceiptUpload({ inventionId }: { inventionId: stri
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  async function handleFileSelected() {
     const file = fileRef.current?.files?.[0];
-    if (!file) {
-      setMessage({ kind: "error", text: "Choose a filing receipt file first." });
-      return;
-    }
+    if (!file) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -83,11 +82,24 @@ export default function FilingReceiptUpload({ inventionId }: { inventionId: stri
   const inputId = `filing-receipt-file-${inventionId}`;
 
   return (
-    <form onSubmit={handleSubmit} className="wp-form" data-testid="filing-receipt-form">
+    <div className="wp-form" data-testid="filing-receipt-form">
       <div className="field">
-        <label htmlFor={inputId}>Upload a filing receipt (PDF, PNG, or JPEG)</label>
-        <input id={inputId} ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" required />
+        <label htmlFor={inputId}>
+          Upload a filing receipt (PDF, PNG, or JPEG) — the upload starts as soon as you choose
+          a file
+        </label>
+        <input
+          id={inputId}
+          ref={fileRef}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg"
+          disabled={busy}
+          onChange={() => void handleFileSelected()}
+        />
       </div>
+      <p aria-live="polite" className="hint">
+        {busy ? "Uploading…" : ""}
+      </p>
       {message && (
         <p
           className={message.kind === "error" ? "form-error" : "wp-boundary-banner"}
@@ -97,15 +109,10 @@ export default function FilingReceiptUpload({ inventionId }: { inventionId: stri
           {message.text}
         </p>
       )}
-      <div>
-        <button className="button venture-button button-small" type="submit" disabled={busy}>
-          {busy ? "Uploading…" : "Upload filing receipt"}
-        </button>
-      </div>
       <p className="hint">
         Receipts pass through the same validation, private storage, and quarantine scanning as
         every other upload, and stay scoped to this invention record.
       </p>
-    </form>
+    </div>
   );
 }

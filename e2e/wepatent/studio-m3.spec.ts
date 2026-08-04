@@ -83,9 +83,10 @@ async function uploadFile(
   page: Page,
   file: { name: string; mimeType: string; buffer: Buffer },
 ): Promise<void> {
+  // No upload button (design rule: minimal human input) — selecting the
+  // file starts the validated upload; the success message names the file.
   await page.getByLabel(/^File \(documents/).setInputFiles(file);
-  await page.getByRole("button", { name: "Upload to quarantine" }).click();
-  await expect(page.getByTestId("upload-message")).toContainText("Uploaded", {
+  await expect(page.getByTestId("upload-message")).toContainText(`Uploaded ${file.name}`, {
     timeout: 15_000,
   });
 }
