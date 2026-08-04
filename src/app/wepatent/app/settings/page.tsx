@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { can } from "@/lib/wepatent/domain/roles";
+import { openPortalAction } from "../billing/actions";
 import { isLocalMode } from "@/lib/wepatent/env";
 import { getAdapters } from "@/lib/server/adapters";
 import { invitationStatus } from "@/lib/server/services/invitations";
@@ -52,6 +54,24 @@ export default async function SettingsPage({
       <div className="wp-topbar">
         <h1>Settings</h1>
         <span className="org">{context.organization.name}</span>
+      </div>
+
+      <div className="wp-card" style={{ marginBottom: 22 }}>
+        <h2>Subscription &amp; billing</h2>
+        <p>
+          Manage your plan, payment methods, and invoices in the Stripe Customer Portal. Usage
+          top-ups and plan details live on the <Link href="/wepatent/app/billing">Billing</Link>{" "}
+          page.
+        </p>
+        {can(context.membership.role, "billing.manage") ? (
+          <form action={openPortalAction}>
+            <button className="button venture-button" type="submit">
+              Open customer portal
+            </button>
+          </form>
+        ) : (
+          <p>Only owners and admins can manage billing for this organization.</p>
+        )}
       </div>
 
       <div className="wp-grid cols-2">
