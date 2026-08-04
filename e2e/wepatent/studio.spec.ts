@@ -149,7 +149,7 @@ test("studio journey: chooser → uploads → interpret → distill → ledger C
   // deterministically flips the parameters coverage dimension.
   const pair = page.locator(".wp-studio-pair").filter({ hasText: "Components:" }).first();
   await pair.getByText("Edit", { exact: true }).click();
-  await pair.getByLabel("Statement").fill(
+  await pair.getByLabel("Statement", { exact: true }).fill(
     "USER-EDITED: a self-sealing valve concept rated for 40 psi back-pressure.",
   );
   await pair.getByRole("button", { name: "Save edit" }).click();
