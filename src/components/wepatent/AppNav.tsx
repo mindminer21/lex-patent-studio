@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const LINKS: Array<[string, string]> = [
   ["/wepatent/app", "Dashboard"],
   ["/wepatent/app/inventions/start", "New invention"],
-  ["/wepatent/app/counsel", "Counsel requests"],
+  ["/wepatent/app/counsel", "Get Help to File"],
   ["/wepatent/app/billing", "Billing"],
   ["/wepatent/app/settings", "Settings"],
 ];
