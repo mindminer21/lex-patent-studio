@@ -8,11 +8,16 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # MULTI-AGENT COORDINATION — READ BEFORE ANY GIT OPERATION
 
-**More than one AI agent works in this repository.** On 2026-08-04 an agent reset
-`track/wepatent-app-reconciled` to an older commit and destroyed 16 commits of
-work (the patent-figure subsystem, three-pass drafting, and seven UX changes).
-The objects were unrecoverable locally; the source had to be pulled back out of a
-live Vercel deployment. Do not let that happen again.
+**More than one AI agent works in this repository.** On 2026-08-04, 16 commits of
+work (the patent-figure subsystem, three-pass drafting, and seven UX changes)
+vanished from a working tree with no reflog trace; the source had to be pulled
+back out of a live Vercel deployment. The cause was an ephemeral sandbox rolling
+back its own disk — **not** another agent, which had no access to that machine.
+The rules below stand anyway, because with several agents and several machines
+touching one codebase the same damage is easy to cause on purpose.
+
+**The real lesson of that incident:** work that exists on only one machine is one
+disk event away from gone. Push to the shared remote often.
 
 ## Absolute prohibitions
 
