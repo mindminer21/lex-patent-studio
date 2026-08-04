@@ -81,7 +81,7 @@ export default function Home() {
           <div className="pricing-table" role="table" aria-label="Professional pricing plans">
             {plans.map(([name, price, detail]) => <article className="plan" key={name} role="row"><div><p className="eyebrow">{name}</p><p>{detail}</p></div><p className="price"><strong>{price}</strong>{price !== "Custom" && <span>/month</span>}</p><a className="text-link" href="mailto:demo@example.com?subject=Lex%20Patent%20Studio%20demo">Request details <span aria-hidden="true">→</span></a></article>)}
           </div>
-          <p className="pricing-note">AI usage is billed separately at provider cost × 1.50 through a prepaid wallet. Pricing is a design-stage hypothesis for professional validation.</p>
+          <p className="pricing-note">AI usage is billed separately through a prepaid wallet at provider cost × 2.0 for generation tasks (work newly authored for you) and × 1.5 for analysis tasks (reading, structuring, checking, and routing what already exists). Pricing is a design-stage hypothesis for professional validation.</p>
         </section>
       </main>
 

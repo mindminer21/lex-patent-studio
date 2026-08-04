@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  formatMultiplier,
+  markupDisclosure,
+  MARKUP_MULTIPLIERS,
+} from "@/lib/shared/billing/markup";
 import { useRouter } from "next/navigation";
 import {
   CANONICAL_VIEWS,
@@ -184,7 +189,9 @@ export default function MeshViewer({
           validated upload pipeline as any file. The vision interpretation pass is a
           separate, user-triggered step in the studio; estimated cost for interpreting all
           six views: <strong data-testid="vision-estimate">{visionEstimateText}</strong>{" "}
-          (provider cost × 1.50, settled from actual usage).
+          ({markupDisclosure()} — the vision pass reads your model rather than authoring
+          anything, so it is an analysis task billed at{" "}
+          {formatMultiplier(MARKUP_MULTIPLIERS.analysis)}×; settled from actual usage).
         </p>
         {derivedViewCount > 0 && (
           <p className="hint" data-testid="derived-count">

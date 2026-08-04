@@ -15,7 +15,7 @@ export default function TermsPage() {
         "The platform never signs, certifies, files, or communicates with the USPTO or with end clients on a user's behalf.",
         "Lex Patent Studio is not a docketing system of record and does not guarantee deadline monitoring; every surfaced date must be verified against the user's docket.",
         "Work-tier labels and review requirements are platform policy and cannot be removed or demoted below the platform floor.",
-        "Usage billing is prepaid-wallet based at published, effective-dated rates (provider cost × 1.50), reserved before execution and settled after.",
+        "Usage billing is prepaid-wallet based at published, effective-dated rates set by task type — provider cost × 2.0 for generation tasks (work product newly authored for you: specification drafting in either pass, the illustrations brief, claim sets, office-action responses, declarations, memos, search reports, strategy briefs) and × 1.5 for analysis tasks (extraction, parsing, classification, transcription, retrieval, verification, coverage scoring, and routing) — reserved before execution and settled after.",
         "Customer content is never used to train models or improve any shared corpus.",
       ]}
     />

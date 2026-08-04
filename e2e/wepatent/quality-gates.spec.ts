@@ -75,9 +75,7 @@ test("clickwrap page passes the axe scan before acceptance", async ({ page }) =>
   await page.goto("/wepatent/sign-in");
   await page.getByLabel("Email address").fill(`${unique}@example.test`);
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.waitForURL(/\/wepatent\/app/);
-  await page.getByLabel(/organization name/i).fill(`Org ${unique}`);
-  await page.getByRole("button", { name: "Create organization" }).click();
+  // Organization auto-creation lands the new user straight on the clickwrap.
   await page.waitForURL(/\/wepatent\/app\/terms/);
   await expectNoSeriousViolations(page, "/wepatent/app/terms");
 });

@@ -19,6 +19,10 @@ import type {
   WorkProductDocument,
 } from "@/lib/domain/schemas";
 import type { RunState } from "@/lib/domain/run-state";
+import type {
+  LexDraftSet,
+  LexDraftSetTransition,
+} from "@/lib/domain/lex-draft-passes";
 import type { PlaybookEntry, StyleProfile } from "@/lib/domain/styles";
 import {
   DEMO_WALLET_BALANCE_USD,
@@ -80,6 +84,13 @@ export interface LocalStore {
   reservations: WalletReservation[];
   documents: WorkProductDocument[];
   reviewItems: ReviewItem[];
+  /**
+   * Three-pass drafting (Jeff's directive, 2026-08-04). Mirrors
+   * `public.draft_sets` / `public.draft_set_transitions` in Lex migration
+   * 0007; the RULES live in the shared core, not here.
+   */
+  draftSets: LexDraftSet[];
+  draftSetTransitions: LexDraftSetTransition[];
   decisions: ReviewDecisionRecord[];
   deadlines: DeadlineObservation[];
   styleProfiles: StyleProfile[];
@@ -111,6 +122,8 @@ function newStore(): LocalStore {
     reservations: [],
     documents: SEED_DOCUMENTS,
     reviewItems: SEED_REVIEW_ITEMS,
+    draftSets: [],
+    draftSetTransitions: [],
     decisions: SEED_DECISIONS,
     deadlines: SEED_DEADLINES,
     styleProfiles: SEED_STYLE_PROFILES,

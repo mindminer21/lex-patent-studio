@@ -12,6 +12,7 @@ import {
   processStripeWebhook,
   startCheckoutSession,
   startPortalSession,
+  topUpWithSavedPaymentMethod,
 } from "@/lib/server/services/billing";
 import { requireOrg } from "@/lib/server/session";
 
@@ -31,6 +32,28 @@ export async function startTopUpAction(formData: FormData): Promise<void> {
     request: { kind: "wallet_top_up", amountCents },
   });
   redirect(result.ok ? result.url : "/wepatent/app/billing?error=billing_unavailable");
+}
+
+/**
+ * One-click top-up against the saved payment method (friction audit #7).
+ * Still an explicit, amount-labeled spend action — only the Checkout detour
+ * is removed. The wallet is credited by the verified webhook, never here.
+ */
+export async function savedCardTopUpAction(formData: FormData): Promise<void> {
+  const context = await requireOrg();
+  const amountCents = Number(formData.get("amountCents"));
+  const result = await topUpWithSavedPaymentMethod({
+    organizationId: context.organization.id,
+    userId: context.user.id,
+    actorRole: context.membership.role,
+    amountCents,
+  });
+  if (result.ok) {
+    redirect("/wepatent/app/billing?topup=success");
+  }
+  // SCA and declines are surfaced honestly, with the Checkout fallback
+  // offered next to the message — never silently failed or faked.
+  redirect(`/wepatent/app/billing?error=${result.error}&amount=${amountCents}`);
 }
 
 /** Open the Stripe Customer Portal (simulated in local mode). */

@@ -101,7 +101,7 @@ describe("service-level integration flow (local adapters, synthetic data)", () =
     expect(result).toEqual({ ok: false, error: "incomplete_intake" });
   });
 
-  it("generation reserves, generates a labeled working draft, and settles at cost × 1.50", async () => {
+  it("generation reserves, generates a labeled working draft, and settles at the generation multiplier", async () => {
     const { data, user, org } = await setup();
     const [invention] = await data.listInventions(org.id);
     const before = await data.getWallet(org.id);
@@ -121,8 +121,11 @@ describe("service-level integration flow (local adapters, synthetic data)", () =
 
     const events = await data.listUsageEvents(org.id);
     expect(events).toHaveLength(1);
+    // Drafting the disclosure summary authors work product delivered to the
+    // customer, so it is a GENERATION task and bills at 2.0 (Jeff's
+    // directive, 2026-08-04). Analysis-category services still bill at 1.5.
     expect(events[0].customerChargeCents).toBe(
-      Math.ceil(events[0].providerCostCents * 1.5),
+      Math.ceil(events[0].providerCostCents * 2.0),
     );
     const after = await data.getWallet(org.id);
     expect(after?.balanceCents).toBe((before?.balanceCents ?? 0) - events[0].customerChargeCents);

@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import {
+  formatMultiplier,
+  MARKUP_MULTIPLIERS,
+  markupDisclosure,
+} from "@/lib/shared/billing/markup";
 import PublicShell from "@/components/wepatent/PublicShell";
 
 export const metadata: Metadata = {
@@ -9,11 +14,11 @@ export const metadata: Metadata = {
 
 const sections = [
   ["Automated systems, not a lawyer", "wepatent uses large language models and deterministic checks to help organize facts and produce working drafts. The software does not exercise legal judgment, is not a licensed person, and does not review outputs for legal sufficiency. Outputs are automated working drafts that require review and approval by qualified patent counsel before filing or consequential use."],
-  ["Model providers", "Generation runs are routed server-side to third-party model providers — currently planned: OpenAI, Anthropic, and xAI — under enterprise terms that restrict training on customer content. The specific model used for each run is recorded and shown with the output."],
+  ["Model providers", "Generation runs are routed server-side to third-party model providers — currently planned: OpenAI, Anthropic, and xAI for text, and Google Gemini for patent-figure line art — under enterprise terms that restrict training on customer content. The specific model used for each run is recorded and shown with the output. Image generation for patent figures is disabled by default and requires explicit owner approval before it can run."],
   ["What every output shows", "Each generated draft displays its draft status, the model identity, generation time, estimated and actual cost, the support status of underlying facts and sources, and the label “working draft — counsel review required.”"],
   ["Outputs can be wrong", "Model outputs may be inaccurate, incomplete, outdated, or internally inconsistent, and may fabricate citations. Do not rely on an AI-generated citation, patent number, date, deadline, or legal proposition without verification by qualified counsel."],
   ["Model output is untrusted", "Model output cannot change your fact record, approve itself, execute actions, or trigger filings. Only people can edit facts, and only qualified counsel review can mark material as counsel-reviewed."],
-  ["Cost transparency", "AI usage is charged from a prepaid wallet at actual provider cost multiplied by 1.50, with effective-dated rates. Estimates and actuals are shown for every run."],
+  ["Cost transparency", `AI usage is charged from a prepaid wallet at ${markupDisclosure()}, with effective-dated rates. The multiplier is set by the TASK, not by the model: a generation task — application drafting in either pass, the illustrations brief, patent-figure generation, draft revision, and any other newly authored work product delivered to you — bills at ${formatMultiplier(MARKUP_MULTIPLIERS.generation)}× provider cost. An analysis task — extraction, parsing, classification, transcription, retrieval, verification, coverage scoring, interview questions, and routing — bills at ${formatMultiplier(MARKUP_MULTIPLIERS.analysis)}×. A run that does both marks each part up at its own rate before summing. Every settled usage event records the provider cost, the multiplier applied, and the rate version. Estimates and actuals are shown for every run.`],
   ["Human review boundaries", "No automated output is filed with any patent office by wepatent. The product does not monitor deadlines and does not submit, sign, or certify documents."],
 ];
 

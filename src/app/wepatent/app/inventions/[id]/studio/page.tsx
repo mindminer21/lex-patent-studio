@@ -11,6 +11,11 @@ import { getModelTier } from "@/lib/server/model-registry";
 import { estimateForTier } from "@/lib/server/services/generation";
 import { estimateDistillation } from "@/lib/server/services/distillation";
 import { getLedger } from "@/lib/server/services/ps-ledger";
+import {
+  formatMultiplier,
+  markupDisclosure,
+  MARKUP_MULTIPLIERS,
+} from "@/lib/shared/billing/markup";
 import { requireOnboarded } from "@/lib/server/session";
 import Link from "next/link";
 import { interpretationClassFor } from "@/lib/wepatent/domain/uploads";
@@ -232,8 +237,10 @@ export default async function StudioPage({
               <strong>
                 up to {centsToUsd(interpretHighTotal)}
               </strong>{" "}
-              total · wallet available {centsToUsd(availableCents)}. Charges are provider cost ×
-              1.50, settled from actual usage.
+              total · wallet available {centsToUsd(availableCents)}. Charges are{" "}
+              {markupDisclosure()}; interpretation reads a source you already have rather than
+              authoring anything, so it is an analysis task and bills at{" "}
+              {formatMultiplier(MARKUP_MULTIPLIERS.analysis)}×. Settled from actual usage.
             </p>
             <form action={interpretSourcesAction}>
               <input type="hidden" name="inventionId" value={id} />

@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Boundary, MarketingShell, PageIntro } from "@/components/marketing/Shell";
-import { USAGE_MARKUP } from "@/lib/domain/pricing";
+import {
+  formatMultiplier,
+  markupDisclosure,
+  MARKUP_MULTIPLIERS,
+} from "@/lib/shared/billing/markup";
 
 export const metadata: Metadata = {
   title: "Pricing — Lex Patent Studio",
   description:
-    "Professional-lane plans with prepaid usage wallets. Model usage billed at provider cost × 1.50, shown before every run.",
+    "Professional-lane plans with prepaid usage wallets. Model usage billed at provider cost × 2.0 for generation tasks, × 1.5 for analysis tasks, shown before every run.",
 };
 
 /** FR-9 plan table. Test-mode defaults; live pricing is approval-gated. */
@@ -47,7 +51,7 @@ export default function PricingPage() {
       <PageIntro
         kicker="Pricing"
         title="A flat seat. A transparent meter. No surprises mid-run."
-        lede="Subscriptions cover the workspace; model usage draws on a prepaid wallet at provider cost × 1.50, with the estimated charge range shown before every run — never after."
+        lede="Subscriptions cover the workspace; model usage draws on a prepaid wallet at provider cost × 2.0 for generation tasks and × 1.5 for analysis tasks, with the estimated charge range shown before every run — never after."
       />
 
       <section className="section" aria-label="Plans">
@@ -85,8 +89,15 @@ export default function PricingPage() {
           </h2>
           <ul className="m-0 list-disc space-y-2 pl-5">
             <li>
-              Model usage is billed at <strong>provider cost × {USAGE_MARKUP.toFixed(2)}</strong>{" "}
-              against a prepaid wallet. <Link href="/models" className="underline underline-offset-4">Per-model rates</Link> are published and effective-dated.
+              Model usage is billed at <strong>{markupDisclosure()}</strong> against a
+              prepaid wallet. The multiplier is set by the task, not the model:{" "}
+              {formatMultiplier(MARKUP_MULTIPLIERS.generation)}× when the run authors work
+              product you receive — specification drafting in either pass, the illustrations
+              brief, claim sets, office-action responses, declarations, research memos,
+              search reports, and strategy briefs — and{" "}
+              {formatMultiplier(MARKUP_MULTIPLIERS.analysis)}× when it reads, structures,
+              checks, or routes material that already exists.{" "}
+              <Link href="/models" className="underline underline-offset-4">Per-model rates</Link> are published and effective-dated.
             </li>
             <li>
               Every run shows an estimated charge range and wallet sufficiency

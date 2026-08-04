@@ -363,6 +363,12 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .wp-studio-pair { border: 1px solid var(--venture-line); padding: 12px; margin-bottom: 12px; background: white; overflow-wrap: anywhere; }
 .wp-studio details > summary { cursor: pointer; font-weight: 650; font-size: 0.9rem; }
 .wp-studio details { margin-top: 8px; }
+/* Optional-detail disclosures (design rule: minimal human input — the
+   default state is the common case; the extras stay one keystroke away).
+   Native <details>/<summary> keeps keyboard + screen-reader semantics. */
+.wp-disclosure { margin-top: 14px; border-top: 1px solid var(--venture-line); padding-top: 10px; }
+.wp-disclosure > summary { cursor: pointer; font-weight: 650; font-size: 0.85rem; color: #5a687d; }
+.wp-disclosure[open] > summary { margin-bottom: 10px; }
 @media (max-width: 1180px) {
   .wp-studio { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .wp-studio-right { grid-column: 1 / -1; }
@@ -403,3 +409,23 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 .wp-mesh-views figure { margin: 0; }
 .wp-mesh-views canvas { width: 100%; height: auto; border: 1px solid var(--venture-line); background: #fff; }
 .wp-mesh-views figcaption { font-size: 0.75rem; font-weight: 650; }
+
+/*
+ * Visually-hidden text that screen readers still announce.
+ *
+ * The three-pass stage meter marks completed and current steps with a
+ * symbol, and symbols are not announced usefully. This carries the same
+ * information as words for assistive technology without changing the
+ * visual design (a11y on new surfaces).
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

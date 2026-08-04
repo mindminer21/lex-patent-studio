@@ -8,9 +8,20 @@ import {
 } from "@/lib/server/model-registry";
 import JobProgress from "@/components/wepatent/JobProgress";
 import { estimateForTier } from "@/lib/server/services/generation";
+import {
+  formatMultiplier,
+  markupDisclosure,
+  MARKUP_MULTIPLIERS,
+} from "@/lib/shared/billing/markup";
 import { requireOnboarded } from "@/lib/server/session";
 import type { DraftWorkflow } from "@/lib/server/adapters/types";
-import { generateDraftAction, retryGenerationAction } from "../actions";
+import ThreePassPanel, { type ThreePassView } from "@/components/wepatent/ThreePassPanel";
+import {
+  acceptDraftSetAction,
+  generateDraftAction,
+  retryGenerationAction,
+  startThreePassDraftAction,
+} from "../actions";
 
 function usd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -49,6 +60,46 @@ export default async function DraftsPage({
       versions: await data.listDraftVersions(context.organization.id, draft.id),
     })),
   );
+  /**
+   * The three-pass view (Jeff's directive, 2026-08-04). Built from the
+   * latest draft set and the SHARED delivery gate, so the blockers shown
+   * here are byte-identical to the ones the export path enforces — a user
+   * cannot be told one thing on this page and another when they export.
+   */
+  const draftSets = await data.listDraftSets(context.organization.id, id);
+  const latestSet = draftSets[draftSets.length - 1] ?? null;
+  let threePass: ThreePassView | null = null;
+  if (latestSet) {
+    const { evaluateDeliveryFor } = await import("@/lib/server/services/draft-passes");
+    const decision = await evaluateDeliveryFor(context.organization.id, latestSet.id);
+    const figures = latestSet.figureSetId
+      ? await data.listFigures(context.organization.id, latestSet.figureSetId)
+      : [];
+    const numerals = latestSet.figureSetId
+      ? await data.listFigureNumerals(context.organization.id, latestSet.figureSetId)
+      : [];
+    const reconciliation = latestSet.reconciliation as
+      | { findings?: Array<{ detail: string }> }
+      | null;
+    threePass = {
+      draftSetId: latestSet.id,
+      state: latestSet.state,
+      statusDetail: latestSet.statusDetail,
+      passOneVersionId: latestSet.passOneVersionId,
+      passTwoVersionId: latestSet.passTwoVersionId,
+      figureCount: figures.filter(
+        (figure) => figure.state === "composed" || figure.state === "ready",
+      ).length,
+      numeralCount: numerals.length,
+      reconciled: latestSet.reconciled,
+      reconciliationFindings: (reconciliation?.findings ?? []).map((finding) => finding.detail),
+      passOneChargeCents: latestSet.passOneChargeCents,
+      passTwoChargeCents: latestSet.passTwoChargeCents,
+      acceptedAt: latestSet.acceptedAt,
+      blockers: decision.allowed ? [] : decision.blockers,
+    };
+  }
+
   const selectedVersion = versionId
     ? await data.getDraftVersion(context.organization.id, versionId)
     : null;
@@ -80,6 +131,17 @@ export default async function DraftsPage({
           {ERROR_MESSAGES[error] ?? "Something went wrong."}
         </p>
       )}
+
+      <ThreePassPanel
+        inventionId={id}
+        view={threePass}
+        estimateHighCents={
+          estimateForTier(MODEL_TIERS[0], approximateInputTokens, "generation")
+            .customerHighCents
+        }
+        startAction={startThreePassDraftAction}
+        acceptAction={acceptDraftSetAction}
+      />
 
       {jobId && !selectedVersion && (
         <JobProgress
@@ -129,8 +191,8 @@ export default async function DraftsPage({
           <h2>Generate a working draft</h2>
           <p>
             Wallet available: <strong>{usd(available)}</strong>. The high estimate is reserved
-            before the run and settled from provider-reported usage at cost × 1.50; failed runs
-            are never charged.
+            before the run and settled from provider-reported usage at {markupDisclosure()};
+            failed runs are never charged.
           </p>
           <form action={generateDraftAction} className="wp-form">
             <input type="hidden" name="inventionId" value={id} />
@@ -155,7 +217,9 @@ export default async function DraftsPage({
               <label htmlFor="tierId">Model tier</label>
               <select id="tierId" name="tierId" required defaultValue="standard">
                 {MODEL_TIERS.map((tier) => {
-                  const estimate = estimateForTier(tier, approximateInputTokens);
+                  // Drafting authors work product delivered to the customer, so
+                  // the estimate is priced at the generation multiplier.
+                  const estimate = estimateForTier(tier, approximateInputTokens, "generation");
                   return (
                     <option key={tier.id} value={tier.id}>
                       {tier.displayName} — est. {usd(estimate.customerLowCents)}–
@@ -165,7 +229,9 @@ export default async function DraftsPage({
                 })}
               </select>
               <p className="hint">
-                Estimates include the 1.50× markup on provider cost. The high bound is reserved
+                Estimates already include the retail markup ({markupDisclosure()}). Drafting
+                authors new work product for you, so it is a generation task and bills at{" "}
+                {formatMultiplier(MARKUP_MULTIPLIERS.generation)}×. The high bound is reserved
                 against your wallet.
               </p>
             </div>

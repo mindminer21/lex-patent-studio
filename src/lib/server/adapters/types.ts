@@ -207,6 +207,8 @@ export interface ExportRecordEntry {
   organizationId: Id;
   inventionId: Id;
   draftVersionId: Id | null;
+  /** Drawing sheets riding along in the counsel package (spec §4). */
+  figureSetId?: Id | null;
   manifest: ExportManifest;
   checksum: string;
   createdAt: string;
@@ -235,6 +237,12 @@ export interface ExportManifest {
   /** Intake Studio M3 additions (optional for pre-M3 exports). */
   psAssociationCount?: number;
   psRegionAnchorCount?: number;
+  /** Patent-figure additions (optional for pre-figures exports). */
+  figureCount?: number;
+  figureSheetCount?: number;
+  figureValidationStatus?: string;
+  figureRulesVersion?: string;
+  figureBriefDescription?: string[];
 }
 
 export interface CounselRequestRecord {
@@ -335,6 +343,13 @@ export interface UsageEventRecord {
   rateVersion: string;
   providerCostCents: number;
   customerChargeCents: number;
+  /**
+   * Retail multiplier applied to this charge (FR-6). 1.5 for text and
+   * transcription, 2.0 for image generation. Recorded per event so a
+   * settled charge can always be re-derived from provider cost + rate
+   * version + multiplier. Absent on pre-2026-08 rows, which are all 1.5.
+   */
+  markupMultiplier?: number;
   inputTokens: number;
   outputTokens: number;
   createdAt: string;
@@ -346,11 +361,31 @@ export interface UsageEventRecord {
 
 export type JobKind =
   | "generation"
+  /**
+   * Three-pass drafting (PRD-wepatent FR-4a, PRD-lex §10 FR-4a). Pass 1
+   * authors the application draft plus the illustrations brief; the figures
+   * stage chains automatically from Pass 1 completion; Pass 2 re-drafts for
+   * enablement against the composed figures. Each pass is its own durable
+   * job so metering, caps, and idempotent retry are per pass.
+   */
+  | "draft_pass_1"
+  | "draft_pass_2"
   | "source_scan"
   | "source_extraction"
   | "source_interpretation"
   | "distillation"
-  | "export_render";
+  | "export_render"
+  /**
+   * Patent figures. `figure_plan` runs the whole plan → generate → compose
+   * → validate → attach pipeline as one durable job; the three finer-grained
+   * kinds are reserved in the database (migration 0012) for a future split
+   * and have no executor yet, so enqueueing one is refused rather than
+   * silently dropped.
+   */
+  | "figure_plan"
+  | "figure_generate"
+  | "figure_compose"
+  | "figure_validate";
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export interface JobRecord {
@@ -632,6 +667,203 @@ export interface EnablementCoverageRecord {
 /* Ports                                                                */
 /* ------------------------------------------------------------------ */
 
+
+/* ------------------------------------------------------------------ */
+/* Three-pass drafting (PRD-wepatent FR-4a / PRD-lex FR-4a)             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Mirrors `public.draft_pass_state` and the shared state machine in
+ * `src/lib/shared/drafting/pass-state.ts`. The database enum is lower_snake;
+ * the domain uses SCREAMING_SNAKE. `toDbPassState` / `fromDbPassState` in the
+ * production adapter are the only place the two representations meet.
+ */
+export type DraftSetStateValue =
+  | "PASS_1_DRAFTING"
+  | "FIGURES_PENDING"
+  | "FIGURES_READY"
+  | "PASS_2_REVISING"
+  | "READY_FOR_REVIEW"
+  | "NEEDS_INPUT"
+  | "PAUSED_BUDGET"
+  | "FAILED";
+
+export type DraftSetStageValue =
+  | "PASS_1_DRAFTING"
+  | "FIGURES_PENDING"
+  | "FIGURES_READY"
+  | "PASS_2_REVISING";
+
+export interface DraftSetRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  state: DraftSetStateValue;
+  /** Non-null exactly when the state is NEEDS_INPUT or PAUSED_BUDGET. */
+  interruptedStage: DraftSetStageValue | null;
+  /** Both versions stay inspectable; Pass 2 is never an in-place mutation. */
+  passOneVersionId: Id | null;
+  passTwoVersionId: Id | null;
+  figureSetId: Id | null;
+  /** The Pass-1 illustrations brief, validated against the shared schema. */
+  illustrationsBrief: unknown;
+  briefVersion: string;
+  /** The two-way §608.02 report. Null until Pass 2 runs. */
+  reconciliation: unknown;
+  reconciled: boolean;
+  reconciliationVersion: string;
+  /** Verbatim customer-facing pause/failure reason. Never a generic string. */
+  statusDetail: string;
+  /** The platform can never write these — a person must act. */
+  acceptedByUserId: Id | null;
+  acceptedAt: string | null;
+  passOneReservationId: Id | null;
+  passTwoReservationId: Id | null;
+  passOneChargeCents: number;
+  passTwoChargeCents: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DraftSetTransitionRecord {
+  id: Id;
+  organizationId: Id;
+  draftSetId: Id;
+  fromState: DraftSetStateValue | null;
+  toState: DraftSetStateValue;
+  /** "system" for an automatic chain step, or the acting user id. */
+  actor: string;
+  reason: string;
+  createdAt: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Patent figures (spec §4)                                             */
+/* ------------------------------------------------------------------ */
+
+export type FigureSetStateValue =
+  | "planning"
+  | "generating"
+  | "composing"
+  | "validating"
+  | "ready"
+  | "needs_input"
+  | "paused_budget"
+  | "failed";
+
+export type FigureStateValue =
+  | "planned"
+  | "generated"
+  | "composed"
+  | "ready"
+  | "needs_input"
+  | "needs_human_review"
+  | "failed";
+
+/** AI writes arrive only as `ai_proposed` (invariant 1). */
+export type FigureAiState = "ai_proposed" | "user_confirmed" | "user_edited";
+
+export interface FigureSetRecord {
+  id: Id;
+  organizationId: Id;
+  inventionId: Id;
+  draftVersionId: Id | null;
+  state: FigureSetStateValue;
+  sheetSize: "a4" | "letter";
+  orientationPolicy: "portrait_preferred" | "landscape_allowed";
+  rulesVersion: string;
+  plannerVersion: string;
+  composerVersion: string;
+  modelId: string | null;
+  promptTemplateVersion: string | null;
+  /** Content hash of every planner input; an unchanged draft is a no-op. */
+  inputHash: string;
+  totalCostCents: number;
+  totalProviderCostCents: number;
+  aiState: FigureAiState;
+  /** Honest failure/pause reason, surfaced to the user verbatim. */
+  statusDetail: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FigureRecord {
+  id: Id;
+  organizationId: Id;
+  figureSetId: Id;
+  figureNumber: number;
+  partialSuffix: string | null;
+  viewType: string;
+  title: string;
+  isPriorArt: boolean;
+  subjectRef: string;
+  sourceKind: string;
+  generationPrompt: string | null;
+  briefDescription: string;
+  sectionOf: number | null;
+  state: FigureStateValue;
+  needsInputQuestion: string | null;
+  needsInputMissing: string | null;
+  aiState: FigureAiState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The registry row that makes cross-view numeral consistency mechanical. */
+export interface FigureNumeralRecord {
+  id: Id;
+  organizationId: Id;
+  figureSetId: Id;
+  numeral: string;
+  partLabel: string;
+  componentId: Id | null;
+  firstAssignedFigureId: Id | null;
+  createdAt: string;
+}
+
+export interface FigureAnnotationRecord {
+  id: Id;
+  organizationId: Id;
+  figureId: Id;
+  numeral: string;
+  anchorX: number;
+  anchorY: number;
+  labelX: number;
+  labelY: number;
+  leadLinePath: Array<{ x: number; y: number }>;
+  underlined: boolean;
+  placedBy: "auto" | "user";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FigureSheetRecord {
+  id: Id;
+  organizationId: Id;
+  figureSetId: Id;
+  sheetNumber: number;
+  totalSheets: number;
+  orientation: "portrait" | "landscape";
+  contentType: string;
+  storagePath: string;
+  checksumSha256: string;
+  byteSize: number;
+  createdAt: string;
+}
+
+/** Append-only evidence of one rule run against one composed output. */
+export interface FigureValidationRecord {
+  id: Id;
+  organizationId: Id;
+  figureSetId: Id;
+  figureId: Id | null;
+  ruleId: string;
+  status: "pass" | "fail" | "not_applicable" | "needs_human_review";
+  detail: string;
+  rulesVersion: string;
+  createdAt: string;
+}
+
 export interface DataPort {
   // Users and auth-adjacent lookups
   getUserById(id: Id): Promise<UserRecord | null>;
@@ -641,6 +873,12 @@ export interface DataPort {
   // Organizations and memberships
   createOrganization(input: { name: string; ownerUserId: Id }): Promise<OrganizationRecord>;
   getOrganizationById(id: Id): Promise<OrganizationRecord | null>;
+  /**
+   * Renames the organization. The first organization is auto-created with a
+   * placeholder name on first sign-in, so renaming is an ordinary (audited,
+   * `org.manage`-gated) Settings action rather than an onboarding step.
+   */
+  updateOrganizationName(organizationId: Id, name: string): Promise<OrganizationRecord | null>;
   getMembershipsForUser(userId: Id): Promise<MembershipRecord[]>;
   getMembershipsForOrganization(organizationId: Id): Promise<MembershipRecord[]>;
 
@@ -947,6 +1185,114 @@ export interface DataPort {
   getStripeCustomerId(organizationId: Id): Promise<string | null>;
   setStripeCustomerId(organizationId: Id, stripeCustomerId: string): Promise<void>;
 
+  /* --------------------- three-pass drafting ------------------------ */
+  createDraftSet(
+    input: Omit<DraftSetRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<DraftSetRecord>;
+  getDraftSet(organizationId: Id, draftSetId: Id): Promise<DraftSetRecord | null>;
+  listDraftSets(organizationId: Id, inventionId: Id): Promise<DraftSetRecord[]>;
+  /** The one non-terminal set for an invention, when there is one. */
+  getActiveDraftSet(organizationId: Id, inventionId: Id): Promise<DraftSetRecord | null>;
+  updateDraftSet(
+    organizationId: Id,
+    draftSetId: Id,
+    patch: Partial<
+      Pick<
+        DraftSetRecord,
+        | "state"
+        | "interruptedStage"
+        | "passOneVersionId"
+        | "passTwoVersionId"
+        | "figureSetId"
+        | "illustrationsBrief"
+        | "briefVersion"
+        | "reconciliation"
+        | "reconciled"
+        | "reconciliationVersion"
+        | "statusDetail"
+        | "acceptedByUserId"
+        | "acceptedAt"
+        | "passOneReservationId"
+        | "passTwoReservationId"
+        | "passOneChargeCents"
+        | "passTwoChargeCents"
+      >
+    >,
+  ): Promise<DraftSetRecord | null>;
+  appendDraftSetTransition(
+    input: Omit<DraftSetTransitionRecord, "id" | "createdAt">,
+  ): Promise<DraftSetTransitionRecord>;
+  listDraftSetTransitions(
+    organizationId: Id,
+    draftSetId: Id,
+  ): Promise<DraftSetTransitionRecord[]>;
+
+  /* ------------------------- patent figures ------------------------- */
+  createFigureSet(
+    input: Omit<FigureSetRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<FigureSetRecord>;
+  getFigureSet(organizationId: Id, figureSetId: Id): Promise<FigureSetRecord | null>;
+  listFigureSets(organizationId: Id, inventionId: Id): Promise<FigureSetRecord[]>;
+  updateFigureSet(
+    organizationId: Id,
+    figureSetId: Id,
+    patch: Partial<
+      Pick<
+        FigureSetRecord,
+        | "state"
+        | "aiState"
+        | "statusDetail"
+        | "totalCostCents"
+        | "totalProviderCostCents"
+        | "composerVersion"
+        | "modelId"
+        | "promptTemplateVersion"
+      >
+    >,
+  ): Promise<FigureSetRecord | null>;
+
+  createFigure(
+    input: Omit<FigureRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<FigureRecord>;
+  listFigures(organizationId: Id, figureSetId: Id): Promise<FigureRecord[]>;
+  getFigure(organizationId: Id, figureId: Id): Promise<FigureRecord | null>;
+  updateFigure(
+    organizationId: Id,
+    figureId: Id,
+    patch: Partial<Pick<FigureRecord, "title" | "state" | "aiState" | "isPriorArt">>,
+  ): Promise<FigureRecord | null>;
+
+  createFigureNumeral(
+    input: Omit<FigureNumeralRecord, "id" | "createdAt">,
+  ): Promise<FigureNumeralRecord>;
+  listFigureNumerals(organizationId: Id, figureSetId: Id): Promise<FigureNumeralRecord[]>;
+  /**
+   * Rename a part. Views store only the numeral, so this single row edit
+   * propagates to every view at once — the payoff of the registry design.
+   */
+  updateFigureNumeralLabel(
+    organizationId: Id,
+    numeralId: Id,
+    partLabel: string,
+  ): Promise<FigureNumeralRecord | null>;
+
+  replaceFigureAnnotations(
+    organizationId: Id,
+    figureId: Id,
+    annotations: Array<Omit<FigureAnnotationRecord, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<FigureAnnotationRecord[]>;
+  listFigureAnnotations(organizationId: Id, figureId: Id): Promise<FigureAnnotationRecord[]>;
+
+  appendFigureSheet(
+    input: Omit<FigureSheetRecord, "id" | "createdAt">,
+  ): Promise<FigureSheetRecord>;
+  listFigureSheets(organizationId: Id, figureSetId: Id): Promise<FigureSheetRecord[]>;
+
+  appendFigureValidations(
+    rows: Array<Omit<FigureValidationRecord, "id" | "createdAt">>,
+  ): Promise<FigureValidationRecord[]>;
+  listFigureValidations(organizationId: Id, figureSetId: Id): Promise<FigureValidationRecord[]>;
+
   // Audit
   appendAuditEvent(input: Omit<AuditEventRecord, "id" | "createdAt">): Promise<AuditEventRecord>;
   listAuditEvents(organizationId: Id): Promise<AuditEventRecord[]>;
@@ -1181,6 +1527,50 @@ export interface ModelTranscriptionResult {
   providerCostCents: number;
 }
 
+/* -------------- Patent figures: Layer-1 line art (spec §5) --------------- */
+
+/**
+ * One Layer-1 line-art request. `prompt` is already assembled by the
+ * versioned template in `server/figures/gemini-contract.ts`; the subject
+ * text inside it is untrusted EVIDENCE and the template carries the
+ * injection boundary.
+ */
+export interface ModelLineArtRequest {
+  modelId: string;
+  prompt: string;
+  subject: string;
+  viewType: string;
+  /** Uploaded photo/sketch used as a conditioning reference (highest fidelity). */
+  referenceImageBytes?: Uint8Array;
+  referenceImageMimeType?: string;
+}
+
+/**
+ * Three honest outcomes, never a fourth that fakes success:
+ * - `ok`     — a clean image that passed raster hygiene;
+ * - `refused`— the model declined; nothing billed, no drawing invented;
+ * - `rejected` — images came back but violated the hygiene gate (color,
+ *   greyscale, solid black, or DETECTED TEXT). We still paid for them, so
+ *   the cost is reported rather than hidden.
+ */
+export type ModelLineArtResult =
+  | {
+      status: "ok";
+      imageBytes: Uint8Array;
+      mimeType: string;
+      billedImages: number;
+      providerCostCents: number;
+      modelId: string;
+      promptTemplateVersion: string;
+    }
+  | { status: "refused"; reason: string; providerCostCents: number; billedImages: number }
+  | {
+      status: "rejected";
+      violations: string[];
+      billedImages: number;
+      providerCostCents: number;
+    };
+
 export interface ModelGatewayPort {
   generate(request: ModelGenerationRequest): Promise<ModelGenerationResult>;
   /** Intake Studio per-source interpretation pass (FR-INT-3). */
@@ -1195,11 +1585,39 @@ export interface ModelGatewayPort {
   ): Promise<ModelTurnExtractionResult>;
   /** Audio transcription through the server-side gateway (M3, metered). */
   transcribe(request: ModelTranscriptionRequest): Promise<ModelTranscriptionResult>;
+  /**
+   * Layer-1 patent line art. Throws `provider_not_configured` when the
+   * image provider is disabled or unkeyed — callers must treat that as an
+   * honest "unavailable", never as a reason to emit a drawing anyway.
+   */
+  generateLineArt(request: ModelLineArtRequest): Promise<ModelLineArtResult>;
+  /** Whether line-art generation can run at all right now (both gates open). */
+  lineArtAvailable(): boolean;
 }
 
 export type CheckoutRequest =
   | { kind: "wallet_top_up"; amountCents: number }
   | { kind: "subscription"; planId: string };
+
+/** A card Stripe has on file for the organization's customer. */
+export type SavedPaymentMethod = {
+  id: string;
+  brand: string | null;
+  last4: string | null;
+};
+
+/**
+ * Result of an off-session (one-click) top-up PaymentIntent.
+ *
+ * `succeeded` does NOT credit the wallet — the `payment_intent.succeeded`
+ * webhook does, through the same verify → dedupe → outbox → ledger pipeline
+ * as Checkout. `requires_action` is the honest SCA outcome: the customer
+ * must authenticate, so the UI offers Checkout rather than pretending.
+ */
+export type OffSessionTopUpResult =
+  | { status: "succeeded"; paymentIntentId: string }
+  | { status: "requires_action"; paymentIntentId: string | null }
+  | { status: "failed"; reason: string };
 
 export interface BillingPort {
   /**
@@ -1212,6 +1630,21 @@ export interface BillingPort {
     request: CheckoutRequest,
   ): Promise<{ url: string }>;
   createPortalSession(organizationId: Id): Promise<{ url: string }>;
+  /**
+   * The customer's default/saved card, or null when there is none (first
+   * top-up, or the customer never saved one). Drives whether the one-click
+   * top-up button is offered at all.
+   */
+  getDefaultPaymentMethod(organizationId: Id): Promise<SavedPaymentMethod | null>;
+  /**
+   * One-click top-up: create + confirm an off-session PaymentIntent against
+   * the saved payment method. `idempotencyKey` is passed to Stripe so a
+   * retried request can never charge twice.
+   */
+  createOffSessionTopUp(
+    organizationId: Id,
+    input: { amountCents: number; idempotencyKey: string },
+  ): Promise<OffSessionTopUpResult>;
 }
 
 /**

@@ -217,6 +217,21 @@ export function buildExportSections(input: {
     sections.push({ heading: "Enablement coverage report (record coverage, not a legal opinion)", lines });
   }
 
+  // Patent figures: the Brief Description text and the honest status of the
+  // formality checks travel with the package (spec §4, §9).
+  if ((manifest.figureCount ?? 0) > 0 || (manifest.figureSheetCount ?? 0) > 0) {
+    const lines: string[] = [
+      `${manifest.figureCount ?? 0} figures on ${manifest.figureSheetCount ?? 0} drawing sheets.`,
+      `Formality checks (${manifest.figureRulesVersion ?? "unversioned"}): ${manifest.figureValidationStatus ?? "not run"}.`,
+      "These are MECHANICAL formality checks against published formal drawing requirements. They are not a legal opinion and not a guarantee that the USPTO will accept these drawings.",
+      "No figure in this package is filing-ready.",
+      "",
+      "Brief Description of the Drawings:",
+      ...(manifest.figureBriefDescription ?? []),
+    ];
+    sections.push({ heading: "Drawings (working draft — counsel review required)", lines });
+  }
+
   if (draftVersion) {
     sections.push({
       heading: `${DRAFT_LABEL} (v${draftVersion.version}, ${draftVersion.modelId})`,

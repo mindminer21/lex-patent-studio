@@ -72,10 +72,23 @@ test("studio journey: chooser → uploads → interpret → distill → ledger C
   await expect(page.getByText("Working draft — counsel review required").first()).toBeVisible();
 
   // --- Upload breadth through the FR-4 pipeline (FR-INT-2) ----------------
+  // Design rule (minimal human input): Kind + Note are collapsed behind an
+  // optional disclosure and the kind is derived from the file class, so
+  // choosing a file is the whole interaction (friction audit #6).
+  const uploadDetails = page.getByTestId("upload-details").first();
+  await expect(uploadDetails).toBeVisible();
+  await expect(uploadDetails).not.toHaveAttribute("open", /.*/);
+  await expect(page.locator("#upload-kind")).toBeHidden();
+  await expect(page.locator("#upload-note")).toBeHidden();
+
   await uploadFile(page, { name: "memo.md", mimeType: "text/markdown", buffer: Buffer.from(MEMO_MD) });
+  // The derived kind is stated back to the user, never silently applied.
+  await expect(page.getByTestId("upload-message")).toContainText("as document");
   await uploadFile(page, { name: "bench-report.pdf", mimeType: "application/pdf", buffer: PDF_BYTES });
   await uploadFile(page, { name: "photo.png", mimeType: "image/png", buffer: PNG_BYTES });
+  await expect(page.getByTestId("upload-message")).toContainText("as image");
   await uploadFile(page, { name: "bracket.stl", mimeType: "application/octet-stream", buffer: STL_BYTES });
+  await expect(page.getByTestId("upload-message")).toContainText("as model");
 
   // Scan + extraction jobs drain in-process; poll until all four cleared.
   await expect
@@ -298,6 +311,33 @@ test("path chooser + studio pages pass axe and stay responsive at 320px", async 
 
   await page.getByRole("button", { name: "Create record and upload files" }).click();
   await page.waitForURL(/\/studio$/);
+
+  // Changed surfaces carry their own a11y gate: the studio's collapsed
+  // "Add details" upload disclosure and the export page's "Customize
+  // sections" disclosure (both native <details>/<summary>, keyboard
+  // operable, closed by default).
+  const studioUrl = page.url();
+  const axeStudio = await new AxeBuilder({ page }).analyze();
+  expect(
+    axeStudio.violations
+      .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
+      .map((violation) => violation.id),
+  ).toEqual([]);
+  await page.getByTestId("upload-details").first().locator("summary").click();
+  await expect(page.locator("#upload-kind")).toBeVisible();
+  await page.locator("#upload-kind").focus();
+  await expect(page.locator("#upload-kind")).toBeFocused();
+
+  await page.goto(`${studioUrl.replace(/\/studio$/, "")}/export`);
+  await page.getByTestId("customize-sections").locator("summary").click();
+  await expect(page.getByRole("checkbox", { name: "Facts" })).toBeVisible();
+  const axeExport = await new AxeBuilder({ page }).analyze();
+  expect(
+    axeExport.violations
+      .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
+      .map((violation) => violation.id),
+  ).toEqual([]);
+  await page.goto(studioUrl);
 
   for (const viewport of [
     { width: 320, height: 720 },

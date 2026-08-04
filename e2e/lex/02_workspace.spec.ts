@@ -35,7 +35,10 @@ test("matter workspace: composer contract fields and tier floor label", async ({
   await expect(composer.getByLabel(/Deliverable type/)).toBeVisible();
   await expect(composer).toContainText("Estimated charge range");
   await expect(composer).toContainText("platform policy, not demotable");
-  await expect(composer).toContainText("provider cost × 1.50");
+  // The rate follows the TASK, not the model (Jeff's directive, 2026-08-04):
+  // section_draft is a generation workflow, so the composer quotes 2.0.
+  await expect(composer).toContainText("provider cost × 2.0");
+  await expect(composer).toContainText("generation");
 });
 
 test("every §8.2 matter tab renders its surface", async ({ page }) => {

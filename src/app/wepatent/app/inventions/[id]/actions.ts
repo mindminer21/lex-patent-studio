@@ -247,6 +247,58 @@ export async function createExportAction(formData: FormData): Promise<void> {
 }
 
 /**
+ * Start the three-pass drafting flow (Jeff's directive, 2026-08-04).
+ *
+ * One action, zero further user steps: Pass 1 authors the draft and the
+ * illustrations brief, the figures chain from the brief, and Pass 2 revises
+ * against the figures actually produced.
+ */
+export async function startThreePassDraftAction(formData: FormData): Promise<void> {
+  const context = await requireOnboarded();
+  if (!can(context.membership.role, "draft.generate")) {
+    redirect("/wepatent/app?error=forbidden");
+  }
+  const inventionId = String(formData.get("inventionId") ?? "");
+  const tierId = String(formData.get("tierId") ?? "standard");
+  const { startDraftSet } = await import("@/lib/server/services/draft-passes");
+  const result = await startDraftSet({
+    organizationId: context.organization.id,
+    userId: context.user.id,
+    recordId: inventionId,
+    product: "wepatent",
+    tierId,
+    idempotencyKey: `startset:${inventionId}`,
+  });
+  redirect(
+    `/wepatent/app/inventions/${inventionId}/drafts${
+      result.ok ? "" : `?error=${result.error}`
+    }`,
+  );
+}
+
+/**
+ * A PERSON accepts the completed set for delivery. Nothing exports until
+ * this has happened — the platform cannot accept on the user's behalf.
+ */
+export async function acceptDraftSetAction(formData: FormData): Promise<void> {
+  const context = await requireOnboarded();
+  if (!can(context.membership.role, "export.create")) {
+    redirect("/wepatent/app?error=forbidden");
+  }
+  const inventionId = String(formData.get("inventionId") ?? "");
+  const draftSetId = String(formData.get("draftSetId") ?? "");
+  const { acceptDraftSet } = await import("@/lib/server/services/draft-passes");
+  const result = await acceptDraftSet({
+    organizationId: context.organization.id,
+    userId: context.user.id,
+    draftSetId,
+  });
+  redirect(
+    `/wepatent/app/inventions/${inventionId}/drafts${result.ok ? "?accepted=1" : "?error=not_ready"}`,
+  );
+}
+
+/**
  * FR-3 soft deletion: the record leaves active lists immediately and is
  * permanently purged after the organization's retention window (see
  * Settings → Retention & deletion).

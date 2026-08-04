@@ -3,8 +3,22 @@ import {
   estimateAudioDurationSeconds,
   transcriptionProviderCostCents,
 } from "@/lib/wepatent/domain/av";
+import {
+  DEFAULT_BILLING_CATEGORY,
+  markupMultiplierFor,
+  type BillingCategory,
+} from "@/lib/wepatent/domain/markup";
 import type { ModelRate } from "@/lib/wepatent/domain/usage";
+import {
+  GEMINI_ALT_IMAGE_MODEL_ID,
+  GEMINI_IMAGE_MODEL_ID,
+  IMAGE_MODEL_REGISTRY,
+} from "@/lib/server/figures/image-models";
+import { ModelGatewayError } from "./gateway-error";
+import { GeminiImageAdapter } from "./gemini-image";
 import type {
+  ModelLineArtRequest,
+  ModelLineArtResult,
   ModelDistillationRequest,
   ModelDistillationResult,
   ModelGatewayPort,
@@ -42,7 +56,7 @@ import type {
  * provisions provider accounts and sets the API-key environment variables.
  */
 
-export type Provider = "openai" | "anthropic" | "xai";
+export type Provider = "openai" | "anthropic" | "xai" | "google";
 
 export type ProviderRateEntry = {
   provider: Provider;
@@ -51,18 +65,40 @@ export type ProviderRateEntry = {
   /** ISO date this rate becomes effective. */
   effectiveFrom: string;
   rate: ModelRate;
+  /**
+   * FALLBACK category for this entry, used only when a caller charges
+   * against the model without naming the task it performed.
+   *
+   * Since 2026-08-04 the multiplier is decided by TASK TYPE, not by model:
+   * the same gpt-4.1 entry bills at 2.0 when it drafts an application and
+   * 1.5 when it classifies an office action. Callers therefore pass the
+   * task category explicitly (see `src/lib/shared/billing/task-category.ts`)
+   * and this field only catches the uncategorised path — where it
+   * deliberately resolves to `analysis` (1.5), never the higher rate.
+   *
+   * The image entry is the one case where the model itself can only ever do
+   * one kind of task, so its fallback is `generation`.
+   */
+  billingCategory?: BillingCategory;
 };
 
 /**
  * Effective-dated provider price registry (FR-5/FR-6). These are
  * implementation defaults for test-mode use; changing live pricing or
  * markup requires Jeff's explicit approval (PRD FR-6).
+ *
+ * Retail markup is NOT a property of the model. It is resolved from the
+ * TASK the call performed (Jeff's directive, 2026-08-04): generation 2.0,
+ * analysis 1.5. `markupMultiplierForEntry(entry, taskCategory)` takes the
+ * task category from the caller; the entry's own `billingCategory` is only
+ * the fallback for an uncategorised charge.
  */
 export const PROVIDER_PRICE_REGISTRY: readonly ProviderRateEntry[] = [
   {
     provider: "openai",
     modelId: "gpt-4.1",
     effectiveFrom: "2026-07-01",
+    billingCategory: "analysis",
     rate: {
       rateVersion: "2026-07-01.openai.gpt-4.1",
       inputCentsPerMillionTokens: 200,
@@ -73,6 +109,7 @@ export const PROVIDER_PRICE_REGISTRY: readonly ProviderRateEntry[] = [
     provider: "anthropic",
     modelId: "claude-sonnet-4-5",
     effectiveFrom: "2026-07-01",
+    billingCategory: "analysis",
     rate: {
       rateVersion: "2026-07-01.anthropic.claude-sonnet-4-5",
       inputCentsPerMillionTokens: 300,
@@ -83,6 +120,7 @@ export const PROVIDER_PRICE_REGISTRY: readonly ProviderRateEntry[] = [
     provider: "anthropic",
     modelId: "claude-opus-4-1",
     effectiveFrom: "2026-07-01",
+    billingCategory: "analysis",
     rate: {
       rateVersion: "2026-07-01.anthropic.claude-opus-4-1",
       inputCentsPerMillionTokens: 1500,
@@ -93,13 +131,95 @@ export const PROVIDER_PRICE_REGISTRY: readonly ProviderRateEntry[] = [
     provider: "xai",
     modelId: "grok-4",
     effectiveFrom: "2026-07-01",
+    billingCategory: "analysis",
     rate: {
       rateVersion: "2026-07-01.xai.grok-4",
       inputCentsPerMillionTokens: 300,
       outputCentsPerMillionTokens: 1500,
     },
   },
+  /**
+   * Nano Banana 2 (Gemini 3 Pro Image) — Layer-1 patent line art.
+   *
+   * Priced PER IMAGE, not per token: 24c provider cost per generated image
+   * (Google's published Gemini 3 Pro Image rate at implementation time,
+   * 2026-08-04; re-check before enabling live traffic). Token fields are 0
+   * because the prompt tokens are not separately billed on this endpoint.
+   *
+   * Image generation is always a generation task ⇒ retail multiplier 2.0.
+   * Customer-facing: 24c × 2.0 = 48c per accepted image.
+   *
+   * DISABLED BY DEFAULT: the entry existing does not enable traffic. The
+   * adapter refuses unless FIGURES_GEMINI_ENABLED=1 and GEMINI_API_KEY are
+   * both set (see `docs/PATENT-FIGURES.md`).
+   */
+  {
+    provider: "google",
+    modelId: GEMINI_IMAGE_MODEL_ID,
+    effectiveFrom: "2026-08-01",
+    billingCategory: "generation",
+    rate: {
+      rateVersion: "2026-08-01.google.gemini-3-pro-image",
+      inputCentsPerMillionTokens: 0,
+      outputCentsPerMillionTokens: 0,
+      perImageCents: 24,
+    },
+  },
+  /**
+   * The selectable ALTERNATIVE image model (FIGURES_IMAGE_MODEL).
+   *
+   * Its own effective-dated entry, so switching the config re-prices
+   * honestly instead of billing one model's rate for another's work. Same
+   * `generation` category and therefore the same 2.0 multiplier — the
+   * multiplier is a property of the task, not the model.
+   *
+   * 4c provider cost per image (Google's published Gemini 2.5 Flash Image
+   * rate at implementation time, 2026-08-04; re-check before enabling live
+   * traffic). Customer-facing: 4c x 2.0 = 8c per accepted image.
+   *
+   * Listing it does NOT select it and does NOT claim it draws better — we
+   * have no comparison yet (docs/PATENT-FIGURES.md).
+   */
+  {
+    provider: "google",
+    modelId: GEMINI_ALT_IMAGE_MODEL_ID,
+    effectiveFrom: "2026-08-01",
+    billingCategory: "generation",
+    rate: {
+      rateVersion: "2026-08-01.google.gemini-2.5-flash-image",
+      inputCentsPerMillionTokens: 0,
+      outputCentsPerMillionTokens: 0,
+      perImageCents: 4,
+    },
+  },
 ];
+
+/**
+ * Every image model in the registry is priced. Asserted in tests: an entry
+ * that can be selected but not priced would spend without a rate version.
+ */
+export function unpricedImageModels(): string[] {
+  return IMAGE_MODEL_REGISTRY.filter(
+    (model) => !PROVIDER_PRICE_REGISTRY.some((entry) => entry.modelId === model.id),
+  ).map((model) => model.id);
+}
+
+/**
+ * The retail multiplier for a charge (FR-6).
+ *
+ * `taskCategory` is what the model call PRODUCED and is the deciding input.
+ * The registry entry is consulted only when the caller has no task category
+ * to give, which resolves to the platform default (1.5) rather than the
+ * higher rate — an uncategorised charge is never marked up more than it
+ * would have been before the task-type rule existed.
+ */
+export function markupMultiplierForEntry(
+  entry: ProviderRateEntry,
+  taskCategory?: BillingCategory | null,
+): number {
+  if (taskCategory) return markupMultiplierFor(taskCategory);
+  return markupMultiplierFor(entry.billingCategory ?? DEFAULT_BILLING_CATEGORY);
+}
 
 /** Latest entry effective on or before `at` for a provider model. */
 export function resolveProviderRate(
@@ -113,34 +233,8 @@ export function resolveProviderRate(
   return candidates[candidates.length - 1] ?? null;
 }
 
-export type GatewayErrorCode =
-  | "gateway_disabled"
-  | "circuit_open"
-  | "provider_not_configured"
-  | "model_not_registered"
-  | "cost_cap_exceeded"
-  | "provider_timeout"
-  | "provider_error"
-  | "invalid_provider_response";
-
-/**
- * Stable, safe-by-construction gateway error. `message` is only ever the
- * code; anything provider-supplied lives in `internalDetail`, which route
- * handlers must never serialize to the browser (PRD FR-5).
- */
-export class ModelGatewayError extends Error {
-  readonly code: GatewayErrorCode;
-  readonly internalDetail: string;
-  readonly retryable: boolean;
-
-  constructor(code: GatewayErrorCode, internalDetail = "", retryable = false) {
-    super(code);
-    this.name = "ModelGatewayError";
-    this.code = code;
-    this.internalDetail = internalDetail;
-    this.retryable = retryable;
-  }
-}
+// Re-exported for callers that have always imported them from here.
+export { ModelGatewayError, type GatewayErrorCode } from "./gateway-error";
 
 const openAiStyleResponse = z.object({
   choices: z
@@ -164,6 +258,13 @@ export type ProviderKeys = {
   openai?: string;
   anthropic?: string;
   xai?: string;
+  /**
+   * Google Gemini. Present in the key map so the gateway can report
+   * `provider_not_configured` honestly; the image path lives in the
+   * dedicated Gemini adapter and is additionally gated by an explicit
+   * enable flag (see adapters/production/gemini-image.ts).
+   */
+  google?: string;
 };
 
 export type ProviderModelGatewayOptions = {
@@ -185,6 +286,19 @@ export type ProviderModelGatewayOptions = {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   registry?: readonly ProviderRateEntry[];
+  /**
+   * Layer-1 image generation (Nano Banana 2). Absent or `enabled: false`
+   * means line-art generation is unavailable and the pipeline says so
+   * honestly instead of drawing something.
+   */
+  gemini?: {
+    enabled: boolean;
+    apiKey?: string;
+    fetchImpl?: typeof fetch;
+    timeoutMs?: number;
+    maxHygieneAttempts?: number;
+    baseUrl?: string;
+  };
 };
 
 const SYSTEM_INSTRUCTION = [
@@ -383,7 +497,7 @@ type BreakerState = { consecutiveFailures: number; openedAt: number | null };
 
 export class ProviderModelGateway implements ModelGatewayPort {
   private readonly options: Required<
-    Omit<ProviderModelGatewayOptions, "keys" | "fetchImpl" | "registry">
+    Omit<ProviderModelGatewayOptions, "keys" | "fetchImpl" | "registry" | "gemini">
   > & {
     keys: ProviderKeys;
     fetchImpl: typeof fetch;
@@ -391,6 +505,9 @@ export class ProviderModelGateway implements ModelGatewayPort {
   };
 
   private readonly breakers = new Map<Provider, BreakerState>();
+
+  /** Layer-1 line art. Null when the provider is disabled or unkeyed. */
+  private readonly geminiImage: GeminiImageAdapter | null;
 
   constructor(options: ProviderModelGatewayOptions) {
     this.options = {
@@ -406,6 +523,43 @@ export class ProviderModelGateway implements ModelGatewayPort {
       sleep: options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
       registry: options.registry ?? PROVIDER_PRICE_REGISTRY,
     };
+
+    const imageEntry = (options.registry ?? PROVIDER_PRICE_REGISTRY).find(
+      (entry) => entry.modelId === GEMINI_IMAGE_MODEL_ID,
+    );
+    this.geminiImage = options.gemini
+      ? new GeminiImageAdapter({
+          enabled: options.gemini.enabled,
+          apiKey: options.gemini.apiKey,
+          fetchImpl: options.gemini.fetchImpl ?? options.fetchImpl,
+          timeoutMs: options.gemini.timeoutMs,
+          maxHygieneAttempts: options.gemini.maxHygieneAttempts,
+          baseUrl: options.gemini.baseUrl,
+          killSwitch: options.killSwitch ?? false,
+          perImageCents: imageEntry?.rate.perImageCents ?? 0,
+          now: options.now,
+          sleep: options.sleep,
+        })
+      : null;
+  }
+
+  /**
+   * Layer-1 patent line art (spec §5 Stage 2). Refuses loudly when the
+   * provider is disabled or unkeyed — the caller must surface that as
+   * "line art unavailable", never substitute a drawing.
+   */
+  async generateLineArt(request: ModelLineArtRequest): Promise<ModelLineArtResult> {
+    if (!this.geminiImage) {
+      throw new ModelGatewayError(
+        "provider_not_configured",
+        "the image provider is not configured; line-art generation is disabled by default",
+      );
+    }
+    return this.geminiImage.generateLineArt(request);
+  }
+
+  lineArtAvailable(): boolean {
+    return this.geminiImage?.available ?? false;
   }
 
   async generate(request: ModelGenerationRequest): Promise<ModelGenerationResult> {
@@ -999,6 +1153,14 @@ export class ProviderModelGateway implements ModelGatewayPort {
             messages: [{ role: "user", content: prompt }],
           },
         };
+      case "google":
+        // Google is registered for IMAGE generation only. There is no text
+        // path here, and silently routing text to it would be worse than a
+        // clear refusal.
+        throw new ModelGatewayError(
+          "provider_not_configured",
+          "google is registered for image generation only; it has no text-completion route",
+        );
       case "openai":
       case "xai": {
         const url =

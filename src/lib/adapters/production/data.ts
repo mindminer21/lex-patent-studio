@@ -2,6 +2,13 @@ import type { Pool } from "pg";
 import type { ActorContext, DataAdapter, Result } from "@/lib/adapters/types";
 import { applyReviewDecision, exportWatermark, type ReviewDecision } from "@/lib/domain/review";
 import { can, canInvokeWorkflow, type Role } from "@/lib/domain/roles";
+import { effectiveTier } from "@/lib/domain/tiers";
+import {
+  evaluateLexDelivery,
+  type LexDraftSet,
+  type LexDraftSetTransition,
+} from "@/lib/domain/lex-draft-passes";
+import { describeDeliveryBlockers, type DraftPassState } from "@/lib/shared/drafting";
 import { canTransitionFact } from "@/lib/domain/provenance";
 import {
   PLAYBOOK_CHAIN_GENESIS,
@@ -578,6 +585,187 @@ export class PgDataAdapter implements DataAdapter {
       createdAt: (r.created_at as Date).toISOString(),
       updatedAt: (r.updated_at as Date).toISOString(),
     };
+  }
+
+  /* ------------- three-pass drafting (shared core, Lex shape) ------------ */
+
+  /**
+   * The row → domain mapping for `draft_sets` (Lex migration 0007).
+   *
+   * The database enum is lower_snake; the shared state machine uses
+   * SCREAMING_SNAKE. The two representations meet here and nowhere else.
+   */
+  private static draftSetRow(row: Record<string, unknown>): LexDraftSet {
+    const up = (value: unknown): DraftPassState =>
+      String(value).toUpperCase() as DraftPassState;
+    return {
+      id: String(row.id),
+      organizationId: String(row.organization_id),
+      matterId: String(row.matter_id),
+      state: up(row.state),
+      interruptedStage: row.interrupted_stage
+        ? (up(row.interrupted_stage) as LexDraftSet["interruptedStage"])
+        : null,
+      tier: String(row.tier) as LexDraftSet["tier"],
+      passOneDocumentId: row.pass_1_document_version_id
+        ? String(row.pass_1_document_version_id)
+        : null,
+      passTwoDocumentId: row.pass_2_document_version_id
+        ? String(row.pass_2_document_version_id)
+        : null,
+      runId: row.run_id ? String(row.run_id) : null,
+      reviewItemId: row.review_item_id ? String(row.review_item_id) : null,
+      illustrationsBrief: (row.illustrations_brief as LexDraftSet["illustrationsBrief"]) ?? null,
+      briefVersion: String(row.brief_version ?? ""),
+      reconciliation: (row.reconciliation as LexDraftSet["reconciliation"]) ?? null,
+      reconciled: Boolean(row.reconciled),
+      reconciliationVersion: String(row.reconciliation_version ?? ""),
+      statusDetail: String(row.status_detail ?? ""),
+      acceptedByUserId: row.accepted_by ? String(row.accepted_by) : null,
+      acceptedAt: row.accepted_at ? new Date(String(row.accepted_at)).toISOString() : null,
+      passOneChargeUsd: Number(row.pass_1_charge_usd ?? 0),
+      passTwoChargeUsd: Number(row.pass_2_charge_usd ?? 0),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      updatedAt: new Date(String(row.updated_at)).toISOString(),
+    };
+  }
+
+  private static draftSetTransitionRow(
+    row: Record<string, unknown>,
+  ): LexDraftSetTransition {
+    const up = (value: unknown): DraftPassState =>
+      String(value).toUpperCase() as DraftPassState;
+    return {
+      id: String(row.id),
+      organizationId: String(row.organization_id),
+      draftSetId: String(row.draft_set_id),
+      fromState: row.from_state ? up(row.from_state) : null,
+      toState: up(row.to_state),
+      actor: String(row.actor),
+      reason: String(row.reason ?? ""),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+    };
+  }
+
+  /**
+   * Start (or resume) the three-pass flow for a matter.
+   *
+   * The partial unique index guarantees at most one non-terminal set per
+   * matter, so this is idempotent at the database level rather than by
+   * convention. Pass execution itself runs through the durable orchestrator;
+   * this creates the set and records the opening transition.
+   */
+  async startDraftSet(
+    organizationId: string,
+    matterId: string,
+    actor: ActorContext,
+  ): Promise<{ ok: true; set: LexDraftSet } | { ok: false; error: string }> {
+    const existing = await this.pool.query(
+      `select * from draft_sets
+        where organization_id = $1 and matter_id = $2
+          and state not in ('ready_for_review', 'failed')
+        order by created_at desc limit 1`,
+      [organizationId, matterId],
+    );
+    if (existing.rows[0]) {
+      return { ok: true, set: PgDataAdapter.draftSetRow(existing.rows[0]) };
+    }
+
+    const matter = await this.pool.query(
+      `select id from matters where organization_id = $1 and id = $2`,
+      [organizationId, matterId],
+    );
+    if (!matter.rows[0]) return { ok: false, error: "Matter not found." };
+
+    const inserted = await this.pool.query(
+      `insert into draft_sets (organization_id, matter_id, state, tier)
+       values ($1, $2, 'pass_1_drafting', $3) returning *`,
+      // Tier B floor for drafting; the shared clamp refuses any demotion.
+      [organizationId, matterId, effectiveTier("section_draft")],
+    );
+    await this.pool.query(
+      `insert into draft_set_transitions
+         (organization_id, draft_set_id, from_state, to_state, actor, reason)
+       values ($1, $2, null, 'pass_1_drafting', $3, $4)`,
+      [
+        organizationId,
+        inserted.rows[0].id,
+        actor.userId,
+        "Three-pass drafting started.",
+      ],
+    );
+    return { ok: true, set: PgDataAdapter.draftSetRow(inserted.rows[0]) };
+  }
+
+  async listDraftSets(organizationId: string, matterId?: string): Promise<LexDraftSet[]> {
+    const clauses = ["organization_id = $1"];
+    const params: unknown[] = [organizationId];
+    if (matterId) {
+      params.push(matterId);
+      clauses.push(`matter_id = $${params.length}`);
+    }
+    const { rows } = await this.pool.query(
+      `select * from draft_sets where ${clauses.join(" and ")} order by created_at`,
+      params,
+    );
+    return rows.map(PgDataAdapter.draftSetRow);
+  }
+
+  async getDraftSet(organizationId: string, draftSetId: string): Promise<LexDraftSet | null> {
+    const { rows } = await this.pool.query(
+      `select * from draft_sets where organization_id = $1 and id = $2`,
+      [organizationId, draftSetId],
+    );
+    return rows[0] ? PgDataAdapter.draftSetRow(rows[0]) : null;
+  }
+
+  async listDraftSetTransitions(
+    organizationId: string,
+    draftSetId: string,
+  ): Promise<LexDraftSetTransition[]> {
+    const { rows } = await this.pool.query(
+      `select * from draft_set_transitions
+        where organization_id = $1 and draft_set_id = $2 order by created_at`,
+      [organizationId, draftSetId],
+    );
+    return rows.map(PgDataAdapter.draftSetTransitionRow);
+  }
+
+  /**
+   * The responsible practitioner accepts the set.
+   *
+   * Guarded three times over: the shared delivery gate here, the
+   * `draft_sets_accept_requires_ready` CHECK constraint in the schema, and
+   * role permission at the API boundary. The platform can never accept.
+   */
+  async acceptDraftSet(
+    organizationId: string,
+    draftSetId: string,
+    actor: ActorContext,
+  ): Promise<{ ok: true; set: LexDraftSet } | { ok: false; error: string }> {
+    const set = await this.getDraftSet(organizationId, draftSetId);
+    if (!set) return { ok: false, error: "Draft set not found." };
+
+    const decision = evaluateLexDelivery(set, {
+      ready: set.reconciled ? 1 : 0,
+      unresolved: 0,
+    });
+    if (!decision.allowed) {
+      const substantive = decision.blockers.filter(
+        (blocker) => blocker.code !== "not_accepted_by_human",
+      );
+      if (substantive.length > 0) {
+        return { ok: false, error: describeDeliveryBlockers(substantive) };
+      }
+    }
+
+    const { rows } = await this.pool.query(
+      `update draft_sets set accepted_by = $3, accepted_at = now(), updated_at = now()
+        where organization_id = $1 and id = $2 returning *`,
+      [organizationId, draftSetId, actor.userId],
+    );
+    if (!rows[0]) return { ok: false, error: "Draft set not found." };
+    return { ok: true, set: PgDataAdapter.draftSetRow(rows[0]) };
   }
 
   async listReviewItems(

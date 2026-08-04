@@ -1,6 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
+import {
+  formatMultiplier,
+  markupDisclosure,
+  MARKUP_MULTIPLIERS,
+} from "@/lib/shared/billing/markup";
 import { useRouter } from "next/navigation";
 
 /**
@@ -182,7 +187,9 @@ export default function InterviewPanel({
         </p>
         <p>
           Each answered turn runs two metered AI passes (question drafting + live extraction),
-          charged at provider cost × 1.50 from your wallet. Skips, &ldquo;I don&rsquo;t
+          charged at {markupDisclosure()} from your wallet — the interview is a conversational
+          step rather than a deliverable, so both passes are analysis tasks and bill at{" "}
+          {formatMultiplier(MARKUP_MULTIPLIERS.analysis)}×. Skips, &ldquo;I don&rsquo;t
           know&rdquo;, and counsel referrals cost nothing.
         </p>
         <button

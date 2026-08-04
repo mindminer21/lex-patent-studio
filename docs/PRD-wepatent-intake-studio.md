@@ -1,8 +1,8 @@
 # wepatent Invention Intake Studio PRD
 
 **Status:** Implementation source of truth (feature PRD)
-**Version:** 1.0
-**Date:** August 2, 2026
+**Version:** 1.1
+**Date:** August 4, 2026
 **Parent document:** `PRD-wepatent.md` (this PRD extends §7.3 Invention intake, FR-4 Source management, FR-5 Model gateway; every parent invariant applies unchanged)
 **Feature name:** Invention Intake Studio — multi-modal upload interpretation + adaptive Slusky-guided invention interview
 **Entry surface:** wepatent authenticated dashboard (`/wepatent/app`)
@@ -128,6 +128,21 @@ Fixed header disclaimer on the interview surface ("wepatent collects facts about
 
 A deterministic checklist derived from § 112(a) support needs, computed per solution: problem articulated · concept (WHAT) stated · at least one complete embodiment (HOW): structure + operation · alternatives captured · parameters/ranges where the field needs them · how-to-use captured · terminology consistent. Displayed as the ledger's coverage meter with per-solution gap chips ("No operating parameters captured for Solution 2 — the interview will ask"). Labeled as **coverage of the record**, never as a legal sufficiency opinion; export includes the coverage report with the same caveat.
 
+**Feeds Pass 2 (parent FR-4a).** The three-pass drafting flow reads this model directly: Pass 2 strengthens written-description/enablement coverage for every element depicted in the figures, and any dimension the model reports as a gap is written into the draft as a **flagged open point** rather than filled with plausible text.
+
+## 6.6 Where the studio hands off to drafting (parent FR-4a)
+
+The studio's output — the P/S ledger, the component inventory, the associations, and the coverage model — is the input to the **three-pass drafting flow**, which is the canonical way a patent application draft is produced (parent PRD FR-4a):
+
+```
+PASS_1_DRAFTING → FIGURES_PENDING → FIGURES_READY → PASS_2_REVISING → READY_FOR_REVIEW
+```
+
+- **The illustrations brief is a REQUIRED Pass-1 artifact.** Pass 1 authors the ordered figure list, each figure's view type, what it must show, the parts in it, and **the reference-numeral assignments**, from the studio's component inventory and associations. Pass 1 is therefore the author of the reference-numeral registry; the figure planner **consumes** those numerals and may not invent any.
+- A component the studio has not captured cannot be numbered, so the brief asks a **targeted question** instead — the same honesty bar the planner already holds itself to (§6.4).
+- **Minimal human input (§15):** one action starts the whole flow. Pass 1 → figures → Pass 2 chain with no step in between. The only human steps are the ones the design rule explicitly preserves: the cost-estimate consent before each pass, and the **acceptance** that opens the client delivery gate.
+- Nothing leaves as a counsel package until the set reaches `READY_FOR_REVIEW` **and a person accepts**; a blocked set says exactly what is missing.
+
 ## 7. Solution ↔ component visual association
 
 - Association objects link a solution to: component(s), file region anchors (page/bbox for docs and images, view+region for 3D renders), and/or interview answers. AI proposes associations during distillation/extraction (`ai_proposed`); users confirm, redraw (drag-select region on the source viewer), add, or delete.
@@ -170,8 +185,10 @@ A deterministic checklist derived from § 112(a) support needs, computed per sol
 | Distillation & pairing | Advanced | the quality-critical pass |
 | Interview question drafting | Advanced | one turn at a time; cheap per-call |
 | Post-answer extraction | Fast | every turn, so cost-optimized |
+| **Pass 1 — draft + illustrations brief** | Advanced | authors work product; **generation** |
+| **Pass 2 — enablement revision against the figures** | Advanced | authors work product; **generation** |
 
-All calls through the server-side gateway with per-workflow allowlists, caps, and the ×1.50 retail rule. Vision/3D interpretation limits (max renders per model, max pages per doc per pass) are config with disclosed defaults.
+All calls through the server-side gateway with per-workflow allowlists, caps, and the **task-type retail rule** (parent FR-6, Jeff's directive 2026-08-04): **× 2.0 for generation tasks** — anything whose output is newly authored work product delivered to the customer, including both drafting passes and the illustrations brief — and **× 1.5 for analysis tasks** — extraction, interpretation, distillation, transcription, interview question drafting, and post-answer extraction. Every step in the table above except the two drafting passes is an analysis task and bills exactly as it did before. Vision/3D interpretation limits (max renders per model, max pages per doc per pass) are config with disclosed defaults.
 
 ## 11. API additions (parent §10 conventions: auth, Zod, size limits, idempotency on money/jobs)
 
@@ -232,5 +249,19 @@ step can be inferred or defaulted, prefer that. The rule explicitly does
 NOT remove: clickwrap acknowledgements, `ai_proposed` confirmations for
 substantive ledger content, cost-estimate consent before model spend,
 counsel gates, or destructive-action confirmations — those exist for
-UPL/ethics and safety reasons. The step-by-step inventory and the open
-removal candidates live in `docs/FRICTION-AUDIT.md`.
+UPL/ethics and safety reasons. The step-by-step inventory lives in
+`docs/FRICTION-AUDIT.md`.
+
+**Decisions (Jeff, 2026-08-04):** all seven removal candidates in that
+audit are decided and implemented — candidate 1 (moving the path buttons
+onto the dashboard) was declined, so "New invention" stays one CTA into a
+leaner chooser; the classic guided form is de-emphasized rather than
+retired (this supersedes the §13 M3 open decision); guided-form stages and
+the organization name autosave; exports default to every section behind a
+"Customize sections" disclosure; upload kinds are derived from the file
+class with Kind/Note behind an "Add details" disclosure; the first
+organization is auto-created with a changeable placeholder name derived
+from the user's email; and wallet top-ups remember the last amount and
+support one-click charging of a saved payment method (webhook-credited,
+SCA surfaced honestly). Per-decision rationale and traceability:
+`docs/FRICTION-AUDIT.md` §(c) and `docs/LEDGER-wepatent.md`.

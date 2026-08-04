@@ -6,7 +6,11 @@ import {
 } from "@/lib/domain/roles";
 import { effectiveTier } from "@/lib/domain/tiers";
 import { getWorkflowMeta } from "@/lib/domain/workflow-meta";
-import { estimateCharge, getModel, walletSufficient } from "@/lib/domain/pricing";
+import {
+  estimateChargeForWorkflow,
+  getModel,
+  walletSufficient,
+} from "@/lib/domain/pricing";
 import {
   factCreateSchema,
   matterCreateSchema,
@@ -196,7 +200,7 @@ export async function estimateRunEndpoint(
   const meta = getWorkflowMeta(parsed.data.workflowKey);
   if (!meta) return badRequest("Workflow is not available in the composer.");
 
-  const estimate = estimateCharge(model, meta.workload);
+  const estimate = estimateChargeForWorkflow(model, meta.workload, parsed.data.workflowKey);
   const walletBalanceUsd = await billing().getWalletBalanceUsd(session.organizationId);
   return apiResult(200, {
     workflowKey: parsed.data.workflowKey,
@@ -205,7 +209,7 @@ export async function estimateRunEndpoint(
     estimate,
     walletBalanceUsd,
     sufficient: walletSufficient(walletBalanceUsd, estimate),
-    note: "Estimate = provider cost × 1.50 with the disclosed variance band. Reservation holds the high end before any execution.",
+    note: `Estimate = provider cost × ${estimate.markup.toFixed(1)} (${estimate.category} task) with the disclosed variance band. Reservation holds the high end before any execution.`,
   });
 }
 

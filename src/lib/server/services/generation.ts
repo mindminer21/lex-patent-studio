@@ -3,6 +3,13 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { isUnresolved } from "@/lib/wepatent/domain/facts";
 import {
+  DEFAULT_BILLING_CATEGORY,
+  markupMultiplierFor,
+  type BillingCategory,
+} from "@/lib/shared/billing/markup";
+import { WEPATENT_WORKFLOW_CATEGORY } from "@/lib/shared/billing/task-category";
+import { env } from "@/lib/wepatent/env";
+import {
   estimateUsage,
   release,
   reserve,
@@ -25,15 +32,27 @@ const ESTIMATE_PROFILE = {
   outputHighFactor: 1, // maxOutputTokens × factor is the reserved ceiling
 };
 
+/**
+ * Estimate for a tier at a TASK CATEGORY.
+ *
+ * The multiplier follows what the call produces, not which model served it
+ * (Jeff's directive, 2026-08-04): the same tier bills at 2.0 when it drafts
+ * an application and 1.5 when it interprets a source. `category` defaults to
+ * the platform default (analysis, 1.5) so the analysis callers — interview,
+ * interpretation, distillation, transcription — keep estimating and settling
+ * BYTE-IDENTICALLY to before this change.
+ */
 export function estimateForTier(
   tier: ModelTier,
   approximateInputTokens: number,
+  category: BillingCategory = DEFAULT_BILLING_CATEGORY,
 ): UsageEstimate {
   return estimateUsage({
     rate: tier.rate,
     estimatedInputTokens: approximateInputTokens,
     estimatedOutputTokensLow: ESTIMATE_PROFILE.outputLow,
     estimatedOutputTokensHigh: tier.maxOutputTokens * ESTIMATE_PROFILE.outputHighFactor,
+    markupMultiplier: markupMultiplierFor(category),
   });
 }
 
@@ -104,7 +123,12 @@ export async function runGeneration(params: {
         4,
     ),
   );
-  const estimate = estimateForTier(tier, approximateInputTokens);
+  // The workflow's task category decides the multiplier (2.0 generation /
+  // 1.5 analysis). The exhaustive table is the only place it is decided.
+  const billingCategory =
+    WEPATENT_WORKFLOW_CATEGORY[params.workflow] ?? DEFAULT_BILLING_CATEGORY;
+  const markupMultiplier = markupMultiplierFor(billingCategory);
+  const estimate = estimateForTier(tier, approximateInputTokens, billingCategory);
 
   // Reserve the high-bound customer charge against the wallet.
   const wallet = (await data.getWallet(params.organizationId)) ?? {
@@ -121,6 +145,7 @@ export async function runGeneration(params: {
       idempotencyKey: params.idempotencyKey,
       amountCents: estimate.customerHighCents,
       rateVersion: tier.rate.rateVersion,
+      markupMultiplier,
     },
   );
   if (!reserveResult.ok) return { ok: false, error: "insufficient_funds" };
@@ -177,7 +202,7 @@ export async function runGeneration(params: {
     return { ok: false, error: "generation_failed" };
   }
 
-  // Settle from provider-reported usage at cost × 1.50.
+  // Settle from provider-reported usage at the workflow's own multiplier.
   const settled = settle(
     reserveResult.wallet,
     reserveResult.reservation,
@@ -197,7 +222,7 @@ export async function runGeneration(params: {
     kind: "settlement",
     amountCents: -settled.customerChargeCents,
     reservationId: reservationRecord.id,
-    note: `AI usage settlement (${tier.rate.rateVersion}); provider cost × 1.50.`,
+    note: `AI usage settlement (${tier.rate.rateVersion}); provider cost × ${markupMultiplier.toFixed(1)} (${billingCategory} task).`,
   });
   await data.appendUsageEvent({
     organizationId: params.organizationId,
@@ -259,6 +284,29 @@ export async function runGeneration(params: {
       sourceId: null,
       factId: null,
       locator: `corpus:${snippet.citation} (as of ${snippet.effectiveDate ?? "n/a"}) ${snippet.canonicalUrl}`,
+    });
+  }
+
+  // Automatic figure generation (spec §5): zero user steps. Enqueued as a
+  // durable job so the request path never waits, and keyed by the draft
+  // version so repeated triggers for the same version coalesce onto one job
+  // (the pipeline additionally content-hashes its inputs, so an unchanged
+  // record is a no-op that spends nothing).
+  //
+  // Off by default: FIGURES_AUTO_GENERATE gates automatic triggering for
+  // existing customers, which is itself approval-gated (spec §8). With it
+  // off the studio's explicit "Generate figures" action still works.
+  if (env.FIGURES_AUTO_GENERATE === "1") {
+    const { enqueueJob } = await import("../jobs/runner");
+    await enqueueJob({
+      organizationId: params.organizationId,
+      kind: "figure_plan",
+      idempotencyKey: `figures:${version.id}`,
+      payload: {
+        inventionId: params.inventionId,
+        draftVersionId: version.id,
+        userId: params.userId,
+      },
     });
   }
 

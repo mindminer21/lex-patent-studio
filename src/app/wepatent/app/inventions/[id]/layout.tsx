@@ -12,6 +12,7 @@ const TABS: Array<[string, string]> = [
   ["/timeline", "Timeline"],
   ["/sources", "Sources"],
   ["/drafts", "Drafts"],
+  ["/figures", "Figures"],
   ["/review", "Review"],
   ["/export", "Export"],
 ];

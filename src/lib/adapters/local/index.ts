@@ -1,4 +1,5 @@
 import type {
+  ActorContext,
   Adapters,
   AuthAdapter,
   BillingAdapter,
@@ -20,6 +21,7 @@ import { effectiveTier, WORKFLOW_TIER_FLOOR } from "@/lib/domain/tiers";
 import { getWorkflowMeta } from "@/lib/domain/workflow-meta";
 import {
   estimateCharge,
+  estimateChargeForWorkflow,
   getModel,
   MODEL_CATALOG,
   walletSufficient,
@@ -464,7 +466,10 @@ const localData: DataAdapter = {
     if (!model) return { ok: false, error: "Unknown model." };
 
     const workload = getWorkflowMeta(req.workflowKey)?.workload ?? DEFAULT_WORKLOAD;
-    const estimate = estimateCharge(model, workload);
+    // The multiplier follows the workflow's task category (2.0 generation /
+    // 1.5 analysis), so the reservation, the disclosed range, and the
+    // settlement all use the same number for this workflow.
+    const estimate = estimateChargeForWorkflow(model, workload, req.workflowKey);
     if (!walletSufficient(store.walletBalanceUsd, estimate)) {
       return {
         ok: false,
@@ -535,6 +540,40 @@ const localData: DataAdapter = {
 
   async cancelRun(organizationId, runId, actor) {
     return orchestratorCancelRun(getLocalStore(), organizationId, runId, actor);
+  },
+
+  /* ------------- three-pass drafting (shared core, Lex shape) ------------ */
+
+  async startDraftSet(organizationId: string, matterId: string, actor: ActorContext) {
+    const { startLexDraftSet } = await import("./three-pass");
+    return startLexDraftSet(getLocalStore(), organizationId, matterId, actor);
+  },
+
+  async listDraftSets(organizationId: string, matterId?: string) {
+    return getLocalStore().draftSets.filter(
+      (set) =>
+        set.organizationId === organizationId && (!matterId || set.matterId === matterId),
+    );
+  },
+
+  async getDraftSet(organizationId: string, draftSetId: string) {
+    return (
+      getLocalStore().draftSets.find(
+        (set) => set.organizationId === organizationId && set.id === draftSetId,
+      ) ?? null
+    );
+  },
+
+  async listDraftSetTransitions(organizationId: string, draftSetId: string) {
+    return getLocalStore().draftSetTransitions.filter(
+      (transition) =>
+        transition.organizationId === organizationId && transition.draftSetId === draftSetId,
+    );
+  },
+
+  async acceptDraftSet(organizationId: string, draftSetId: string, actor: ActorContext) {
+    const { acceptLexDraftSet } = await import("./three-pass");
+    return acceptLexDraftSet(getLocalStore(), organizationId, draftSetId, actor);
   },
 
   async listReviewItems(organizationId, filter) {

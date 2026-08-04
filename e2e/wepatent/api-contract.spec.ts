@@ -20,10 +20,16 @@ test("§10 endpoints refuse unauthenticated callers", async ({ request }) => {
   for (const [path, body] of [
     ["/api/inventions/some-id/working-title", { text: "A valid title" }],
     ["/api/settings/retention", { retentionDays: 90 }],
+    ["/api/settings/organization", { name: "Nope Inc" }],
   ] as const) {
     const response = await request.put(path, { data: body });
     expect(response.status(), path).toBe(401);
   }
+  // The guided-form draft autosave takes a form body, not JSON.
+  const draft = await request.post("/api/intake/draft", {
+    form: { stage: "identity", title: "Nope", summary: "Nope" },
+  });
+  expect(draft.status()).toBe(401);
 });
 
 test("organization creation via API is validated and single-org enforced", async ({ page }) => {

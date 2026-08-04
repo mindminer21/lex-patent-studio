@@ -6,6 +6,10 @@ import {
 } from "@/components/workspace/badges";
 import { can } from "@/lib/domain/roles";
 import { ExportButton } from "./ExportButton";
+import { ThreePassSection } from "./ThreePassSection";
+import { evaluateLexDelivery } from "@/lib/domain/lex-draft-passes";
+import { canInvokeWorkflow } from "@/lib/domain/roles";
+import { effectiveTier } from "@/lib/domain/tiers";
 
 /** §8.2 /documents — generated versions, exports, manifests. */
 export default async function DocumentsPage({
@@ -31,6 +35,21 @@ export default async function DocumentsPage({
   }
   const canExport = can(session.role, "export.draft");
 
+  /**
+   * The three-pass view. The blockers come from the SHARED delivery gate, so
+   * what a practitioner is told here is byte-identical to what the export
+   * path enforces.
+   */
+  const draftSets = await adapters.data.listDraftSets(org, matterId);
+  const latestSet = draftSets[draftSets.length - 1] ?? null;
+  const figuresInBrief = latestSet?.illustrationsBrief?.figures ?? [];
+  const decision = latestSet
+    ? evaluateLexDelivery(latestSet, {
+        ready: figuresInBrief.filter((figure) => !figure.needsInput).length,
+        unresolved: figuresInBrief.filter((figure) => figure.needsInput).length,
+      })
+    : null;
+
   return (
     <div className="max-w-[1000px]">
       <h2 className="m-0 mb-1 text-lg font-medium" style={{ fontFamily: "Georgia, serif" }}>
@@ -41,6 +60,14 @@ export default async function DocumentsPage({
         version-locked with SHA-256 checksums; later edits create new
         versions and never mutate an exported artifact.
       </p>
+
+      <ThreePassSection
+        matterId={matterId}
+        set={latestSet}
+        blockers={decision && !decision.allowed ? decision.blockers : []}
+        canDraft={canInvokeWorkflow(session.role, effectiveTier("section_draft"))}
+        canAccept={can(session.role, "review.decide.tierB")}
+      />
 
       {documents.length === 0 ? (
         <p className="border border-dashed border-[var(--line)] bg-[var(--white)] p-4 text-[0.85rem] text-[var(--muted)]">

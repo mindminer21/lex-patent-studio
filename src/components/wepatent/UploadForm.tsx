@@ -2,16 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-
-const KIND_OPTIONS = [
-  "lab_notebook",
-  "design_doc",
-  "code",
-  "presentation",
-  "data",
-  "image",
-  "other",
-];
+import { deriveUploadKind, UPLOAD_KINDS } from "@/lib/wepatent/domain/uploads";
 
 const REJECTION_MESSAGES: Record<string, string> = {
   mime_not_allowed:
@@ -32,14 +23,20 @@ const REJECTION_MESSAGES: Record<string, string> = {
  * accepted files always pass through quarantine and scanning before
  * extraction.
  *
- * Design rule (minimal human input): selecting a file starts the upload —
- * there is no separate "Upload" button. Set kind/note first if you want
- * them recorded; both are optional metadata.
+ * Design rule (minimal human input):
+ * - selecting a file starts the upload — no separate "Upload" button;
+ * - the Kind is DERIVED from the detected file class (friction audit #6),
+ *   so nothing has to be chosen before picking a file;
+ * - Kind + Note live in an optional "Add details" disclosure, closed by
+ *   default, for the cases where the derived kind is wrong or a note helps.
+ *   Both are set before choosing the file, since the upload starts on
+ *   selection.
  */
 export default function UploadForm({ inventionId }: { inventionId: string }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [kind, setKind] = useState("design_doc");
+  /** `null` means "auto (from file type)" — the default. */
+  const [kindOverride, setKindOverride] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
@@ -47,6 +44,9 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
   async function handleFileSelected() {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
+    const mimeType = file.type || "application/octet-stream";
+    const kind =
+      kindOverride ?? deriveUploadKind({ filename: file.name, mimeType });
     setBusy(true);
     setMessage(null);
     try {
@@ -55,7 +55,7 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           filename: file.name,
-          mimeType: file.type || "application/octet-stream",
+          mimeType,
           declaredBytes: file.size,
           kind,
           note,
@@ -74,7 +74,7 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
       }
       const putResponse = await fetch(signBody.uploadUrl, {
         method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
+        headers: { "Content-Type": mimeType },
         body: file,
       });
       const putBody = (await putResponse.json()) as { status?: string; error?: string };
@@ -88,7 +88,7 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
       }
       setMessage({
         kind: "ok",
-        text: `Uploaded ${file.name}. The file is quarantined and will be scanned before extraction.`,
+        text: `Uploaded ${file.name} as ${kind.replace(/_/g, " ")}. The file is quarantined and will be scanned before extraction.`,
       });
       if (fileRef.current) fileRef.current.value = "";
       setNote("");
@@ -103,31 +103,6 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
   return (
     <div className="wp-form" data-testid="upload-form">
       <div className="field">
-        <label htmlFor="upload-kind">Kind (optional — set before choosing a file)</label>
-        <select
-          id="upload-kind"
-          value={kind}
-          disabled={busy}
-          onChange={(event) => setKind(event.target.value)}
-        >
-          {KIND_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option.replace(/_/g, " ")}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor="upload-note">Note (optional — set before choosing a file)</label>
-        <input
-          id="upload-note"
-          value={note}
-          maxLength={1000}
-          disabled={busy}
-          onChange={(event) => setNote(event.target.value)}
-        />
-      </div>
-      <div className="field">
         <label htmlFor="upload-file">
           File (documents: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG · images: PNG, JPEG, TIFF, HEIC ·
           3D models: STL, STEP, OBJ, 3MF · audio: MP3, WAV, M4A · video: MP4, MOV) — the upload
@@ -141,6 +116,10 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
           disabled={busy}
           onChange={() => void handleFileSelected()}
         />
+        <p className="hint">
+          The kind is set automatically from the file type — images as image, documents as
+          document, 3D models as model, audio as audio.
+        </p>
       </div>
       <p aria-live="polite" className="hint" data-testid="upload-progress">
         {busy ? "Uploading…" : ""}
@@ -154,6 +133,37 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
           {message.text}
         </p>
       )}
+      <details className="wp-disclosure" data-testid="upload-details">
+        <summary>Add details (optional)</summary>
+        <div className="field">
+          <label htmlFor="upload-kind">Kind</label>
+          <select
+            id="upload-kind"
+            value={kindOverride ?? ""}
+            disabled={busy}
+            onChange={(event) => setKindOverride(event.target.value || null)}
+          >
+            <option value="">Auto — from the file type</option>
+            {UPLOAD_KINDS.map((option) => (
+              <option key={option} value={option}>
+                {option.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          <p className="hint">Set this before choosing the file — the upload starts on selection.</p>
+        </div>
+        <div className="field">
+          <label htmlFor="upload-note">Note</label>
+          <input
+            id="upload-note"
+            value={note}
+            maxLength={1000}
+            disabled={busy}
+            onChange={(event) => setNote(event.target.value)}
+          />
+          <p className="hint">Also set before choosing the file.</p>
+        </div>
+      </details>
       <p className="hint">
         Uploads are validated (type allowlist, extension, size, content signature), stored
         privately, quarantined, and scanned before extraction. File contents are treated as

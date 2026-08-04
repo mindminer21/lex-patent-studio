@@ -1,7 +1,13 @@
 import "server-only";
 
 import { env } from "@/lib/wepatent/env";
-import type { Adapters, BillingPort, CheckoutRequest } from "./types";
+import type {
+  Adapters,
+  BillingPort,
+  CheckoutRequest,
+  OffSessionTopUpResult,
+  SavedPaymentMethod,
+} from "./types";
 import { LocalCorpusAdapter } from "./local/corpus";
 import { LocalDataAdapter } from "./local/store";
 import { LocalModelGateway } from "./local/model-gateway";
@@ -42,6 +48,32 @@ class LocalBillingAdapter implements BillingPort {
   async createPortalSession(): Promise<{ url: string }> {
     return { url: "/wepatent/app/billing/simulated-portal" };
   }
+
+  /**
+   * Local stand-in for a saved card. A Stripe customer id only exists after
+   * a completed (simulated) checkout, and the production Checkout session
+   * now asks Stripe to save the payment method — so "has a customer" is the
+   * local equivalent of "has a saved card". No real card data exists here.
+   */
+  async getDefaultPaymentMethod(organizationId: string): Promise<SavedPaymentMethod | null> {
+    const customerId = await getAdapters().data.getStripeCustomerId(organizationId);
+    if (!customerId) return null;
+    return { id: `pm_local_${customerId.slice(-8)}`, brand: "simulated", last4: "4242" };
+  }
+
+  /**
+   * Local stand-in for the off-session PaymentIntent. It reports success;
+   * the wallet is credited by the SAME signed-webhook path production uses
+   * (see `topUpWithSavedPaymentMethod`), never here. No real money exists.
+   */
+  async createOffSessionTopUp(
+    organizationId: string,
+    input: { amountCents: number; idempotencyKey: string },
+  ): Promise<OffSessionTopUpResult> {
+    const method = await this.getDefaultPaymentMethod(organizationId);
+    if (!method) return { status: "failed", reason: "no_saved_payment_method" };
+    return { status: "succeeded", paymentIntentId: `pi_local_${input.idempotencyKey}` };
+  }
 }
 
 let cached: Adapters | null = null;
@@ -62,8 +94,15 @@ export function getAdapters(): Adapters {
           openai: env.OPENAI_API_KEY,
           anthropic: env.ANTHROPIC_API_KEY,
           xai: env.XAI_API_KEY,
+          google: env.GEMINI_API_KEY,
         },
         killSwitch: env.MODEL_GATEWAY_KILL_SWITCH === "1",
+        // Layer-1 line art. Disabled by default: BOTH the enable flag and
+        // the key must be present before any image request can be made.
+        gemini: {
+          enabled: env.FIGURES_GEMINI_ENABLED === "1",
+          apiKey: env.GEMINI_API_KEY,
+        },
       }),
       billing: new StripeBillingAdapter({
         secretKey: env.STRIPE_SECRET_KEY!,

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { getAdapters } from "@/lib/adapters";
 import { RunStateBadge } from "@/components/workspace/badges";
-import { formatUsd, USAGE_MARKUP } from "@/lib/domain/pricing";
+import { formatUsd } from "@/lib/domain/pricing";
+import { markupDisclosure } from "@/lib/shared/billing/markup";
 
 export const metadata: Metadata = {
   title: "Usage — Lex Patent Studio",
@@ -42,10 +43,12 @@ export default async function UsagePage() {
           Usage
         </h1>
         <p className="mt-1 mb-0 max-w-[760px] text-[0.92rem] text-[var(--muted)]">
-          Prepaid wallet, reservations, and settlements. Every charge is
-          provider cost × {USAGE_MARKUP.toFixed(2)} with the estimate range
-          disclosed before execution; the reservation holds the high end and
-          returns the remainder at settlement.
+          Prepaid wallet, reservations, and settlements. Every charge is{" "}
+          {markupDisclosure()} — the multiplier follows the task, so drafting,
+          claim, response, memo, and search-report work bills at the generation
+          rate and extraction, classification, and verification work bills at the
+          analysis rate. The estimate range is disclosed before execution; the
+          reservation holds the high end and returns the remainder at settlement.
         </p>
       </header>
 

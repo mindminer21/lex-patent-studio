@@ -3,8 +3,10 @@
 import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { needsReacceptance } from "@/lib/wepatent/domain/clickwrap";
 import { isLocalMode } from "@/lib/wepatent/env";
 import { getAdapters } from "@/lib/server/adapters";
+import { ensurePersonalOrganization } from "@/lib/server/services/orgs";
 import { incrementCounter, logEvent } from "@/lib/server/observability";
 import {
   checkRateLimit,
@@ -82,7 +84,24 @@ export async function signInAction(formData: FormData): Promise<void> {
 
   await createSession(user.id);
   const assignment = await data.getCounselAssignment(user.id);
-  redirect(assignment ? "/counsel" : "/wepatent/app");
+  if (assignment) redirect("/counsel");
+
+  // Design rule (minimal human input): no blocking "Create your
+  // organization" step. The first organization is created here with a
+  // placeholder name the user can change in Settings; the call is
+  // idempotent, so returning users and invited members are unaffected.
+  // Everything else about tenancy is unchanged — same transactional
+  // creation path, same owner membership, retention default, wallet, and
+  // `organization.created` audit event.
+  const organization = await ensurePersonalOrganization(user);
+  if (organization) {
+    const acceptance = await data.getLatestAcceptance(organization.id, user.id);
+    if (!acceptance || needsReacceptance(acceptance.termsVersion)) {
+      // Clickwrap stays a required, explicit step (KEEP list).
+      redirect("/wepatent/app/terms");
+    }
+  }
+  redirect("/wepatent/app");
 }
 
 export async function signOutAction(): Promise<void> {

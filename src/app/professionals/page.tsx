@@ -28,7 +28,7 @@ export default function ProfessionalsPage() {
         },
         {
           title: "Cost before every run",
-          text: "Pick the reasoning engine per task and see the estimated charge range and wallet balance before executing. Charges are provider cost times a disclosed markup — no surprises.",
+          text: "Pick the reasoning engine per task and see the estimated charge range and wallet balance before executing. Charges are provider cost × 2.0 for generation tasks and × 1.5 for analysis tasks, disclosed before the run — no surprises.",
         },
       ]}
       boundary="The comparison to associate throughput is economic and workflow-based — never a claim of attorney equivalence or autonomous legal judgment. You review all work, control client communications, and own every signature, deadline, and filing."

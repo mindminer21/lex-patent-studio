@@ -48,7 +48,9 @@ test("interview journey: turns, attachment, skip, advice template, injection, le
   await createRecordAndOpenInterview(page);
 
   // --- Start the session (metered turns disclosed up front) ---------------
-  await expect(page.getByTestId("interview-start")).toContainText("provider cost × 1.50");
+  await expect(page.getByTestId("interview-start")).toContainText(
+    "provider cost × 2.0 for generation tasks, × 1.5 for analysis tasks",
+  );
   await page.getByRole("button", { name: "Start the interview" }).click();
   await expect(page.getByTestId("question-text")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("interview-progress")).toContainText("Stage 1 of 7");

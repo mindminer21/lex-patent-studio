@@ -1,14 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   acceptClickwrapByKeyboard,
-  createOrganization,
   onboardFreshTenant,
+  placeholderOrgName,
   signIn,
 } from "./helpers";
 
 /**
- * The core workspace journey (PRD §13): sign-in → organization creation →
- * clickwrap keyboard flow → staged intake with save/resume → estimate →
+ * The core workspace journey (PRD §13): sign-in (organization auto-created)
+ * → clickwrap keyboard flow → staged intake with autosave/resume → estimate →
  * durable generation → draft review → export with rendered artifacts →
  * counsel request ("not represented") → billing view.
  */
@@ -16,7 +16,9 @@ test.describe.configure({ mode: "serial" });
 
 const RUN = Date.now();
 const FOUNDER_EMAIL = `founder-${RUN}@example.test`;
-const ORG_NAME = `E2E Ventures ${RUN}`;
+// The first organization is auto-created on first sign-in with a
+// placeholder name derived from the email local-part (friction audit #5).
+const ORG_NAME = placeholderOrgName(FOUNDER_EMAIL);
 
 async function openSeededInvention(page: Page): Promise<void> {
   await page.goto("/wepatent/app");
@@ -27,9 +29,14 @@ async function openSeededInvention(page: Page): Promise<void> {
   await page.waitForURL(/\/wepatent\/app\/inventions\/[0-9a-f-]+$/);
 }
 
-test("sign-in, organization creation, and keyboard clickwrap", async ({ page }) => {
+test("sign-in auto-creates the organization, then keyboard clickwrap", async ({ page }) => {
   await signIn(page, FOUNDER_EMAIL, "E2E Founder");
-  await createOrganization(page, ORG_NAME);
+
+  // Design rule (minimal human input): there is NO "Create your
+  // organization" step — sign-in lands straight on the clickwrap, which
+  // stays a required explicit action.
+  await page.waitForURL(/\/wepatent\/app\/terms/);
+  await expect(page.getByRole("button", { name: "Create organization" })).toHaveCount(0);
 
   // Clickwrap: server-enforced four acknowledgements, keyboard-only flow.
   await expect(page.getByRole("checkbox")).toHaveCount(4);
@@ -40,9 +47,12 @@ test("sign-in, organization creation, and keyboard clickwrap", async ({ page }) 
   await expect(page.getByText("Synthetic example").first()).toBeVisible();
 });
 
-test("staged intake saves, resumes, and submits to the invention record", async ({ page }) => {
+test("staged intake autosaves, resumes, and submits to the invention record", async ({ page }) => {
   await signIn(page, FOUNDER_EMAIL, "E2E Founder");
   await page.goto("/wepatent/app/inventions/new");
+
+  // Design rule (minimal human input): there is no "Save draft" button.
+  await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
 
   // Stage 1: identity.
   await page.getByLabel("Invention title").fill("E2E cooling manifold");
@@ -52,10 +62,13 @@ test("staged intake saves, resumes, and submits to the invention record", async 
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page.getByRole("heading", { name: "Problem and technical solution" })).toBeVisible();
 
-  // Stage 2: save a draft mid-stage, leave, and resume.
+  // Stage 2: type a PARTIAL (still invalid) stage, let autosave fire on
+  // blur, leave the page entirely, and resume with the typing intact.
   await page.getByLabel("Problem addressed").fill("Heat spikes degrade the synthetic cells.");
-  await page.getByRole("button", { name: "Save draft" }).click();
-  await expect(page.getByText("Draft saved.")).toBeVisible();
+  await page.getByLabel("Problem addressed").blur();
+  await expect(page.getByTestId("intake-draft-status")).toContainText("Draft saved", {
+    timeout: 10_000,
+  });
   await page.goto("/wepatent/app");
   await page.goto("/wepatent/app/inventions/new");
   await expect(page.getByRole("heading", { name: "Problem and technical solution" })).toBeVisible();
@@ -136,6 +149,12 @@ test("export creation renders DOCX/PDF artifacts with checksums", async ({ page 
   const inventionUrl = page.url();
 
   await page.goto(`${inventionUrl}/export`);
+  // Design rule (minimal human input): all sections are included by
+  // default and the checkboxes are collapsed, so this is ONE click.
+  const customize = page.getByTestId("customize-sections");
+  await expect(customize).toBeVisible();
+  await expect(customize).not.toHaveAttribute("open", /.*/);
+  await expect(page.getByRole("checkbox", { name: "Facts" })).toBeHidden();
   await page.getByRole("button", { name: "Create version-locked export" }).click();
   await page.waitForURL(/\/export$/);
 
@@ -146,6 +165,11 @@ test("export creation renders DOCX/PDF artifacts with checksums", async ({ page 
   }).toPass({ timeout: 20_000 });
   await expect(page.getByText("counsel-package.pdf")).toBeVisible();
   await expect(page.getByText("manifest.json")).toBeVisible();
+  // Default-state export really did include every section (manifest is
+  // rendered verbatim on the page); version-locking semantics unchanged.
+  for (const section of ["facts", "contributors", "timeline", "sources", "ps_ledger", "coverage"]) {
+    await expect(page.getByText(`"${section}"`).first()).toBeVisible();
+  }
   await expect(page.getByRole("link", { name: "Download" }).first()).toBeVisible();
   await expect(page.getByText(/checksum/i).first()).toBeVisible();
 
@@ -181,7 +205,15 @@ test("billing view shows wallet, ledger, and settled usage", async ({ page }) =>
   await page.goto("/wepatent/app/billing");
   await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
   await expect(page.getByText("Wallet balance")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "cost × 1.50" })).toBeVisible();
+  // The published rate is derived from the markup catalog and follows the
+  // TASK TYPE (Jeff's directive, 2026-08-04): 2.0 for generation, 1.5 for
+  // analysis. Both are named — neither is an unstated exception.
+  await expect(
+    page.getByRole("heading", { name: "cost × 2.0 generation / × 1.5 analysis" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("provider cost × 2.0 for generation tasks, × 1.5 for analysis tasks").first(),
+  ).toBeVisible();
   // The generation earlier in this suite settled against the wallet.
   await expect(page.getByText(/AI usage settlement/).first()).toBeVisible();
   await expect(page.getByText(/promotional credit/i).first()).toBeVisible();
@@ -210,6 +242,38 @@ test("settings retention window autosaves without an Update button", async ({ pa
   await expect(page.getByTestId("retention-days")).toHaveValue("180");
   // The audit trail shows the policy update.
   await expect(page.getByText("retention.policy_updated").first()).toBeVisible();
+});
+
+test("organization name autosaves in Settings (placeholder → real name)", async ({ browser }) => {
+  // Friction audit #5: the org is auto-created with a placeholder name and
+  // renamed here — an autosaving field, no Save button, no blocking step.
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const { email } = await onboardFreshTenant(page, "org-rename");
+
+  await page.goto("/wepatent/app/settings");
+  const nameField = page.getByTestId("organization-name");
+  await expect(nameField).toHaveValue(placeholderOrgName(email));
+  await expect(page.getByRole("button", { name: /Create organization/ })).toHaveCount(0);
+
+  await nameField.fill("Bright Idea Labs");
+  await nameField.blur();
+  await expect(page.getByTestId("organization-name-status")).toContainText("Saved and audited", {
+    timeout: 10_000,
+  });
+
+  await page.reload();
+  await expect(page.getByTestId("organization-name")).toHaveValue("Bright Idea Labs");
+  await expect(page.getByText("Bright Idea Labs").first()).toBeVisible();
+  await expect(page.getByText("organization.renamed").first()).toBeVisible();
+
+  // Too-short names are refused client-side and never saved.
+  await page.getByTestId("organization-name").fill("x");
+  await page.getByTestId("organization-name").blur();
+  await expect(page.getByTestId("organization-name-status")).toContainText("2–120");
+  await page.reload();
+  await expect(page.getByTestId("organization-name")).toHaveValue("Bright Idea Labs");
+  await context.close();
 });
 
 test("cross-tenant access is denied by URL and API tampering", async ({ browser, page }) => {

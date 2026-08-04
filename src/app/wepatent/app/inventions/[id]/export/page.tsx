@@ -66,41 +66,58 @@ export default async function ExportPage({
       <div className="wp-grid cols-2">
         <div className="wp-card">
           <h2>Create a counsel package</h2>
+          {/* Design rule (minimal human input): every section is included
+              by default, so the common case is ONE click. Composition is
+              still fully available behind the disclosure below — nothing
+              about the manifest or version-locking semantics changed, and
+              the counsel-review notice is embedded regardless of the
+              selection. */}
           <form action={createExportAction} className="wp-form">
             <input type="hidden" name="inventionId" value={id} />
-            <fieldset>
-              <legend>Included sections</legend>
-              {[
-                ["facts", "Facts"],
-                ["contributors", "Contributors"],
-                ["timeline", "Timeline"],
-                ["sources", "Sources"],
-                ["ps_ledger", "Problem/Solution ledger"],
-                ["coverage", "Enablement coverage report"],
-              ].map(([section, label]) => (
-                <label className="acknowledgement" key={section}>
-                  <input type="checkbox" name={`section_${section}`} defaultChecked />
-                  <span>{label}</span>
-                </label>
-              ))}
-            </fieldset>
-            <div className="field">
-              <label htmlFor="draftVersionId">Working draft version (optional)</label>
-              <select id="draftVersionId" name="draftVersionId" defaultValue="">
-                <option value="">No draft — record only</option>
-                {versions.map((version) => (
-                  <option key={version.id} value={version.id}>
-                    v{version.version} · {version.modelId} ·{" "}
-                    {new Date(version.createdAt).toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <p>
+              Includes everything in the record: facts, contributors, timeline, sources, the
+              Problem/Solution ledger, and the enablement coverage report.
+            </p>
             <div>
               <button className="button venture-button" type="submit">
                 Create version-locked export
               </button>
             </div>
+            <details className="wp-disclosure" data-testid="customize-sections">
+              <summary>Customize sections</summary>
+              <fieldset>
+                <legend>Included sections</legend>
+                {[
+                  ["facts", "Facts"],
+                  ["contributors", "Contributors"],
+                  ["timeline", "Timeline"],
+                  ["sources", "Sources"],
+                  ["ps_ledger", "Problem/Solution ledger"],
+                  ["coverage", "Enablement coverage report"],
+                ].map(([section, label]) => (
+                  <label className="acknowledgement" key={section}>
+                    <input type="checkbox" name={`section_${section}`} defaultChecked />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </fieldset>
+              <div className="field">
+                <label htmlFor="draftVersionId">Working draft version (optional)</label>
+                <select id="draftVersionId" name="draftVersionId" defaultValue="">
+                  <option value="">No draft — record only</option>
+                  {versions.map((version) => (
+                    <option key={version.id} value={version.id}>
+                      v{version.version} · {version.modelId} ·{" "}
+                      {new Date(version.createdAt).toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+                <p className="hint">
+                  Draft versions stay opt-in, so the contents of an export are exactly what they
+                  were before this change.
+                </p>
+              </div>
+            </details>
             <p className="hint">
               DOCX, PDF, and manifest artifacts render as a durable job right after the export is
               created; each artifact records its own SHA-256 checksum.

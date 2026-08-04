@@ -1,58 +1,25 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { needsReacceptance } from "@/lib/wepatent/domain/clickwrap";
 import { isUnresolved } from "@/lib/wepatent/domain/facts";
 import { getAdapters } from "@/lib/server/adapters";
+import { ensurePersonalOrganization } from "@/lib/server/services/orgs";
 import { requireUser } from "@/lib/server/session";
-import { createOrganizationAction } from "./actions";
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const { error } = await searchParams;
+export default async function DashboardPage() {
   const context = await requireUser();
   const { data } = getAdapters();
 
-  if (!context.membership || !context.organization) {
-    return (
-      <>
-        <div className="wp-topbar">
-          <h1>Create your organization</h1>
-        </div>
-        <div className="wp-boundary-banner">
-          wepatent is not a law firm. Creating an organization, uploading materials, or paying for
-          software never creates an attorney-client relationship.
-        </div>
-        <div className="wp-card" style={{ maxWidth: 640 }}>
-          <p className="venture-kicker">Step 1 of 2</p>
-          <h2>Name your organization</h2>
-          <p>
-            Your organization holds invention records, members, and billing. You can invite
-            teammates later from Settings.
-          </p>
-          <form action={createOrganizationAction} className="wp-form">
-            {error === "invalid_org_name" && (
-              <p className="form-error" role="alert">
-                Organization names must be 2–120 characters.
-              </p>
-            )}
-            <div className="field">
-              <label htmlFor="org-name">Organization name</label>
-              <input id="org-name" name="name" type="text" required minLength={2} maxLength={120} />
-            </div>
-            <div>
-              <button className="button venture-button" type="submit">
-                Create organization
-              </button>
-            </div>
-          </form>
-        </div>
-      </>
-    );
-  }
+  // Design rule (minimal human input): the blocking "Create your
+  // organization" step is gone — the first organization is created on
+  // first sign-in with a placeholder name (editable in Settings). This
+  // idempotent call is the safety net for sessions that predate that
+  // change; it uses the same transactional creation path.
+  const organization =
+    context.organization ?? (await ensurePersonalOrganization(context.user));
+  if (!organization) redirect("/wepatent/sign-in");
 
-  const organizationId = context.organization.id;
+  const organizationId = organization.id;
   const acceptance = await data.getLatestAcceptance(organizationId, context.user.id);
   const termsPending = !acceptance || needsReacceptance(acceptance.termsVersion);
   const inventions = await data.listInventions(organizationId);
@@ -72,7 +39,7 @@ export default async function DashboardPage({
     <>
       <div className="wp-topbar">
         <h1>Dashboard</h1>
-        <span className="org">{context.organization.name}</span>
+        <span className="org">{organization.name}</span>
       </div>
 
       {termsPending ? (

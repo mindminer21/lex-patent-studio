@@ -13,6 +13,8 @@ import {
   type QuestionTarget,
 } from "@/lib/wepatent/domain/interview";
 import type { CoverageDimension } from "@/lib/wepatent/domain/coverage";
+import { PROMPT_TEMPLATE_VERSION } from "../../figures/gemini-contract";
+import { generateSyntheticLineArt, SYNTHETIC_MODEL_ID } from "../../figures/synthetic";
 import { getModelTier, type ModelTier } from "../../model-registry";
 import type {
   DistillationOutput,
@@ -22,6 +24,8 @@ import type {
   ModelGatewayPort,
   ModelGenerationRequest,
   ModelGenerationResult,
+  ModelLineArtRequest,
+  ModelLineArtResult,
   ModelInterpretationRequest,
   ModelInterpretationResult,
   ModelQuestionDraftRequest,
@@ -503,6 +507,39 @@ export class LocalModelGateway implements ModelGatewayPort {
       },
       ref: request.targetRef,
     };
+  }
+
+  /**
+   * Layer-1 stand-in for local/dev mode: a DETERMINISTIC synthetic line-art
+   * generator (see server/figures/synthetic.ts). It exists so the whole
+   * figure pipeline — plan, generate, compose, validate, attach, review,
+   * export — runs end to end with no Google credential and zero spend.
+   *
+   * It is NOT a depiction of the user's invention and the product labels it
+   * as a synthetic placeholder everywhere it appears. It obeys the same
+   * constraints real Layer-1 output must obey (pure black on white, no solid
+   * fills, no text), so the raster-hygiene gate is genuinely exercised.
+   */
+  async generateLineArt(request: ModelLineArtRequest): Promise<ModelLineArtResult> {
+    const imageBytes = generateSyntheticLineArt({
+      subject: request.subject,
+      viewType: request.viewType,
+    });
+    return {
+      status: "ok",
+      imageBytes,
+      mimeType: "image/png",
+      billedImages: 1,
+      // Local mode has no provider and therefore no provider cost. The
+      // metering path still runs; it simply settles at zero.
+      providerCostCents: 0,
+      modelId: SYNTHETIC_MODEL_ID,
+      promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
+    };
+  }
+
+  lineArtAvailable(): boolean {
+    return true;
   }
 
   private requireTier(modelId: string): ModelTier {

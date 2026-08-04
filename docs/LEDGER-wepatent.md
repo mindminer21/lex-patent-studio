@@ -326,7 +326,7 @@ modified objects are the two extended CHECK constraints (house pattern).
 | 3D render-to-vision, serverless-compatible | Rendering happens in the BROWSER: `domain/mesh.ts` deterministic Canvas-2D software projector (pure TS view matrices, orthographic projection, flat shading, painter sort — no WebGL, no GPU, no three.js, no server renderer) over the M2 STL parser's triangle soup (`parseStlVertices`) plus a clean pure-JS OBJ parser; `MeshViewer.tsx` renders 6 canonical views (front/back/left/right/top/isometric) and "Generate views for AI interpretation" is USER-TRIGGERED with the 6-view vision estimate shown first (FR-INT-10); snapshots upload as PNG sources `derived_from_source_id`-linked to the parent 3D model through the unchanged FR-4 pipeline and flow through the EXISTING image-interpretation pass; STEP/3MF stay honestly stored (no clean pure-JS parser) | unit: STL/OBJ parse, projection determinism + canvas-fit + painter order + shading bounds, mocked-canvas render plumbing, derived-source linkage + foreign-parent denial; E2E: viewer renders (Canvas-2D pixel assertion — no WebGL flags needed), estimate visible before capture, 6 derived sources land in the interpret queue | verified |
 | Re-distillation UX | Distill affordance relabels "Re-distill with new material" after the first run; diff-style review panel lists current `ai_proposed` proposals against the count of reviewed items, with per-item confirm/reject (existing) plus bulk accept/reject (`bulkReviewProposals` — every item still passes the per-item guard + event trail); confirmed/edited items structurally untouchable (M1 add-only distillation unchanged) | unit bulk suite (only ai_proposed affected; rejection signals); E2E: distill → bulk accept → new material → re-distill → only new proposals listed, confirmed count unchanged → bulk accept | verified |
 | Proposed-edit dismissal + merge/split (M2 leftover + §5.4) | `dismissProposedEdit` appends a `proposal_dismissed` event (append-only; pair untouched; audit keeps proposal + decision) and the interview view filters dismissed proposals; "Dismiss" button beside "Apply as my edit"; `mergePairs` (absorbs statement + anchors, re-homes links/associations before the cascade delete, `merged` event) and `splitPair` (2–5 statements, siblings keep anchors, `split` events) with studio forms | unit: dismiss flow via interview view, merge (link re-homing, cross-kind refusal), split (sibling creation, bounds); pgTAP new event kinds accepted/junk rejected | verified |
-| Guided-form retirement decision (§13 M3) | **Not retired — decision note:** both paths remain live and write to the same ledgers (`/inventions/new` guided form; studio + interview). Usage data does not yet exist to justify removal, and retiring a working intake path is a product decision reserved to Jeff. If he directs retirement, it is a routing change (remove the chooser's Path B link + redirect) with no data-model impact | FR-INT-1 E2E still exercises the chooser's guided-form link | decision documented; awaiting Jeff |
+| Guided-form retirement decision (§13 M3) | **Not retired — decision note:** both paths remain live and write to the same ledgers (`/inventions/new` guided form; studio + interview). Usage data does not yet exist to justify removal, and retiring a working intake path is a product decision reserved to Jeff. If he directs retirement, it is a routing change (remove the chooser's Path B link + redirect) with no data-model impact | FR-INT-1 E2E still exercises the chooser's guided-form link | **superseded 2026-08-04** — Jeff decided: de-emphasize, do NOT retire (friction audit #3). Both paths remain live; the chooser link is now a small text link only. See the round-2 entry below |
 
 ### M3 deferred items (honest)
 
@@ -413,3 +413,286 @@ deploy with the app code; both adapters already implement every port used
 (`createWorkingTitle` / `listWorkingTitles` / `updateInventionTitle` /
 `appendPsEvent`, `updateOrganizationRetention`) — no adapter surface
 changed. Backward compatible with the live schema.
+
+## 2026-08-04 — Friction audit round 2: Jeff's decisions on all 7 candidates
+
+Jeff decided every CANDIDATE in `docs/FRICTION-AUDIT.md` §(c) on
+2026-08-04. Candidate 1 was **declined as written**; 2–7 were approved
+(7 with an added scope: one-click top-up). The KEEP list — clickwrap
+acknowledgements, spend-consent estimates before model runs, `ai_proposed`
+confirmation semantics, counsel gates, purge confirmation, invitation
+flows — was not touched.
+
+### Decision-by-decision traceability
+
+| # | Decision | Implementation | Verification | Status |
+|---|---|---|---|---|
+| 1 | **Declined as written** — keep one "New invention" CTA into the chooser; make the chooser lean | `inventions/start/page.tsx`: per-card kickers + explanatory paragraphs removed, leaving one framing line, two buttons, the classic-form text link, and the boundary/counsel notices. Dashboard untouched (still one primary CTA + empty-state prompt) | E2E studio journey still asserts both path headings, the Path B button, and the classic-form link href; chooser axe scan unchanged | verified |
+| 2 | **Autosave the classic guided form**; remove "Save draft" | `IntakeStageForm.tsx` (client) wraps the stage form: debounce ~800 ms on input, save on blur (focusout bubbles from any field), flush before stage navigation (`a[data-intake-stage-link]` intercepted in the capture phase) and on `pagehide` via `keepalive`; aria-live "Saving…/Draft saved/error + Retry"; a no-op save is skipped so focusing a completed stage never demotes it. Server: `POST /api/intake/draft` → `services/intake-draft.ts` (`parseIntakeStageForm` + `saveIntakeStageDraft`), shared with the validated `intakeStageAction` so drafts and validation see identical parsing. **The draft path never validates**: `saveStageDraft` stores raw data AND clears the stage's `completed` flag, so an autosaved stage cannot pass for validated or reach submission; `completeStage`, `submitIntake`, and the review-stage accuracy attestation are unchanged. The **review stage is not autosavable** (`AUTOSAVABLE_STAGES` excludes it) — its only input is a KEEP-list attestation | unit `tests/intake-autosave.test.ts`: partial/invalid draft persists and resumes; the same data still fails `completeStage` and `submitIntake`; editing a completed stage demotes it to draft; review stage refused (`not_autosavable`, no session written); unknown stage refused; parser parity. E2E workspace journey: no "Save draft" button, partial stage autosaves on blur ("Draft saved"), survives leaving the page entirely, then completes and submits. api-contract: unauthenticated `POST /api/intake/draft` → 401. axe on `/inventions/new` unchanged | verified |
+| 3 | **De-emphasize the classic form** (do not delete) | Chooser link moved out of the Path B card to a standalone small `hint` line with understated wording. Grep-audited: no other button, card, or nav entry points at `/wepatent/app/inventions/new`; `AppNav` never listed it. Route, 8 stages, validation, and submission unchanged. **Supersedes the M3 "guided-form retirement decision" row above: de-emphasized, not retired** | E2E asserts the link is a `link` (not a button) with the exact href and the understated label | verified |
+| 4 | **Export defaults to all sections** behind a "Customize sections" disclosure | `export/page.tsx`: native `<details class="wp-disclosure">`, closed by default, containing the six default-checked section checkboxes and the optional draft-version select. Checkboxes still submit from inside the closed disclosure, so the default-state export is byte-identical to before. Draft-version default deliberately unchanged ("No draft — record only") so no existing export's contents shift. `createExportAction` → `createExport` untouched: same sections array, same manifest with immutable draft-version references + checksum, same embedded counsel-review notice | E2E: disclosure present and closed, checkboxes hidden, one click creates the export, and the rendered manifest still lists all six sections; DOCX/PDF/manifest artifacts + checksum download assertions unchanged. axe scan added with the disclosure open | verified |
+| 5 | **Auto-create the first organization**; remove the blocking step; rename in Settings | `ensurePersonalOrganization` (idempotent: returns the existing org when any membership exists) called from `signInAction` after session creation, redirecting to `/wepatent/app/terms` when clickwrap is outstanding. Dashboard's org-creation branch deleted; the dashboard calls the same idempotent helper as a safety net for pre-existing sessions. **Placeholder name derived from the email local-part** — `defaultOrganizationName("jeff@…")` → `"Jeff's workspace"` — chosen over a generic "My workspace" because it reads like a real workspace name; separators become spaces, purely numeric segments are dropped (so `founder-1754300000@…` → `"Founder's workspace"`), and anything that yields nothing human falls back to `"My workspace"`, always inside the 2–120 DB bound. **Tenancy model unchanged**: the same transactional `createOrganizationForUser` runs, producing owner membership, default retention, wallet + `promo_credit` ledger entry, the seeded synthetic record, and the `organization.created` audit event. Rename: `OrganizationNameField.tsx` (debounce + blur + Escape + aria-live, same pattern as the working title) → `PUT /api/settings/organization` → `updateOrganizationName` (owner-only `org.manage`, 2–120 bounds matching the DB check, `organization.renamed` audit event). New `DataPort.updateOrganizationName` implemented in BOTH adapters. **No schema change** — `organizations.name` already exists and the `organizations_owner_update` RLS policy (0002) already covers it; no immutability trigger on the table | unit `tests/onboarding-org.test.ts`: naming derivation incl. numeric-segment and fallback cases and the 120-char bound; auto-creation produces identical side effects (owner membership, retention, wallet 2500 + promo entry, synthetic record, audit event); idempotency across repeated sign-ins (exactly one `organization.created`); an invited member never gets a second org or a second seed; rename is role-gated, bounds-checked, trimmed, and audited. E2E: sign-in lands on the clickwrap with no "Create organization" button; Settings rename autosaves, persists across reload, shows `organization.renamed` in the audit trail, and refuses a too-short name client-side. **Cross-tenant isolation E2E unchanged and passing** | verified |
+| 6 | **Derive upload Kind; collapse Kind + Note** | `deriveUploadKind` (pure, `domain/uploads.ts`) maps the detected interpretation class to the kind: image → `image`, document class (PDF/DOCX/PPTX/XLSX/TXT/MD/SVG) → `document`, `model3d` (STL/STEP/OBJ/3MF) → `model`, audio (MP3/WAV/M4A) → `audio`, the filing-receipt surface → `filing_receipt`, everything else including video → `other`. It reuses `interpretationClassFor`/`getAllowedType`, so browser `application/octet-stream` reporting for CAD/audio still resolves and a type the pipeline would reject never gets a confident kind. `UploadForm.tsx`: file input first, upload still starts on selection with the derived kind, Kind + Note moved into a closed "Add details (optional)" `<details>` whose select defaults to "Auto — from the file type"; the derived kind is stated back in the success message ("Uploaded photo.png as image") rather than applied silently. `FilingReceiptUpload.tsx` routes through the same function with its pinned context. Validation, quarantine, scanning, and which interpretation pass runs are all unchanged — kind is organizational metadata only | unit `tests/upload-kind.test.ts`: 21-row derivation table, vocabulary containment, filing-receipt pinning, octet-stream fallback, and "rejected types never get a confident kind". E2E studio journey: disclosure closed, `#upload-kind`/`#upload-note` hidden, and md/png/stl uploads report "as document"/"as image"/"as model"; axe scan with the disclosure open plus a keyboard focus check | verified |
+| 7 | **Remember the last top-up amount + one-click top-up** | **Last amount:** `lastTopUpAmountCents` (pure, `domain/billing.ts`) reads the org's most recent settled `top_up` from the immutable wallet ledger — promo credits and usage settlements never count, and an amount no longer offered falls back to `DEFAULT_TOP_UP_CENTS`. No new preference state, no migration. **One-click:** `BillingPort` gains `getDefaultPaymentMethod` and `createOffSessionTopUp`, implemented in BOTH adapters. The Stripe adapter reads `invoice_settings.default_payment_method` (falling back to the newest attached card) and, on top-up, POSTs `/v1/payment_intents` with `off_session=true`, `confirm=true`, `customer`, `payment_method`, `metadata[organization_id]`, `metadata[purpose]=wallet_top_up`, and a per-attempt `Idempotency-Key` header. **Checkout now saves the card**: `payment_intent_data[setup_future_usage]=off_session` plus `customer_creation=always` when the org has no Stripe customer, and the PaymentIntent carries the same metadata the webhook keys on — so the second top-up onward is one click. **Crediting is unchanged and single-pathed**: `processStripeWebhook` gained `payment_intent.succeeded` alongside `checkout.session.completed` in one `WALLET_CREDIT_EVENTS` table; both go through signature verification → `insertStripeEvent` dedupe → billing outbox → the `stripeReference` credit-once guard → immutable ledger entry + wallet update + `billing.wallet_top_up_credited` audit. The action never credits directly. **SCA is honest**: Stripe's HTTP 402 `authentication_required` (and any non-`succeeded`/`processing` intent status) becomes `requires_action` → `authentication_required`, and the billing page says "Nothing was charged" next to a button that completes the same amount through Checkout. Declines are reported as declines. Raw Stripe bodies never leave the server; `billing.off_session_top_up_attempted` audit events carry amount + outcome only. Local mode has no Stripe, so the local adapter's success is delivered as a SIGNED synthetic `payment_intent.succeeded` through the identical pipeline (same approach as the existing simulated checkout) — no real money anywhere | unit `tests/stripe-one-click-topup.test.ts` (20 tests, fake fetch transport, zero credentials): last-amount memory incl. promo/settlement exclusion and unoffered amounts; `setup_future_usage` + `customer_creation` on Checkout and their absence on subscriptions; default-payment-method lookup incl. list fallback and the null cases; off-session PaymentIntent request shape + idempotency header; **SCA `authentication_required` (402) → `requires_action`, never success**; non-succeeded status → `requires_action`; decline → failure with no raw-body leak; amount allowlist enforced before any network call; `payment_intent.succeeded` credits once, is idempotent on redelivery, records the saved-card note and customer id, is refused on a forged signature, and is ignored for non-top-up intents; the service is role-gated, amount-gated, credited by the webhook, and audited. E2E `billing.spec.ts`: fresh tenant → no one-click button and the default amount → checkout top-up → last amount now preselected AND "Top up $50.00" one-click appears → one click credits the wallet through the verified webhook with the "via saved payment method" ledger note | verified |
+
+### Boundary notes
+
+- **Spend consent is intact.** One-click top-up still requires the user to
+  press a button that names the exact amount; only the Checkout page-hop is
+  removed. Nothing is ever auto-charged, no recurring authorization is
+  created, and SCA/declines are surfaced rather than swallowed.
+- **Ledger/AI semantics untouched.** No `ai_proposed` confirmation, no
+  cost-estimate consent before a model run, and no counsel gate changed.
+- **Attestations untouched.** The guided form's review-stage accuracy
+  checkbox, the "no disclosure events"/"no source documents" negative
+  attestations, the clickwrap, the purge confirmation, and the invitation
+  flow all keep their explicit human actions. The autosave path is
+  structurally unable to record the review attestation.
+- **Draft ≠ validated.** Autosaved guided-form stages are always
+  incomplete until server-side validation passes; submission still requires
+  every stage validated plus the attestation.
+
+### Verification (fresh, 2026-08-04, this container)
+
+| Command | Result |
+|---|---|
+| `npm run lint` | 0 errors |
+| `npm run typecheck` | 0 errors |
+| `npm run test:wepatent` | 27 files, 337/337 passed (was 278; +59: auto-org creation/idempotency/rename 7, guided-form autosave 6, kind derivation 26, one-click top-up + last-amount 20) |
+| `npm run test:lex` | 22 files, 409 passed / 8 skipped (unchanged) |
+| `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e:wepatent` | 44/44 (was 42; +2: one-click top-up, organization-name autosave), 0 did-not-run |
+| `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e:lex` | 14/14 (unchanged) |
+| `npm run build` | success |
+| pgTAP | not run — **no schema change**. Verified: `organizations.name` exists with the 2–120 check and an owner-update RLS policy (0002) and no immutability trigger; `payment_intent.succeeded` reuses the existing `stripe_events` / `billing_outbox` / `wallet_ledger_entries` tables; the last-amount default is derived from existing ledger rows; upload `kind` is already a free-text column |
+
+### Deploy notes
+
+No new dependencies, no new environment variables, **no migration** — the
+live schema (`jxehyxkcibiqluojeryy`) is unchanged and backward compatible.
+Two new API routes deploy with the app code (`PUT
+/api/settings/organization`, `POST /api/intake/draft`). One `DataPort`
+method (`updateOrganizationName`) and two `BillingPort` methods
+(`getDefaultPaymentMethod`, `createOffSessionTopUp`) were added and are
+implemented in both adapters.
+
+**Needs Jeff (Stripe dashboard, before live one-click top-up):**
+
+1. In the Stripe dashboard, ensure the test-mode (and later live-mode)
+   payment methods allow card saving, and that the Customer Portal
+   configuration permits managing saved payment methods so users can remove
+   a card.
+2. Add `payment_intent.succeeded` to the webhook endpoint's enabled events.
+   Without it the one-click charge succeeds at Stripe but the wallet is
+   never credited — the code deliberately has no second crediting path.
+   (`checkout.session.completed` stays enabled.)
+3. Off-session charging assumes the saved mandate permits merchant-initiated
+   transactions. Because the card is saved through Checkout with
+   `setup_future_usage=off_session`, Stripe collects the right mandate text
+   automatically; no extra consent copy is required, but confirm the
+   Checkout branding/terms text is what Jeff wants shown.
+4. Everything remains **test-mode only** until Jeff sets live credentials
+   (PRD §17.4). No live charge has been made from this container.
+
+---
+
+## Round 3 — Automatic MPEP-compliant patent figures + per-model markup (2026-08-04)
+
+Full design, rule citations, cost model, and the owner's enabling steps:
+**`docs/PATENT-FIGURES.md`**.
+
+### Traceability
+
+| Requirement | Where implemented | Where verified |
+|---|---|---|
+| FR-6 per-entry retail markup (1.5 default; **2.0 image generation**, Jeff 2026-08-04) | `src/lib/wepatent/domain/markup.ts`, `domain/usage.ts`, `PROVIDER_PRICE_REGISTRY`, migration 0012 (`markup_multiplier_bp`) | `tests/markup.test.ts` (26), `supabase/wepatent/tests/08_patent_figures.sql` |
+| FR-6 markup disclosure accuracy | billing page, wepatent pricing page, ai-disclosure page, drafts page (×2), studio page, `MeshViewer`, `InterviewPanel`, PRD FR-6 | `tests/markup.test.ts` disclosure-consistency block; `e2e/wepatent/workspace.spec.ts`, `interview.spec.ts` |
+| Figures §2 three-layer architecture | `src/lib/server/figures/**` (Layer 2/3), `adapters/production/gemini-image.ts` (Layer 1) | `tests/figure-compose.test.ts`, `figure-rules.test.ts`, `gemini-line-art.test.ts` |
+| Figures §3 rule set, versioned + cited | `figures/rules.ts` (`RULES_VERSION`) | `tests/figure-rules.test.ts` — passing **and** failing fixture per mechanically checked rule, enforced by a runtime coverage guard |
+| Figures §4 data model, additive, RLS, append-only | migration `0012_patent_figures.sql` (applied live to `jxehyxkcibiqluojeryy`) | `supabase/wepatent/tests/08_patent_figures.sql` (45 assertions) |
+| Figures §5 pipeline, metered end to end | `src/lib/server/services/figures.ts`, `jobs/executors.ts` | `tests/figures-pipeline.test.ts` (20) |
+| Figures §5 caps + no-op + retry-no-double-charge | `services/figures.ts`, `env` | `tests/figures-pipeline.test.ts` |
+| Figures §6 provider behind the gateway, disabled by default | `adapters/production/gemini-image.ts`, `env.FIGURES_GEMINI_ENABLED` | `tests/gemini-line-art.test.ts` — full fake-transport matrix, **zero real spend** |
+| Figures §8 no fabrication → `needs_input` | `figures/planner.ts`, `services/figures.ts` | `tests/figure-planner.test.ts`, `e2e/wepatent/figures.spec.ts` |
+| Figures §8 prompt injection is evidence, never instruction | `figures/planner.ts`, `figures/gemini-contract.ts` | `tests/figure-planner.test.ts`, `gemini-line-art.test.ts`, E2E journey |
+| Figures §8 provenance in exports | `services/exports.ts`, `services/export-render.ts` | `tests/figures-pipeline.test.ts`, `e2e/wepatent/figures.spec.ts` |
+| Figures §9 E2E journey + keyboard + axe | `e2e/wepatent/figures.spec.ts` | 3 specs, all passing |
+| Invariant 1 (AI can never confirm) | `figure_sets.ai_state` / `figures.ai_state` default `ai_proposed`; only `acceptFigureSet` / `renameFigurePart` write otherwise | `tests/figures-pipeline.test.ts`, pgTAP 08 |
+| Invariant 4 (never filing-ready) | figures page copy, sheet `<title>`, `X-Wepatent-Label` header, export section | E2E journey |
+| Invariant 5 (tenant isolation) | `organization_id` + RLS on all six tables | pgTAP 08 cross-tenant block |
+| Invariant 6 (honest status over fake success) | `needs_input` / `paused_budget` states, validator `needs_human_review` | unit + E2E |
+
+### Gates (fresh, 2026-08-04)
+
+| Gate | Result |
+|---|---|
+| `npm run lint` | 0 problems |
+| `npx tsc --noEmit` | clean |
+| wepatent units | **572 passed** (was 337) |
+| lex units | 409 passed, 8 skipped — unchanged |
+| pgTAP | **226 passed** (was 181) |
+| wepatent E2E | **47 passed**, 0 did-not-run (was 44) |
+| lex E2E | 14 passed — unchanged |
+| `npm run build` | success |
+| `npm run audit:prod` | 0 vulnerabilities |
+
+### Live-DB changes (`jxehyxkcibiqluojeryy`)
+
+Migration 0012 applied via the Supabase management API and verified
+post-apply (tables, RLS flags, policies, triggers, constraint definitions):
+
+- six new tables + six member-select policies + two immutability triggers;
+- `app_jobs.kind` check extended with the four figure kinds;
+- `exports.figure_set_id` added;
+- `usage_events.markup_multiplier_bp` and
+  `usage_reservations.markup_multiplier_bp` added (default 15000), and
+  `usage_events_markup` rewritten to
+  `customer_charge_cents = ceil(provider_cost_cents * markup_multiplier_bp / 10000.0)`.
+
+Backward compatible: every existing row defaults to 15000, which makes the
+new constraint identical to the old `× 1.5` one for all historical data.
+
+### Deploy notes
+
+**No new dependencies.** PNG decode/encode, SVG emission and PDF output are
+built on `node:zlib` and the already-present `pdf-lib`.
+
+**New environment variables (all optional, all defaulting to OFF):**
+
+```
+GEMINI_API_KEY                 # server-side only; unset = line art unavailable
+FIGURES_GEMINI_ENABLED=0       # explicit enable flag; BOTH are required
+FIGURES_AUTO_GENERATE=0        # automatic triggering on draft creation
+FIGURE_SET_BUDGET_CENTS=300    # per-draft cap
+FIGURES_ORG_DAILY_CAP_CENTS=2000  # org daily cap
+```
+
+**Needs Jeff:** the four approval gates in `docs/PATENT-FIGURES.md` §7 —
+enable the drawing model, confirm the 2.0 image markup and its published
+copy, confirm the caps, and turn on automatic triggering. Until then the
+deterministic paths run and cost nothing, and every generative path
+surfaces an honest "line art unavailable" question instead of a drawing.
+
+---
+
+## Round: task-type billing, image-model selection, three-pass drafting (2026-08-04)
+
+Three directives from Jeff, landed as five increments.
+
+### Directive 1 — 2× for every GENERATION task
+
+> "Change the PRD to implement a 2x token cost rule for any task performed that requires generation."
+
+The multiplier is now decided by what a model call **produces**, not by which
+vendor served it or whether the bytes were tokens or pixels.
+
+| | |
+|---|---|
+| **generation → 2.0×** | newly authored work product delivered to the customer |
+| **analysis → 1.5×** | reading, structuring, checking, or routing what already exists |
+
+- Catalog moved to `src/lib/shared/billing/markup.ts` (product-agnostic;
+  `src/lib/wepatent/domain/markup.ts` re-exports it) so **both** lanes
+  publish one number.
+- `src/lib/shared/billing/task-category.ts` is the **exhaustive** table:
+  every wepatent draft workflow, job kind, gateway task kind, Lex workflow
+  key, and Lex run stage appears exactly once. Each table is a
+  `Record<ClosedUnion, …>`, so a new kind without a category fails `tsc`
+  and therefore `npm run build`; `tests/task-category.test.ts` enumerates
+  the same sets at runtime in case a union is ever widened to `string`.
+- A price-registry entry no longer carries the rate — the same `gpt-4.1`
+  entry bills at 2.0 when it drafts and 1.5 when it classifies. Entry
+  categories are fallbacks only, and an **uncategorised** charge resolves to
+  1.5, never the higher rate.
+- **Analysis math is byte-identical** to the pre-change 1.50 formula
+  (regression-tested for every cost 0..5000).
+
+### Directive 2 — image-model default
+
+> "Make the default model for image generation nano banana 2, or if it is better output, use gemini pro 3."
+
+**Nano Banana 2 (Gemini 3 Pro Image) stays the default.** It keeps that
+position because the Layer-1 prompt contract was written and unit-tested
+against it — **not** because it has been shown to draw better. No comparison
+has been run, and `docs/PATENT-FIGURES.md` §7.2a says so and gives the
+procedure for running one.
+
+`src/lib/server/figures/image-models.ts` is the selectable registry;
+`FIGURES_IMAGE_MODEL` chooses. An id not in the registry is **refused**, not
+substituted, so a typo cannot send spend to an unpriced model. Both models
+carry their own effective-dated price entry, bill at the same 2.0
+generation multiplier, and pass the same hygiene gate.
+
+### Directive 3 — three-pass drafting, both products
+
+> "…first copy of the patent draft with an illustrations brief (including reference numbers), then build the patent figures, and then come back to create a second version … fully enabling and checking against the patent figures before sending anything to the client."
+
+```
+PASS_1_DRAFTING → FIGURES_PENDING → FIGURES_READY → PASS_2_REVISING → READY_FOR_REVIEW
+                (+ NEEDS_INPUT · PAUSED_BUDGET · FAILED)
+```
+
+Shared, product-agnostic: `src/lib/shared/drafting/` (state machine, brief
+schema + authoring, two-way §608.02 reconciliation, delivery gate, product
+config) and `src/lib/server/services/draft-passes.ts` (the orchestrator —
+no product branch anywhere in it).
+
+The reference-numeral registry now has **one author**: Pass 1. The figure
+planner **consumes** (`consumeNumerals`) and cannot mint; a part the brief
+did not number becomes a targeted question, never a silent numeral.
+
+### Live-DB changes (`jxehyxkcibiqluojeryy`)
+
+Migration `0013_three_pass_drafting.sql`, additive only, applied via the
+Supabase management API and verified post-apply:
+
+- `draft_sets`, `draft_set_transitions` (2 tables, 2 member-select
+  policies, 1 append-only trigger);
+- enums `draft_pass_state` (8 values), `draft_pass_stage` (4);
+- `figure_sets.draft_set_id`, `figure_sets.built_from_brief`;
+- `draft_versions.draft_pass`, `draft_versions.draft_set_id`;
+- `exports.draft_set_id`;
+- `app_jobs.kind` extended with `draft_pass_1`, `draft_pass_2`;
+- 4 CHECK constraints, of which **`draft_sets_ready_requires_pass_2` is the
+  delivery gate in the schema**: `ready_for_review` is impossible without a
+  second-pass version, a figure set, and a passing reconciliation.
+
+Backward compatible: `draft_pass` is null on every pre-existing version, and
+nothing existing was dropped or narrowed.
+
+### Traceability
+
+| Requirement | Implementation | Test |
+|---|---|---|
+| Task-type 2×/1.5× rule, exhaustive mapping | `src/lib/shared/billing/{markup,task-category}.ts` | `tests/task-category.test.ts` (15), `tests/markup.test.ts` (34) |
+| Analysis math unchanged | `domain/usage.ts` (untouched formula) | `tests/markup.test.ts` byte-identity loop |
+| Disclosure consistency, both lanes | every surface derives from the catalog | `tests/markup.test.ts` disclosure block |
+| Image-model default + selection | `server/figures/image-models.ts` | `tests/image-model-selection.test.ts` (9) |
+| Three-pass state machine | `shared/drafting/pass-state.ts` | `shared/drafting/pass-state.test.ts` (18) |
+| Illustrations brief, numerals | `shared/drafting/{illustrations-brief,author-brief}.ts` | `illustrations-brief.test.ts` (18) |
+| Two-way §608.02 gate | `shared/drafting/reconcile.ts` | `reconcile.test.ts` (17) |
+| Delivery gate | `shared/drafting/delivery-gate.ts` + schema CHECK + export path | `delivery-gate.test.ts` (18), `tests/three-pass-flow.test.ts` |
+| Planner consumes, never mints | `server/figures/numerals.ts` `consumeNumerals` | `tests/three-pass-flow.test.ts` registry test |
+| Data model, RLS, append-only | migration `0013` (applied live) | `supabase/wepatent/tests/09_three_pass_drafting.sql` (43) |
+| End-to-end journey | `ThreePassPanel` + actions + export gate | `e2e/wepatent/three-pass.spec.ts` (2) |
+
+### Gates (fresh, this container)
+
+lint 0 · tsc clean · wepatent units **623** · lex units **505** (+8 skipped) ·
+wepatent pgTAP **269** · lex pgTAP **110 + 7** · wepatent E2E **49** ·
+lex E2E **16** (both 0 did-not-run) · build success · `npm audit --omit=dev
+--audit-level=high` clean.
+
+### Needs Jeff
+
+1. **The category mapping table** — six borderline calls are flagged in the
+   final report for correction (`counsel_question_list`, `gap_analysis`,
+   Lex `status_digest`, `response_path_options`, `claim_scope_strategy`,
+   `filing_strategy_options`).
+2. **The published rate sentence** now reads *provider cost × 2.0 for
+   generation tasks, × 1.5 for analysis tasks* on every customer-facing
+   surface in both products. Changing either multiplier is a pricing change.
+3. **Lex customers are now charged 2.0 for drafting workflows** where they
+   were previously quoted 1.50. This is a live price change for the Lex lane
+   and needs an explicit go/no-go before deploy.
+4. The four pre-existing figure approval gates in `PATENT-FIGURES.md` §7
+   remain open, plus §7.2a: whether to run the image-model comparison at all.

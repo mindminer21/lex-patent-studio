@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import {
+  formatMultiplier,
+  MARKUP_MULTIPLIERS,
+  markupDisclosure,
+} from "@/lib/shared/billing/markup";
 import PublicShell from "@/components/wepatent/PublicShell";
 
 export const metadata: Metadata = {
@@ -46,9 +51,18 @@ export default function PricingPage() {
           <h2>How AI usage billing works</h2>
           <p>
             Every generation run shows an estimated cost range before it starts. The run is reserved against
-            your prepaid wallet and settled from provider-reported usage afterward. The customer charge is the
-            actual provider cost multiplied by 1.50, using effective-dated rates recorded with every usage
-            event. No generation begins if the reservation would exceed your wallet balance or a budget cap.
+            your prepaid wallet and settled from provider-reported usage afterward. The customer charge is{" "}
+            {markupDisclosure()}, using effective-dated rates recorded with every usage event. The
+            multiplier is decided by the task, not the model. A generation task — application
+            drafting in either pass, the illustrations brief, patent-figure generation, draft
+            revision, and any other newly authored work product delivered to you — bills at{" "}
+            {formatMultiplier(MARKUP_MULTIPLIERS.generation)}× provider cost. An analysis task —
+            extraction, parsing, classification, transcription, retrieval, verification, coverage
+            scoring, interview questions, and routing — bills at{" "}
+            {formatMultiplier(MARKUP_MULTIPLIERS.analysis)}×. A run that does both marks each part
+            up at its own rate before summing. Every settled event records the provider cost, the
+            multiplier applied, and the rate version. No run begins if the reservation would exceed
+            your wallet balance or a budget cap.
           </p>
         </section>
         <section className="terms-source">

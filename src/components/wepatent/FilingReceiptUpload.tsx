@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { deriveUploadKind } from "@/lib/wepatent/domain/uploads";
 
 const REJECTION_MESSAGES: Record<string, string> = {
   mime_not_allowed: "Filing receipts must be PDF, PNG, or JPEG files.",
@@ -43,7 +44,13 @@ export default function FilingReceiptUpload({ inventionId }: { inventionId: stri
           filename: file.name,
           mimeType: file.type || "application/octet-stream",
           declaredBytes: file.size,
-          kind: "filing_receipt",
+          // Kind derivation (friction audit #6): the filing-receipt surface
+          // is the "filing receipt context", so it pins that kind.
+          kind: deriveUploadKind({
+            filename: file.name,
+            mimeType: file.type || "application/octet-stream",
+            context: "filing_receipt",
+          }),
           note: "USPTO filing receipt (uploaded by the user after self-filing)",
         }),
       });

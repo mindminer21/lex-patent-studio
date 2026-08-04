@@ -1,15 +1,50 @@
 /**
  * Model catalog and cost-estimate math (PRD-lex-patent-studio FR-6, FR-9).
  *
- * Customer charge = provider cost × 1.50 (PRD-wepatent FR-6), with
- * effective-dated rates. The rates below are LOCAL-MODE PLACEHOLDER entries
- * in the effective-dated price-registry shape; production rates load from
- * the model_prices table and are never hard-coded in frontend source.
+ * Customer charge = provider cost × a TASK-TYPE multiplier (PRD-wepatent
+ * FR-6, Jeff's directive 2026-08-04), with effective-dated rates:
+ *
+ *   generation 2.0×  ·  analysis 1.5×
+ *
+ * The multiplier catalog is shared with wepatent
+ * (`src/lib/shared/billing/markup.ts`) and the exhaustive workflow →
+ * category table lives in `src/lib/shared/billing/task-category.ts`. Lex's
+ * drafting, claim, OA-response, memo, declaration, search-report, and
+ * strategy workflows are generation; its extraction, classification,
+ * formalities, digest, and analysis workflows are analysis.
+ *
+ * The rates below are LOCAL-MODE PLACEHOLDER entries in the effective-dated
+ * price-registry shape; production rates load from the model_prices table
+ * and are never hard-coded in frontend source.
  *
  * No adapter in this repository calls a live paid API.
  */
+import {
+  DEFAULT_BILLING_CATEGORY,
+  markupMultiplierFor,
+  MARKUP_MULTIPLIERS,
+  type BillingCategory,
+} from "@/lib/shared/billing/markup";
+import { LEX_WORKFLOW_CATEGORY } from "@/lib/shared/billing/task-category";
+import type { WorkflowKey } from "./tiers";
 
-export const USAGE_MARKUP = 1.5;
+export { MARKUP_MULTIPLIERS, markupMultiplierFor, type BillingCategory };
+
+/**
+ * The generation and analysis multipliers, named for Lex call sites.
+ *
+ * There is deliberately no single `USAGE_MARKUP` constant any more: a bare
+ * number cannot be printed on a customer-facing page without saying which
+ * kind of task it applies to, and printing the wrong one is the exact
+ * substantiation failure docs/legal-ethics-risk-memo.md warns about.
+ */
+export const USAGE_MARKUP_GENERATION = MARKUP_MULTIPLIERS.generation;
+export const USAGE_MARKUP_ANALYSIS = MARKUP_MULTIPLIERS.analysis;
+
+/** The billing category a Lex workflow's model spend falls under. */
+export function markupForWorkflow(workflow: WorkflowKey): number {
+  return markupMultiplierFor(LEX_WORKFLOW_CATEGORY[workflow] ?? DEFAULT_BILLING_CATEGORY);
+}
 
 export const MODEL_TIERS = ["fast", "advanced", "frontier"] as const;
 export type ModelTier = (typeof MODEL_TIERS)[number];
@@ -157,11 +192,13 @@ export interface TokenWorkload {
 
 export interface ChargeEstimate {
   providerCostUsd: number;
-  /** providerCost × USAGE_MARKUP, rounded to cents. */
+  /** providerCost × the task-type markup, rounded to cents. */
   expectedChargeUsd: number;
   lowChargeUsd: number;
   highChargeUsd: number;
   markup: number;
+  /** Which task category set the multiplier. */
+  category: BillingCategory;
 }
 
 export function roundUsd(v: number): number {
@@ -179,23 +216,47 @@ export function providerCostUsd(
   );
 }
 
-/** Full estimate: provider cost × 1.50, with the disclosed variance band. */
+/**
+ * Full estimate: provider cost × the task-type multiplier, with the
+ * disclosed variance band.
+ *
+ * `category` defaults to the platform default (analysis, 1.5) so an
+ * uncategorised estimate is never quoted HIGHER than it would have been
+ * before the task-type rule; every caller that knows its workflow passes
+ * the workflow's category explicitly.
+ */
 export function estimateCharge(
   model: ModelCatalogEntry,
   workload: TokenWorkload,
+  category: BillingCategory = DEFAULT_BILLING_CATEGORY,
 ): ChargeEstimate {
   if (workload.variance < 0 || workload.variance >= 1) {
     throw new Error(`Estimate variance must be in [0, 1); got ${workload.variance}`);
   }
+  const markup = markupMultiplierFor(category);
   const cost = providerCostUsd(model, workload);
-  const expected = roundUsd(cost * USAGE_MARKUP);
+  const expected = roundUsd(cost * markup);
   return {
     providerCostUsd: roundUsd(cost),
     expectedChargeUsd: expected,
     lowChargeUsd: roundUsd(expected * (1 - workload.variance)),
     highChargeUsd: roundUsd(expected * (1 + workload.variance)),
-    markup: USAGE_MARKUP,
+    markup,
+    category,
   };
+}
+
+/** Estimate for a named Lex workflow — resolves the category for you. */
+export function estimateChargeForWorkflow(
+  model: ModelCatalogEntry,
+  workload: TokenWorkload,
+  workflow: WorkflowKey,
+): ChargeEstimate {
+  return estimateCharge(
+    model,
+    workload,
+    LEX_WORKFLOW_CATEGORY[workflow] ?? DEFAULT_BILLING_CATEGORY,
+  );
 }
 
 /** Is the wallet balance sufficient to reserve the high end of the estimate? */

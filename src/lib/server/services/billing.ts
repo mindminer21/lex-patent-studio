@@ -1,10 +1,23 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { env } from "@/lib/wepatent/env";
+import { lastTopUpAmountCents } from "@/lib/wepatent/domain/billing";
+import { can, type Role } from "@/lib/wepatent/domain/roles";
+import { env, isLocalMode } from "@/lib/wepatent/env";
 import { getAdapters } from "../adapters";
-import { verifyStripeSignature } from "../adapters/production/stripe-billing";
-import type { BillingOutboxRecord, CheckoutRequest } from "../adapters/types";
+import {
+  ALLOWED_TOP_UP_CENTS,
+  computeStripeSignature,
+  DEFAULT_TOP_UP_CENTS,
+  verifyStripeSignature,
+} from "../adapters/production/stripe-billing";
+import type {
+  BillingOutboxRecord,
+  CheckoutRequest,
+  OffSessionTopUpResult,
+  SavedPaymentMethod,
+} from "../adapters/types";
 import { incrementCounter, logEvent, newCorrelationId } from "../observability";
 
 /**
@@ -73,6 +86,150 @@ export async function startPortalSession(params: {
   }
 }
 
+/**
+ * The amount to preselect in the top-up control: the org's last settled
+ * top-up (friction audit #7 — "remember the last top-up amount"), derived
+ * from the immutable wallet ledger so there is no new preference state.
+ */
+export async function getTopUpDefaults(organizationId: string): Promise<{
+  defaultAmountCents: number;
+  savedPaymentMethod: SavedPaymentMethod | null;
+}> {
+  const { billing, data } = getAdapters();
+  const ledger = await data.listLedgerEntries(organizationId);
+  let savedPaymentMethod: SavedPaymentMethod | null = null;
+  try {
+    savedPaymentMethod = await billing.getDefaultPaymentMethod(organizationId);
+  } catch {
+    // A billing outage must never break the billing page; the user simply
+    // gets the Checkout path.
+    savedPaymentMethod = null;
+  }
+  return {
+    defaultAmountCents: lastTopUpAmountCents(
+      ledger,
+      ALLOWED_TOP_UP_CENTS,
+      DEFAULT_TOP_UP_CENTS,
+    ),
+    savedPaymentMethod,
+  };
+}
+
+export type SavedCardTopUpResult =
+  | { ok: true; paymentIntentId: string }
+  | {
+      ok: false;
+      error: "forbidden" | "invalid_amount" | "no_saved_payment_method" | "authentication_required" | "declined";
+    };
+
+/**
+ * One-click wallet top-up against a saved payment method (friction audit
+ * #7). Spend consent is unchanged in substance — the user still presses a
+ * button that names the exact amount; only the Checkout detour is removed.
+ *
+ * Money-path invariants preserved:
+ * - a fresh idempotency key per attempt is handed to Stripe, so a retried
+ *   request can never charge twice;
+ * - the wallet is credited ONLY by `payment_intent.succeeded` running
+ *   through the verified webhook → dedupe → outbox → immutable-ledger path,
+ *   guarded by the Stripe reference — never by this function;
+ * - SCA is surfaced honestly as `authentication_required` so the UI can
+ *   send the user to Checkout; nothing is ever faked as success.
+ */
+export async function topUpWithSavedPaymentMethod(params: {
+  organizationId: string;
+  userId: string;
+  actorRole: Role;
+  amountCents: number;
+}): Promise<SavedCardTopUpResult> {
+  if (!can(params.actorRole, "billing.manage")) return { ok: false, error: "forbidden" };
+  if (!(ALLOWED_TOP_UP_CENTS as readonly number[]).includes(params.amountCents)) {
+    return { ok: false, error: "invalid_amount" };
+  }
+
+  const { billing, data } = getAdapters();
+  const idempotencyKey = `wallet_top_up:${params.organizationId}:${randomUUID()}`;
+
+  let result: OffSessionTopUpResult;
+  try {
+    result = await billing.createOffSessionTopUp(params.organizationId, {
+      amountCents: params.amountCents,
+      idempotencyKey,
+    });
+  } catch {
+    return { ok: false, error: "declined" };
+  }
+
+  await data.appendAuditEvent({
+    organizationId: params.organizationId,
+    actor: `user:${params.userId}`,
+    action: "billing.off_session_top_up_attempted",
+    target: idempotencyKey,
+    // Amounts and outcome only — never card data or payer identity (FR-7).
+    meta: { amountCents: params.amountCents, status: result.status },
+  });
+
+  if (result.status === "requires_action") {
+    return { ok: false, error: "authentication_required" };
+  }
+  if (result.status === "failed") {
+    return {
+      ok: false,
+      error: result.reason === "no_saved_payment_method" ? "no_saved_payment_method" : "declined",
+    };
+  }
+
+  // LOCAL MODE ONLY: no Stripe exists to deliver `payment_intent.succeeded`,
+  // so the synthetic event is signed with the local webhook secret and put
+  // through the SAME verification/dedupe/outbox/ledger pipeline production
+  // uses — exactly like the simulated checkout. No real money anywhere.
+  if (isLocalMode) {
+    await deliverSimulatedPaymentIntentSucceeded({
+      organizationId: params.organizationId,
+      amountCents: params.amountCents,
+      paymentIntentId: result.paymentIntentId,
+    });
+  }
+
+  return { ok: true, paymentIntentId: result.paymentIntentId };
+}
+
+async function deliverSimulatedPaymentIntentSucceeded(params: {
+  organizationId: string;
+  amountCents: number;
+  paymentIntentId: string;
+}): Promise<void> {
+  const { data } = getAdapters();
+  const customerId =
+    (await data.getStripeCustomerId(params.organizationId)) ??
+    `cus_local_${params.organizationId.slice(0, 8)}`;
+  const event = {
+    id: `evt_local_${randomUUID()}`,
+    type: "payment_intent.succeeded",
+    data: {
+      object: {
+        id: params.paymentIntentId,
+        customer: customerId,
+        amount: params.amountCents,
+        amount_received: params.amountCents,
+        metadata: {
+          organization_id: params.organizationId,
+          purpose: "wallet_top_up",
+        },
+      },
+    },
+  };
+  const payload = JSON.stringify(event);
+  await processStripeWebhook({
+    payload,
+    signatureHeader: computeStripeSignature(
+      payload,
+      env.STRIPE_WEBHOOK_SECRET,
+      Math.floor(Date.now() / 1000),
+    ),
+  });
+}
+
 const eventSchema = z.object({
   id: z.string().min(1).max(255),
   type: z.string().min(1).max(255),
@@ -82,12 +239,26 @@ const eventSchema = z.object({
         id: z.string().optional(),
         customer: z.string().nullish(),
         amount_total: z.number().int().nonnegative().nullish(),
+        /** PaymentIntent amounts (one-click top-up). */
+        amount_received: z.number().int().nonnegative().nullish(),
+        amount: z.number().int().nonnegative().nullish(),
         client_reference_id: z.string().nullish(),
         metadata: z.record(z.string(), z.string()).nullish(),
       })
       .loose(),
   }),
 });
+
+/**
+ * Event types that credit the wallet, and where each carries its amount.
+ * Both land in the SAME outbox action and the same idempotency guard:
+ * - `checkout.session.completed` — hosted Checkout (first top-up);
+ * - `payment_intent.succeeded` — off-session one-click top-up (#7).
+ */
+const WALLET_CREDIT_EVENTS: Record<string, "amount_total" | "amount_received"> = {
+  "checkout.session.completed": "amount_total",
+  "payment_intent.succeeded": "amount_received",
+};
 
 export type WebhookOutcome =
   | { ok: true; status: "processed" | "duplicate" | "ignored" }
@@ -146,13 +317,14 @@ export async function processStripeWebhook(params: {
     return { ok: true, status: "duplicate" };
   }
 
-  if (
-    event.type === "checkout.session.completed" &&
-    event.data.object.metadata?.purpose === "wallet_top_up"
-  ) {
+  const amountField = WALLET_CREDIT_EVENTS[event.type];
+  if (amountField && event.data.object.metadata?.purpose === "wallet_top_up") {
     const organizationId =
       event.data.object.metadata.organization_id ?? event.data.object.client_reference_id;
-    const amountCents = event.data.object.amount_total;
+    const amountCents =
+      amountField === "amount_total"
+        ? event.data.object.amount_total
+        : event.data.object.amount_received ?? event.data.object.amount;
     if (!organizationId || !amountCents || amountCents <= 0) {
       await data.markStripeEventProcessed(event.id);
       return { ok: true, status: "ignored" };
@@ -165,6 +337,7 @@ export async function processStripeWebhook(params: {
         organizationId,
         amountCents,
         stripeCustomerId: event.data.object.customer ?? null,
+        source: event.type === "payment_intent.succeeded" ? "saved_card" : "checkout",
       },
     });
     await drainBillingOutbox();
@@ -245,7 +418,10 @@ async function applyOutboxEntry(entry: BillingOutboxRecord): Promise<void> {
     amountCents,
     reservationId: null,
     stripeReference: reference,
-    note: "Wallet top-up via Stripe Checkout",
+    note:
+      entry.payload.source === "saved_card"
+        ? "Wallet top-up via saved payment method"
+        : "Wallet top-up via Stripe Checkout",
   });
   await data.saveWallet({ ...wallet, balanceCents: wallet.balanceCents + amountCents });
 

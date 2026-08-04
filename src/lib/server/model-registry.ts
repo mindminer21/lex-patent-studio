@@ -24,7 +24,9 @@ export type ModelTier = {
  * PROVIDER_PRICE_REGISTRY. Only OpenAI is keyed/enabled today (Jeff's
  * OpenAI-only directive, 2026-08-02); both tiers map to gpt-4.1 until
  * additional providers are approved. Rates are the provider registry rates;
- * retail remains provider cost x 1.50 (FR-6) applied downstream.
+ * retail is applied downstream by TASK CATEGORY (FR-6, Jeff's directive
+ * 2026-08-04): 2.0x for generation tasks, 1.5x for analysis tasks. See
+ * src/lib/shared/billing/task-category.ts for the exhaustive mapping.
  */
 const PRODUCTION_MODEL_TIERS: readonly ModelTier[] = [
   {

@@ -120,9 +120,11 @@ describe("effective-dated provider price registry (FR-5/FR-6)", () => {
     expect(resolveProviderRate("missing", new Date("2026-08-01"), registry)).toBeNull();
   });
 
-  it("ships rates for all three required providers", () => {
+  it("ships rates for every registered provider", () => {
     const providers = new Set(PROVIDER_PRICE_REGISTRY.map((e) => e.provider));
-    expect(providers).toEqual(new Set(["openai", "anthropic", "xai"]));
+    // google joined the registry for Layer-1 patent line art (image
+    // generation only, disabled by default behind FIGURES_GEMINI_ENABLED).
+    expect(providers).toEqual(new Set(["openai", "anthropic", "xai", "google"]));
   });
 });
 

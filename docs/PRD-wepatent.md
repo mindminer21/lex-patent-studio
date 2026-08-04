@@ -1,8 +1,8 @@
 # wepatent Production Application PRD
 
 **Status:** Implementation source of truth
-**Version:** 1.0
-**Date:** July 30, 2026
+**Version:** 1.2
+**Date:** August 4, 2026
 **Repository:** https://github.com/mindminer21/lex-patent-studio
 **Primary product in this PRD:** **wepatent**
 **Related but separate product:** Lex Patent Studio
@@ -278,10 +278,43 @@ The following are distinct and cannot be skipped by ordinary user actions:
 - Tenant-scoped embedding namespace.
 - Source classification and redistribution restrictions.
 
+### FR-4a Three-pass patent drafting (the canonical drafting process)
+
+**Jeff's directive, 2026-08-04.** Every patent application draft is produced by a three-pass flow. This is not an option or a mode: it is *the* drafting process, and it is the same process in wepatent and Lex Patent Studio.
+
+```
+PASS_1_DRAFTING → FIGURES_PENDING → FIGURES_READY → PASS_2_REVISING → READY_FOR_REVIEW
+                (+ NEEDS_INPUT · PAUSED_BUDGET · FAILED)
+```
+
+**Pass 1 — draft plus the illustrations brief.** Produces the application draft (background, summary, detailed description) **and, as a required first-class structured artifact, the illustrations brief**: the ordered figure list, each figure's view type, what each figure must show, the parts appearing in each, and **the reference-numeral assignments**.
+
+- The brief is authored in Pass 1 so that the numerals in the prose and the numerals in the drawings come from **one source**. Pass 1 is the author of the reference-numeral registry (`figure_reference_numerals`).
+- The brief is a projection of rows that already exist — components, associations, method steps literally present in the record. Where the record cannot support a figure, the brief carries an **open question** rather than an invented figure.
+- The brief is schema-validated and consistency-checked (one numeral ↔ one part, both directions; consecutive figure numbering; every cited numeral assigned; every assigned numeral used) **before any figure is drawn**.
+- The draft prose must use the brief's numerals.
+
+**Figures stage.** The existing figure pipeline runs **off the illustrations brief**, not off ad-hoc planning. The planner **consumes** the brief's numerals and may not mint new ones; a part the brief did not number produces a targeted question, never a silently invented numeral. Zero user steps: the stage chains automatically from Pass 1 completion.
+
+**Pass 2 — enablement revision against the actual figures.** Re-drafts with the composed figures and their validation report as input. It must:
+
+- **Reconcile prose ↔ drawings both ways** — every numeral in the description appears in the drawings, and every numeral in the drawings appears in the description (37 CFR 1.84(p)(5), MPEP 608.02(g)). This is a **gate on Pass 2 completion**, not merely a report.
+- **Rewrite the "Brief Description of the Drawings"** to match the figures actually produced.
+- **Strengthen written-description/enablement coverage** for every depicted element, using the §112(a) coverage model already in the codebase.
+- **Flag — never silently fix** — any place where a figure and the record disagree.
+- Emit a **new draft version**. Pass 2 never mutates Pass 1 in place; both versions remain inspectable and diffable.
+
+**Client delivery gate.** Nothing is exported or delivered as a counsel/client package until the set reaches `READY_FOR_REVIEW` **and a human accepts**. If Pass 2 cannot complete — missing figures, unresolved numerals, a budget pause — the product states **exactly what is blocking and what it needs**. It must never emit a Pass-1-only package silently. The gate is enforced in three places: the shared evaluation in application code, a CHECK constraint in the schema, and the export path itself.
+
+**Preserved invariants.** AI output is `ai_proposed` until a human acts; every version carries the working-draft label; no legal advice; metering is **per pass** with the estimate shown before each; caps are honoured and pause between passes without losing the pass already paid for; a retry of either pass resolves to the same reservation and never double-charges.
+
+**Shared implementation.** The state machine, the illustrations-brief schema and authoring, the numeral registry rules, the reconciliation checks, and the pass-orchestration jobs live in **shared code** (`src/lib/shared/drafting/`, `src/lib/server/services/draft-passes.ts`) with per-product configuration only (prompt policy, tier rules, output document shape, review UX). The logic is not forked.
+
 ### FR-5 Model gateway
 
-- Provider adapters for OpenAI, Anthropic, and xAI.
+- Provider adapters for OpenAI, Anthropic, and xAI, plus Google Gemini for patent-figure line art.
 - Effective-dated model-price registry.
+- **Image-model default (Jeff's directive, 2026-08-04):** the default image model is **Nano Banana 2 (Gemini 3 Pro Image)**. Selection is registry-level and env-overridable (`FIGURES_IMAGE_MODEL`) so an alternative Gemini image model can be chosen without a code change; each selectable model carries its own effective-dated price entry and the same 2.0 generation multiplier, and all go through the same Layer-1 hygiene gate (no colour, no solid black, **no text**). We have **no evidence** that either model produces better patent line art; the default stands on the prompt contract having been written and tested against it. See `docs/PATENT-FIGURES.md` §7.2a for how to compare them.
 - Per-workflow model allowlist and token/cost caps.
 - Provider timeout, retry, kill switch, and circuit breaker.
 - Structured-output schemas where feasible.
@@ -294,7 +327,16 @@ The following are distinct and cannot be skipped by ordinary user actions:
 - Immutable wallet ledger.
 - Usage reservation, settlement, release, refund, and adjustment entries.
 - Verified, idempotent webhook processing through a billing outbox.
-- Customer charge formula: actual provider cost × 1.50, with effective-dated rates and disclosed estimate variance.
+- Customer charge formula: actual provider cost × a **task-type retail multiplier**, with disclosed estimate variance. The multiplier is decided by what the model call PRODUCES, not by which provider served it and not by whether the output was tokens or pixels (Jeff's directive, 2026-08-04).
+  - **2.00 — generation.** Any model call whose output is newly authored work product delivered to the customer: patent application drafting (**every pass**), figure/image generation, illustration-brief authoring, draft revision, export-bound prose, and deterministic-diagram planning that authors text.
+  - **1.50 — analysis.** Extraction, parsing, classification, transcription, retrieval/grounding, verification/critique, coverage scoring, interview question drafting (a conversational step, not a deliverable), and routing. **Unchanged**: every charge that billed at 1.50 before 2026-08-04 still bills at 1.50, byte-identically.
+  - The **exhaustive** workflow/job-kind → category table is `src/lib/shared/billing/task-category.ts`. Every workflow key, job kind, and gateway task kind in either product appears there exactly once; the table is a `Record` over a closed union, so adding a kind without a category fails `tsc` and therefore fails the build. Runtime enumeration tests back the same guarantee.
+  - The multiplier catalog is public (`src/lib/shared/billing/markup.ts`); provider *rates* remain server-side. Every customer-facing statement of the rate in **both** products is derived from that catalog, so published copy and billing cannot drift apart.
+  - Every settled usage event records the provider cost, the **multiplier applied**, the rate version, and the customer charge. A mixed run (an analysis component at 1.5 alongside generated images at 2.0) marks each component up at its own rate before summing.
+  - An **uncategorised** charge resolves to analysis (1.50), never the higher rate. Under-charging is a business problem; over-charging without a stated basis is a substantiation problem.
+  - Published rate sentence: *provider cost × 2.0 for generation tasks, × 1.5 for analysis tasks*.
+
+**Borderline classifications recorded for the owner's review** (see the final report table): `counsel_question_list` → generation (a deliverable in the export, unlike an in-session interview question); `gap_analysis` → analysis (it scores the record, it does not author the application); Lex `status_digest` → analysis; Lex `response_path_options`, `claim_scope_strategy`, `filing_strategy_options` → generation (Tier-C briefs are authored deliverables even though their subject matter is analysis).
 
 Initial subscription hypotheses:
 

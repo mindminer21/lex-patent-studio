@@ -2,6 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { createRunAction, type ActionState } from "@/app/app/actions";
+import { LEX_WORKFLOW_CATEGORY } from "@/lib/shared/billing/task-category";
+import { formatMultiplier, MARKUP_MULTIPLIERS } from "@/lib/shared/billing/markup";
 import {
   estimateCharge,
   formatUsd,
@@ -45,7 +47,7 @@ export function Composer({
     tierModels.find((m) => m.id === modelId) ?? tierModels[0];
 
   const estimate = activeModel
-    ? estimateCharge(activeModel, workflow.workload)
+    ? estimateCharge(activeModel, workflow.workload, LEX_WORKFLOW_CATEGORY[workflow.key] ?? "analysis")
     : null;
   const sufficient = estimate ? walletSufficient(walletBalanceUsd, estimate) : false;
 
@@ -192,7 +194,8 @@ export function Composer({
               <span className="text-[var(--muted)]">{m.provider}</span>
               <span className="ml-auto text-[0.78rem] text-[var(--muted)]">
                 in {formatUsd(m.inputPerMTokUsd)}/M · out {formatUsd(m.outputPerMTokUsd)}/M
-                (provider rate, billed ×1.50)
+                (provider rate; billed ×{formatMultiplier(MARKUP_MULTIPLIERS.generation)} when
+                generating, ×{formatMultiplier(MARKUP_MULTIPLIERS.analysis)} when analysing)
               </span>
             </label>
           ))}
@@ -232,7 +235,8 @@ export function Composer({
             "—"
           )}
           <span className="block text-[0.72rem] text-[var(--muted)]">
-            provider cost × 1.50 · wallet {formatUsd(walletBalanceUsd)}{" "}
+            provider cost × {estimate ? formatMultiplier(estimate.markup) : "—"}{" "}
+            ({estimate ? estimate.category : "—"}) · wallet {formatUsd(walletBalanceUsd)}{" "}
             {sufficient ? "(sufficient)" : "(insufficient — top up required)"}
           </span>
         </div>

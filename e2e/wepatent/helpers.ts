@@ -14,11 +14,19 @@ export async function signOut(page: Page): Promise<void> {
   await page.waitForURL(/\/wepatent$/);
 }
 
-export async function createOrganization(page: Page, name: string): Promise<void> {
-  await expect(page.getByLabel(/organization name/i)).toBeVisible();
-  await page.getByLabel(/organization name/i).fill(name);
-  await page.getByRole("button", { name: "Create organization" }).click();
-  await page.waitForURL(/\/wepatent\/app\/terms/);
+/**
+ * Mirror of `defaultOrganizationName` (services/orgs.ts): the first
+ * organization is auto-created on first sign-in with a placeholder name
+ * derived from the email local-part — there is no "Create organization"
+ * step to walk through any more (friction audit candidate 5).
+ */
+export function placeholderOrgName(email: string): string {
+  const words = (email.split("@")[0] ?? "")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter((segment) => segment.length > 0 && !/^\d+$/.test(segment))
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .slice(0, 4);
+  return words.length === 0 ? "My workspace" : `${words.join(" ")}'s workspace`;
 }
 
 /**
@@ -43,16 +51,19 @@ export async function acceptClickwrapByKeyboard(page: Page): Promise<void> {
   await page.waitForURL(/\/wepatent\/app$/);
 }
 
-/** Fresh tenant: sign-in → organization → clickwrap. Returns the email. */
+/**
+ * Fresh tenant: sign-in (organization auto-created) → clickwrap. The
+ * organization-creation step no longer exists; sign-in lands directly on
+ * the clickwrap, which remains a required explicit step.
+ */
 export async function onboardFreshTenant(
   page: Page,
   slug: string,
 ): Promise<{ email: string; orgName: string }> {
   const unique = `${slug}-${Date.now()}`;
   const email = `${unique}@example.test`;
-  const orgName = `Org ${unique}`;
   await signIn(page, email, `User ${unique}`);
-  await createOrganization(page, orgName);
+  await page.waitForURL(/\/wepatent\/app\/terms/);
   await acceptClickwrapByKeyboard(page);
-  return { email, orgName };
+  return { email, orgName: placeholderOrgName(email) };
 }

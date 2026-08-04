@@ -21,6 +21,14 @@ import type {
   ExportArtifactRecord,
   ExportRecordEntry,
   ExtractionArtifactRecord,
+  FigureAnnotationRecord,
+  FigureNumeralRecord,
+  FigureRecord,
+  DraftSetRecord,
+  DraftSetTransitionRecord,
+  FigureSetRecord,
+  FigureSheetRecord,
+  FigureValidationRecord,
   FilingPackageRecord,
   Id,
   IntakeSessionRecord,
@@ -76,6 +84,14 @@ type Tables = {
   reservations: Map<Id, ReservationRecord>;
   usageEvents: UsageEventRecord[];
   auditEvents: AuditEventRecord[];
+  draftSets: Map<Id, DraftSetRecord>;
+  draftSetTransitions: DraftSetTransitionRecord[];
+  figureSets: Map<Id, FigureSetRecord>;
+  figures: Map<Id, FigureRecord>;
+  figureNumerals: Map<Id, FigureNumeralRecord>;
+  figureAnnotations: Map<Id, FigureAnnotationRecord>;
+  figureSheets: FigureSheetRecord[];
+  figureValidations: FigureValidationRecord[];
   jobs: Map<Id, JobRecord>;
   invitations: Map<Id, InvitationRecord>;
   engagements: Map<Id, EngagementRecord>;
@@ -123,6 +139,14 @@ function emptyTables(): Tables {
     reservations: new Map(),
     usageEvents: [],
     auditEvents: [],
+    draftSets: new Map(),
+    draftSetTransitions: [],
+    figureSets: new Map(),
+    figures: new Map(),
+    figureNumerals: new Map(),
+    figureAnnotations: new Map(),
+    figureSheets: [],
+    figureValidations: [],
     jobs: new Map(),
     invitations: new Map(),
     engagements: new Map(),
@@ -393,6 +417,16 @@ export class LocalDataAdapter implements DataPort {
     const organization = tables().organizations.get(organizationId) ?? null;
     if (!organization) return null;
     organization.retentionDays = retentionDays;
+    return organization;
+  }
+
+  async updateOrganizationName(
+    organizationId: Id,
+    name: string,
+  ): Promise<OrganizationRecord | null> {
+    const organization = tables().organizations.get(organizationId) ?? null;
+    if (!organization) return null;
+    organization.name = name;
     return organization;
   }
 
@@ -1240,6 +1274,264 @@ export class LocalDataAdapter implements DataPort {
 
   async setStripeCustomerId(organizationId: Id, stripeCustomerId: string): Promise<void> {
     tables().stripeCustomers.set(organizationId, stripeCustomerId);
+  }
+
+  /* --------------------- three-pass drafting ------------------------ */
+
+  async createDraftSet(
+    input: Omit<DraftSetRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<DraftSetRecord> {
+    const record: DraftSetRecord = {
+      ...input,
+      id: randomUUID(),
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    tables().draftSets.set(record.id, record);
+    return record;
+  }
+
+  async getDraftSet(organizationId: Id, draftSetId: Id): Promise<DraftSetRecord | null> {
+    const record = tables().draftSets.get(draftSetId);
+    return record && record.organizationId === organizationId ? record : null;
+  }
+
+  async listDraftSets(organizationId: Id, inventionId: Id): Promise<DraftSetRecord[]> {
+    return [...tables().draftSets.values()]
+      .filter(
+        (record) =>
+          record.organizationId === organizationId && record.inventionId === inventionId,
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  /**
+   * Mirrors the partial unique index in migration 0013: at most one set per
+   * invention is non-terminal, so this returns at most one row.
+   */
+  async getActiveDraftSet(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<DraftSetRecord | null> {
+    const sets = await this.listDraftSets(organizationId, inventionId);
+    return (
+      sets.find(
+        (record) => record.state !== "READY_FOR_REVIEW" && record.state !== "FAILED",
+      ) ?? null
+    );
+  }
+
+  async updateDraftSet(
+    organizationId: Id,
+    draftSetId: Id,
+    patch: Partial<DraftSetRecord>,
+  ): Promise<DraftSetRecord | null> {
+    const record = await this.getDraftSet(organizationId, draftSetId);
+    if (!record) return null;
+    const updated: DraftSetRecord = { ...record, ...patch, updatedAt: now() };
+    tables().draftSets.set(draftSetId, updated);
+    return updated;
+  }
+
+  async appendDraftSetTransition(
+    input: Omit<DraftSetTransitionRecord, "id" | "createdAt">,
+  ): Promise<DraftSetTransitionRecord> {
+    const record: DraftSetTransitionRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().draftSetTransitions.push(record);
+    return record;
+  }
+
+  async listDraftSetTransitions(
+    organizationId: Id,
+    draftSetId: Id,
+  ): Promise<DraftSetTransitionRecord[]> {
+    return tables()
+      .draftSetTransitions.filter(
+        (record) =>
+          record.organizationId === organizationId && record.draftSetId === draftSetId,
+      )
+      .slice();
+  }
+
+  /* ------------------------- patent figures ------------------------- */
+
+  async createFigureSet(
+    input: Omit<FigureSetRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<FigureSetRecord> {
+    const record: FigureSetRecord = { ...input, id: randomUUID(), createdAt: now(), updatedAt: now() };
+    tables().figureSets.set(record.id, record);
+    return record;
+  }
+
+  async getFigureSet(organizationId: Id, figureSetId: Id): Promise<FigureSetRecord | null> {
+    const record = tables().figureSets.get(figureSetId);
+    return record && record.organizationId === organizationId ? record : null;
+  }
+
+  async listFigureSets(organizationId: Id, inventionId: Id): Promise<FigureSetRecord[]> {
+    return [...tables().figureSets.values()]
+      .filter(
+        (record) => record.organizationId === organizationId && record.inventionId === inventionId,
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async updateFigureSet(
+    organizationId: Id,
+    figureSetId: Id,
+    patch: Partial<FigureSetRecord>,
+  ): Promise<FigureSetRecord | null> {
+    const record = await this.getFigureSet(organizationId, figureSetId);
+    if (!record) return null;
+    const updated = { ...record, ...patch, updatedAt: now() };
+    tables().figureSets.set(figureSetId, updated);
+    return updated;
+  }
+
+  async createFigure(
+    input: Omit<FigureRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<FigureRecord> {
+    const record: FigureRecord = { ...input, id: randomUUID(), createdAt: now(), updatedAt: now() };
+    tables().figures.set(record.id, record);
+    return record;
+  }
+
+  async listFigures(organizationId: Id, figureSetId: Id): Promise<FigureRecord[]> {
+    return [...tables().figures.values()]
+      .filter(
+        (record) => record.organizationId === organizationId && record.figureSetId === figureSetId,
+      )
+      .sort(
+        (a, b) =>
+          a.figureNumber - b.figureNumber ||
+          (a.partialSuffix ?? "").localeCompare(b.partialSuffix ?? ""),
+      );
+  }
+
+  async getFigure(organizationId: Id, figureId: Id): Promise<FigureRecord | null> {
+    const record = tables().figures.get(figureId);
+    return record && record.organizationId === organizationId ? record : null;
+  }
+
+  async updateFigure(
+    organizationId: Id,
+    figureId: Id,
+    patch: Partial<FigureRecord>,
+  ): Promise<FigureRecord | null> {
+    const record = await this.getFigure(organizationId, figureId);
+    if (!record) return null;
+    const updated = { ...record, ...patch, updatedAt: now() };
+    tables().figures.set(figureId, updated);
+    return updated;
+  }
+
+  async createFigureNumeral(
+    input: Omit<FigureNumeralRecord, "id" | "createdAt">,
+  ): Promise<FigureNumeralRecord> {
+    // Mirrors the database's unique (figure_set_id, numeral) and
+    // (figure_set_id, part_label): one numeral is never two parts and one
+    // part is never two numerals, in local mode too.
+    const existing = [...tables().figureNumerals.values()].filter(
+      (record) => record.figureSetId === input.figureSetId,
+    );
+    const clash = existing.find(
+      (record) =>
+        record.numeral === input.numeral ||
+        record.partLabel.trim().toLowerCase() === input.partLabel.trim().toLowerCase(),
+    );
+    if (clash) return clash;
+    const record: FigureNumeralRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().figureNumerals.set(record.id, record);
+    return record;
+  }
+
+  async listFigureNumerals(
+    organizationId: Id,
+    figureSetId: Id,
+  ): Promise<FigureNumeralRecord[]> {
+    return [...tables().figureNumerals.values()]
+      .filter(
+        (record) => record.organizationId === organizationId && record.figureSetId === figureSetId,
+      )
+      .sort((a, b) => Number(a.numeral.replace(/[A-Z]$/, "")) - Number(b.numeral.replace(/[A-Z]$/, "")));
+  }
+
+  async updateFigureNumeralLabel(
+    organizationId: Id,
+    numeralId: Id,
+    partLabel: string,
+  ): Promise<FigureNumeralRecord | null> {
+    const record = tables().figureNumerals.get(numeralId);
+    if (!record || record.organizationId !== organizationId) return null;
+    const updated = { ...record, partLabel };
+    tables().figureNumerals.set(numeralId, updated);
+    return updated;
+  }
+
+  async replaceFigureAnnotations(
+    organizationId: Id,
+    figureId: Id,
+    annotations: Array<Omit<FigureAnnotationRecord, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<FigureAnnotationRecord[]> {
+    for (const [id, record] of tables().figureAnnotations) {
+      if (record.organizationId === organizationId && record.figureId === figureId) {
+        tables().figureAnnotations.delete(id);
+      }
+    }
+    const written: FigureAnnotationRecord[] = [];
+    for (const annotation of annotations) {
+      const record: FigureAnnotationRecord = {
+        ...annotation,
+        id: randomUUID(),
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      tables().figureAnnotations.set(record.id, record);
+      written.push(record);
+    }
+    return written;
+  }
+
+  async listFigureAnnotations(
+    organizationId: Id,
+    figureId: Id,
+  ): Promise<FigureAnnotationRecord[]> {
+    return [...tables().figureAnnotations.values()].filter(
+      (record) => record.organizationId === organizationId && record.figureId === figureId,
+    );
+  }
+
+  async appendFigureSheet(
+    input: Omit<FigureSheetRecord, "id" | "createdAt">,
+  ): Promise<FigureSheetRecord> {
+    const record: FigureSheetRecord = { ...input, id: randomUUID(), createdAt: now() };
+    tables().figureSheets.push(record);
+    return record;
+  }
+
+  async listFigureSheets(organizationId: Id, figureSetId: Id): Promise<FigureSheetRecord[]> {
+    return tables()
+      .figureSheets.filter(
+        (record) => record.organizationId === organizationId && record.figureSetId === figureSetId,
+      )
+      .sort((a, b) => a.sheetNumber - b.sheetNumber);
+  }
+
+  async appendFigureValidations(
+    rows: Array<Omit<FigureValidationRecord, "id" | "createdAt">>,
+  ): Promise<FigureValidationRecord[]> {
+    const written = rows.map((row) => ({ ...row, id: randomUUID(), createdAt: now() }));
+    tables().figureValidations.push(...written);
+    return written;
+  }
+
+  async listFigureValidations(
+    organizationId: Id,
+    figureSetId: Id,
+  ): Promise<FigureValidationRecord[]> {
+    return tables().figureValidations.filter(
+      (record) => record.organizationId === organizationId && record.figureSetId === figureSetId,
+    );
   }
 
   async appendAuditEvent(

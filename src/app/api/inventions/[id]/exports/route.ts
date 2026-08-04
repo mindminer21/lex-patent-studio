@@ -36,6 +36,14 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
     sections: parsed.data.sections,
   });
   if (!result.ok) {
+    // The delivery gate refused. Return WHAT is blocking and WHAT is needed —
+    // an API caller must be able to act on the answer, not just retry.
+    if (result.error === "delivery_blocked") {
+      return NextResponse.json(
+        { error: result.error, blockers: result.blockers, detail: result.detail },
+        { status: 409 },
+      );
+    }
     const status = result.error === "invention_not_found" ? 404 : 422;
     return NextResponse.json({ error: result.error }, { status });
   }

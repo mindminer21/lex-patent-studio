@@ -5,13 +5,15 @@ import {
   MODEL_CATALOG,
   MODEL_TIER_LABELS,
   MODEL_TIERS,
-  USAGE_MARKUP,
+  USAGE_MARKUP_ANALYSIS,
+  USAGE_MARKUP_GENERATION,
 } from "@/lib/domain/pricing";
+import { formatMultiplier, markupDisclosure } from "@/lib/shared/billing/markup";
 
 export const metadata: Metadata = {
   title: "Models — Lex Patent Studio",
   description:
-    "Choose the reasoning engine per task. Published per-model rates, billed at provider cost × 1.50, with the estimate shown before every run.",
+    "Choose the reasoning engine per task. Published per-model rates, billed at provider cost × 2.0 for generation tasks and × 1.5 for analysis tasks, with the estimate shown before every run.",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -26,7 +28,7 @@ export default function ModelsPage() {
       <PageIntro
         kicker="Models"
         title="Pick the engine per task. See the price before the run."
-        lede="Fast for routine preparation, Advanced for drafting and analysis, Frontier for the hardest reasoning. Rates are effective-dated and published; usage is billed at provider cost × 1.50."
+        lede="Fast for routine preparation, Advanced for drafting and analysis, Frontier for the hardest reasoning. Rates are effective-dated and published; usage is billed at provider cost × 2.0 for generation tasks and × 1.5 for analysis tasks."
       />
 
       <section className="section" aria-label="Model rate table">
@@ -51,10 +53,12 @@ export default function ModelsPage() {
                       Provider rate out / 1M tokens
                     </th>
                     <th className="py-2 pr-4 text-right font-bold">
-                      Billed in / 1M (×{USAGE_MARKUP.toFixed(2)})
+                      Billed in / 1M (analysis ×{formatMultiplier(USAGE_MARKUP_ANALYSIS)} /
+                      generation ×{formatMultiplier(USAGE_MARKUP_GENERATION)})
                     </th>
                     <th className="py-2 pr-4 text-right font-bold">
-                      Billed out / 1M (×{USAGE_MARKUP.toFixed(2)})
+                      Billed out / 1M (analysis ×{formatMultiplier(USAGE_MARKUP_ANALYSIS)} /
+                      generation ×{formatMultiplier(USAGE_MARKUP_GENERATION)})
                     </th>
                     <th className="py-2 font-bold">Effective</th>
                   </tr>
@@ -78,10 +82,12 @@ export default function ModelsPage() {
                         {formatUsd(m.outputPerMTokUsd)}
                       </td>
                       <td className="py-2.5 pr-4 text-right font-bold">
-                        {formatUsd(m.inputPerMTokUsd * USAGE_MARKUP)}
+                        {formatUsd(m.inputPerMTokUsd * USAGE_MARKUP_ANALYSIS)} /{" "}
+                        {formatUsd(m.inputPerMTokUsd * USAGE_MARKUP_GENERATION)}
                       </td>
                       <td className="py-2.5 pr-4 text-right font-bold">
-                        {formatUsd(m.outputPerMTokUsd * USAGE_MARKUP)}
+                        {formatUsd(m.outputPerMTokUsd * USAGE_MARKUP_ANALYSIS)} /{" "}
+                        {formatUsd(m.outputPerMTokUsd * USAGE_MARKUP_GENERATION)}
                       </td>
                       <td className="py-2.5 text-[0.8rem] text-[var(--muted)]">
                         {m.effectiveDate}
@@ -96,7 +102,12 @@ export default function ModelsPage() {
 
         <div className="max-w-[720px] space-y-3 text-[0.9rem] leading-relaxed">
           <p className="m-0">
-            All usage is <strong>billed at provider cost × {USAGE_MARKUP.toFixed(2)}</strong>.
+            All usage is <strong>{markupDisclosure()}</strong>. The multiplier follows the
+            task, not the model: the same model bills at{" "}
+            {formatMultiplier(USAGE_MARKUP_GENERATION)}× when it drafts a specification,
+            claim set, response, declaration, memo, search report, or strategy brief, and at{" "}
+            {formatMultiplier(USAGE_MARKUP_ANALYSIS)}× when it extracts, classifies, checks
+            formalities, digests a docket, or analyses an office action.
             Rates shown are local test-mode registry entries and are
             effective-dated; when a provider changes prices, a new entry takes
             effect and history is preserved.

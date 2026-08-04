@@ -208,3 +208,84 @@ Verification after reconciliation (2026-08-02, this container): `npm run lint` (
 `npm run test:rls:lex` (81 private + 7 corpus pgTAP assertions — identical counts to the pre-merge track/lex-app baseline run), `npm run test:e2e:lex` (14 passed, Chromium pinned at
 /opt/pw-browsers), `npm run build` (success). See the merge commit on
 `track/wepatent-app-reconciled` for the full evidence run.
+
+---
+
+## Round: task-type billing + three-pass drafting in Lex (2026-08-04)
+
+### Billing correction (FR-9)
+
+The earlier round deliberately left the whole Lex lane at a flat ×1.50 on
+the reasoning that Lex has no image generation. **That was wrong.** Jeff's
+2026-08-04 directive prices by TASK TYPE, and Lex's drafting workflows are
+generation:
+
+- **2.0× generation** — `section_draft`, `claim_tree_draft`,
+  `dependent_claim_draft`, `oa_response_draft`, `research_memo`,
+  `search_report`, `declaration_132`, `response_path_options`,
+  `claim_scope_strategy`, `filing_strategy_options`.
+- **1.5× analysis** — `ids_packet`, `formalities_check`, `status_digest`,
+  `invention_intake`, `fact_extraction`, `oa_analysis`. Byte-identical to
+  what these charged before.
+
+Within a run only `GENERATING` inherits the workflow's category;
+`INGESTING`, `RETRIEVING` and `VERIFYING` are always analysis and
+`RENDERING` spends nothing — so an analysis workflow does not pay the
+generation rate merely because its middle stage is named "GENERATING".
+
+`USAGE_MARKUP` is **gone**. A bare number cannot be printed on a
+customer-facing page without saying which kind of task it applies to, and
+printing the wrong one is the substantiation failure the ethics memo warns
+about. Every Lex surface that stated the rate — `/pricing`, `/models`,
+`/professionals`, `/legal/terms`, the root landing page, and the in-app
+composer, usage and settings views — now derives it from the shared catalog
+`src/lib/shared/billing/markup.ts`.
+
+**This is a live price change for Lex drafting customers and needs Jeff's
+explicit go/no-go before deploy.**
+
+### Three-pass drafting (FR-4a)
+
+Lex runs the **same** flow as wepatent on the **same** shared core —
+imported, not copied:
+
+- state machine, illustrations-brief schema + authoring, numeral rules,
+  two-way §608.02 reconciliation, delivery gate: `src/lib/shared/drafting/`;
+- Lex's adapter over them: `src/lib/domain/lex-draft-passes.ts`;
+- local driver: `src/lib/adapters/local/three-pass.ts`;
+- production: `PgDataAdapter.{startDraftSet,listDraftSets,getDraftSet,
+  listDraftSetTransitions,acceptDraftSet}`.
+
+What is legitimately Lex's: a set hangs off a **matter**; the output is a
+`WorkProductDocument` carrying **claim-support** material (§8.2); it is
+**Tier B — draft for review**, so a completed set produces a review item and
+enters the practitioner review queue; the acceptor is the responsible
+practitioner. The Tier-B floor is enforced in the shared clamp *and* by a
+schema CHECK — promotion to C allowed, demotion to A refused (Invariant 15).
+
+### Live-DB changes (`uudmapfdyhgslhjtmhhz`)
+
+Migration `0007_three_pass_drafting.sql`, additive only, applied via the
+Supabase management API and verified post-apply: `draft_sets` +
+`draft_set_transitions`, enums `draft_pass_state`/`draft_pass_stage`,
+`document_versions.draft_pass` + `.draft_set_id`, `exports.draft_set_id`,
+5 CHECK constraints (including `draft_sets_ready_requires_pass_2` — the
+delivery gate in the schema — and the Tier-B floor), 2 RLS policies with
+matter-ACL scoping, 1 append-only trigger.
+
+### Gates (fresh, this container)
+
+lint 0 · tsc clean · lex units **505** (+8 skipped) · lex pgTAP **110
+private + 7 corpus** · lex E2E **16**, 0 did-not-run · build success.
+
+### What remains for Lex
+
+The Lex **pass execution** is currently driven by the deterministic local
+adapter (`three-pass.ts`), the same way the rest of Lex's local pipeline is
+simulated. The production `PgDataAdapter` implements the draft-set port for
+real (create, read, transitions, accept, with the gate enforced), but
+running the two passes through the **durable run orchestrator** — so each
+pass is a checkpointed `workflow_run` with its own reservation, the figures
+stage is a real job, and the review item is created server-side — is the
+remaining piece. The shared core it would call is already in place and
+tested; it is wiring, not new logic.

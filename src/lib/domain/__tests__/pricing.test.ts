@@ -5,16 +5,54 @@ import {
   MODEL_CATALOG,
   modelsForTier,
   providerCostUsd,
-  USAGE_MARKUP,
+  USAGE_MARKUP_ANALYSIS,
+  USAGE_MARKUP_GENERATION,
+  estimateChargeForWorkflow,
+  markupForWorkflow,
   pickCriticModel,
   walletSufficient,
 } from "@/lib/domain/pricing";
 
-describe("cost-estimate math (FR-9: provider cost × 1.50)", () => {
+describe("cost-estimate math (FR-9: provider cost × task-type multiplier)", () => {
   const sonnet = getModel("claude-sonnet-4-5")!;
 
-  it("markup is exactly 1.50", () => {
-    expect(USAGE_MARKUP).toBe(1.5);
+  it("prices generation at 2.0 and analysis at 1.5", () => {
+    expect(USAGE_MARKUP_GENERATION).toBe(2.0);
+    expect(USAGE_MARKUP_ANALYSIS).toBe(1.5);
+  });
+
+  it("defaults an uncategorised estimate to analysis, never the higher rate", () => {
+    const est = estimateCharge(sonnet, {
+      inputTokens: 100_000,
+      outputTokens: 20_000,
+      variance: 0.35,
+    });
+    expect(est.markup).toBe(1.5);
+    expect(est.category).toBe("analysis");
+  });
+
+  it("resolves the multiplier from the workflow, not the model", () => {
+    // The SAME model bills differently depending on what the run produced.
+    expect(markupForWorkflow("section_draft")).toBe(2.0);
+    expect(markupForWorkflow("claim_tree_draft")).toBe(2.0);
+    expect(markupForWorkflow("oa_response_draft")).toBe(2.0);
+    expect(markupForWorkflow("research_memo")).toBe(2.0);
+    expect(markupForWorkflow("search_report")).toBe(2.0);
+    expect(markupForWorkflow("fact_extraction")).toBe(1.5);
+    expect(markupForWorkflow("oa_analysis")).toBe(1.5);
+    expect(markupForWorkflow("ids_packet")).toBe(1.5);
+    expect(markupForWorkflow("formalities_check")).toBe(1.5);
+  });
+
+  it("charges a Lex drafting workflow at 2.0 and an analysis workflow at 1.5", () => {
+    const workload = { inputTokens: 100_000, outputTokens: 20_000, variance: 0.35 };
+    const drafting = estimateChargeForWorkflow(sonnet, workload, "section_draft");
+    const analysis = estimateChargeForWorkflow(sonnet, workload, "fact_extraction");
+    expect(drafting.providerCostUsd).toBe(analysis.providerCostUsd);
+    expect(drafting.markup).toBe(2.0);
+    expect(analysis.markup).toBe(1.5);
+    expect(drafting.expectedChargeUsd).toBe(1.2); // 0.6 × 2.0
+    expect(analysis.expectedChargeUsd).toBe(0.9); // 0.6 × 1.5 — unchanged
   });
 
   it("provider cost math: per-1M-token rates", () => {
@@ -28,12 +66,12 @@ describe("cost-estimate math (FR-9: provider cost × 1.50)", () => {
     ).toBeCloseTo(0.6, 10);
   });
 
-  it("expected charge is provider cost × 1.50, rounded to cents", () => {
+  it("expected charge is provider cost × the analysis multiplier, rounded to cents", () => {
     const est = estimateCharge(sonnet, {
       inputTokens: 100_000,
       outputTokens: 20_000,
       variance: 0.35,
-    });
+    }, "analysis");
     expect(est.providerCostUsd).toBe(0.6);
     expect(est.expectedChargeUsd).toBe(0.9); // 0.6 × 1.5
     expect(est.markup).toBe(1.5);

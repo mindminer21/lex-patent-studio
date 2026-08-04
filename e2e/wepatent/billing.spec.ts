@@ -45,6 +45,43 @@ test("wallet top-up: checkout handoff → signed webhook → ledger credit", asy
   await expect(page.getByText("Wallet top-up via Stripe Checkout")).toBeVisible();
 });
 
+test("second top-up is one click on the saved payment method, remembering the amount", async ({
+  page,
+}) => {
+  await onboardFreshTenant(page, "billing-oneclick");
+  await page.goto("/wepatent/app/billing");
+
+  // Before any top-up: no saved card, so no one-click button, and the
+  // amount select shows the standing default.
+  await expect(page.getByTestId("one-click-topup")).toHaveCount(0);
+  await expect(page.getByLabel("Top-up amount")).toHaveValue("2500");
+  await expect(page.getByText("Checkout saves your payment method")).toBeVisible();
+
+  // First top-up goes through checkout (which, in production, saves the
+  // card via setup_future_usage).
+  await page.getByLabel("Top-up amount").selectOption("5000");
+  await page.getByRole("button", { name: "Continue to checkout" }).click();
+  await page.waitForURL(/simulated-checkout/);
+  await page.getByRole("button", { name: "Complete test payment" }).click();
+  await page.waitForURL(/\/wepatent\/app\/billing\?checkout=success/);
+  await expect(page.getByRole("heading", { name: "$75.00" })).toBeVisible();
+
+  // Friction audit #7: the last amount is now the default, and the saved
+  // payment method turns the next top-up into one click.
+  await expect(page.getByLabel(/choose a different amount/i)).toHaveValue("5000");
+  const oneClick = page.getByTestId("one-click-topup");
+  await expect(oneClick).toBeVisible();
+  await expect(oneClick).toHaveText("Top up $50.00");
+
+  await oneClick.click();
+  await page.waitForURL(/\/wepatent\/app\/billing\?topup=success/);
+  await expect(page.getByRole("status").first()).toContainText("saved payment method");
+
+  // Credited through the SAME verified-webhook → outbox → ledger path.
+  await expect(page.getByRole("heading", { name: "$125.00" })).toBeVisible();
+  await expect(page.getByText("Wallet top-up via saved payment method")).toBeVisible();
+});
+
 test("customer portal handoff reaches the labeled simulated portal", async ({ page }) => {
   await onboardFreshTenant(page, "billing-portal");
   await page.goto("/wepatent/app/billing");

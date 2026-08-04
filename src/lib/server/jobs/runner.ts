@@ -82,6 +82,38 @@ function schedule(organizationId: Id, jobId: Id): void {
   }, 0);
 }
 
+/**
+ * Drain every queued job for an organization, including jobs that earlier
+ * jobs enqueue while draining.
+ *
+ * The three-pass flow is a CHAIN — Pass 1 enqueues the figures stage, which
+ * enqueues Pass 2 — so a caller that wants the whole flow to settle needs to
+ * keep going until nothing is left. `maxPasses` bounds it so a bug that
+ * enqueues in a cycle fails loudly instead of hanging.
+ *
+ * Exposed for tests and for local draining; production runs jobs on their
+ * own schedule.
+ */
+export async function runJobsToCompletion(
+  organizationId: Id,
+  maxPasses = 25,
+): Promise<number> {
+  const { data } = getAdapters();
+  let processed = 0;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const jobs = await data.listJobs(organizationId);
+    const queued = jobs.filter((job) => job.status === "queued");
+    if (queued.length === 0) return processed;
+    for (const job of queued) {
+      await processJob(organizationId, job.id);
+      processed += 1;
+    }
+  }
+  throw new Error(
+    `runJobsToCompletion did not settle after ${maxPasses} passes — a job chain is looping.`,
+  );
+}
+
 /** Runs one queued job to completion. Exposed for tests and local draining. */
 export async function processJob(organizationId: Id, jobId: Id): Promise<JobRecord | null> {
   const { data } = getAdapters();

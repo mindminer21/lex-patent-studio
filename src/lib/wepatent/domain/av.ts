@@ -1,3 +1,4 @@
+import { markupMultiplierFor } from "./markup";
 import { customerChargeCents, type UsageEstimate } from "./usage";
 
 /**
@@ -15,6 +16,15 @@ import { customerChargeCents, type UsageEstimate } from "./usage";
  * transcript flows into distillation inside the same delimited untrusted
  * blocks as any uploaded document.
  */
+
+/**
+ * Retail multiplier for transcription. Named through the shared markup
+ * catalog so the published disclosure and the charge can never disagree
+ * (FR-6). Transcription is an ANALYSIS task under the task-type rule
+ * (Jeff's directive, 2026-08-04) — it renders speech that already exists
+ * into text, it does not author work product — so it stays at 1.5.
+ */
+export const TRANSCRIPTION_MARKUP = markupMultiplierFor("analysis");
 
 /** Effective-dated transcription rate (provider: OpenAI whisper-1 tier). */
 export const TRANSCRIPTION_RATE = {
@@ -95,8 +105,9 @@ export function estimateTranscription(mimeType: string, bytes: Uint8Array): Usag
     rateVersion: TRANSCRIPTION_RATE.rateVersion,
     providerLowCents,
     providerHighCents,
-    customerLowCents: customerChargeCents(providerLowCents),
-    customerHighCents: customerChargeCents(providerHighCents),
+    customerLowCents: customerChargeCents(providerLowCents, TRANSCRIPTION_MARKUP),
+    customerHighCents: customerChargeCents(providerHighCents, TRANSCRIPTION_MARKUP),
+    markupMultiplier: TRANSCRIPTION_MARKUP,
   };
 }
 

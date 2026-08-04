@@ -373,7 +373,7 @@ export async function runInterpretation(params: {
     kind: "settlement",
     amountCents: -settled.customerChargeCents,
     reservationId: reservationRecord.id,
-    note: `Source interpretation settlement (${tier.rate.rateVersion}); provider cost × 1.50.`,
+    note: `Source interpretation settlement (${tier.rate.rateVersion}); provider cost × 1.5 (analysis task).`,
   });
   await data.appendUsageEvent({
     organizationId: params.organizationId,
@@ -437,7 +437,7 @@ export async function runInterpretation(params: {
 
 /**
  * Audio transcription (M3, §5.1 Phase 2): estimate → reserve → transcribe
- * through the gateway → settle (FR-6 semantics, provider cost × 1.50).
+ * through the gateway → settle (FR-6 semantics, provider cost × 1.5 — an analysis task).
  * The transcript lands as a `transcript` extraction artifact with model +
  * cost provenance and feeds distillation/coverage like any text source.
  * Spoken content is EVIDENCE — instructions in a recording are inert
@@ -582,7 +582,7 @@ async function runAudioTranscription(params: {
     kind: "settlement",
     amountCents: -settled.customerChargeCents,
     reservationId: reservationRecord.id,
-    note: `Audio transcription settlement (${estimate.rateVersion}); provider cost × 1.50.`,
+    note: `Audio transcription settlement (${estimate.rateVersion}); provider cost × 1.5 (analysis task).`,
   });
   await data.appendUsageEvent({
     organizationId: params.organizationId,

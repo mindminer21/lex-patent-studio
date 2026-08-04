@@ -4,6 +4,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Role } from "@/lib/wepatent/domain/roles";
 import type { CounselRequestState } from "@/lib/wepatent/domain/counsel-request";
 import type { FactProvenance } from "@/lib/wepatent/domain/facts";
+import {
+  DEFAULT_MARKUP_MULTIPLIER,
+  markupBasisPoints,
+} from "@/lib/wepatent/domain/markup";
 import type { IntakeState } from "@/lib/wepatent/domain/intake";
 import { normalizeRegion } from "@/lib/wepatent/domain/evidence";
 import type {
@@ -26,6 +30,19 @@ import type {
   ExportArtifactRecord,
   ExportRecordEntry,
   ExtractionArtifactRecord,
+  FigureAnnotationRecord,
+  FigureAiState,
+  FigureNumeralRecord,
+  FigureRecord,
+  DraftSetRecord,
+  DraftSetStageValue,
+  DraftSetStateValue,
+  DraftSetTransitionRecord,
+  FigureSetRecord,
+  FigureSetStateValue,
+  FigureSheetRecord,
+  FigureStateValue,
+  FigureValidationRecord,
   FilingPackageRecord,
   Id,
   IntakeSessionRecord,
@@ -604,6 +621,17 @@ export class SupabaseDataAdapter implements DataPort {
     return row ? mapOrganization(row) : null;
   }
 
+  async updateOrganizationName(
+    organizationId: Id,
+    name: string,
+  ): Promise<OrganizationRecord | null> {
+    const row = await one<Row>(
+      this.from("organizations").update({ name }).eq("id", organizationId).select(),
+      "organizations.updateName",
+    );
+    return row ? mapOrganization(row) : null;
+  }
+
   async createFact(
     input: Omit<InventionFactRecord, "id" | "updatedAt">,
   ): Promise<InventionFactRecord> {
@@ -1022,6 +1050,7 @@ export class SupabaseDataAdapter implements DataPort {
             organization_id: input.organizationId,
             invention_id: input.inventionId,
             draft_version_id: input.draftVersionId,
+            figure_set_id: input.figureSetId ?? null,
             checksum: input.checksum,
           })
           .select(),
@@ -1729,6 +1758,9 @@ export class SupabaseDataAdapter implements DataPort {
       amount_cents: reservation.amountCents,
       rate_version: reservation.rateVersion,
       status: reservation.status,
+      markup_multiplier_bp: markupBasisPoints(
+        reservation.markupMultiplier ?? DEFAULT_MARKUP_MULTIPLIER,
+      ),
       settled_provider_cost_cents: reservation.settledProviderCostCents ?? null,
       settled_customer_charge_cents: reservation.settledCustomerChargeCents ?? null,
     });
@@ -1749,6 +1781,11 @@ export class SupabaseDataAdapter implements DataPort {
             rate_version: input.rateVersion,
             provider_cost_cents: input.providerCostCents,
             customer_charge_cents: input.customerChargeCents,
+            // Basis points: the database CHECK re-derives the charge from
+            // this, so an event can never claim a multiplier it did not use.
+            markup_multiplier_bp: markupBasisPoints(
+              input.markupMultiplier ?? DEFAULT_MARKUP_MULTIPLIER,
+            ),
             input_tokens: input.inputTokens,
             output_tokens: input.outputTokens,
           })
@@ -1909,6 +1946,517 @@ export class SupabaseDataAdapter implements DataPort {
       stripe_customer_id: stripeCustomerId,
     });
     if (error) throw new Error(`supabase_adapter:wallet.customer.set:${error.message}`);
+  }
+
+  /* --------------------- three-pass drafting ------------------------ */
+
+  async createDraftSet(
+    input: Omit<DraftSetRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<DraftSetRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("draft_sets")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            state: toDbPassState(input.state),
+            interrupted_stage: input.interruptedStage
+              ? toDbPassState(input.interruptedStage)
+              : null,
+            pass_1_version_id: input.passOneVersionId,
+            pass_2_version_id: input.passTwoVersionId,
+            figure_set_id: input.figureSetId,
+            illustrations_brief: input.illustrationsBrief ?? {},
+            brief_version: input.briefVersion,
+            reconciliation: input.reconciliation ?? null,
+            reconciled: input.reconciled,
+            reconciliation_version: input.reconciliationVersion,
+            status_detail: input.statusDetail,
+            // accepted_by / accepted_at are deliberately NOT written here:
+            // the platform can never accept on a person's behalf. They are
+            // set only by the explicit acceptance path (invariant 1).
+            pass_1_reservation_id: input.passOneReservationId,
+            pass_2_reservation_id: input.passTwoReservationId,
+            pass_1_charge_cents: input.passOneChargeCents,
+            pass_2_charge_cents: input.passTwoChargeCents,
+          })
+          .select(),
+        "draft_sets.insert",
+      ),
+      "draft_sets.insert",
+    );
+    return mapDraftSet(row);
+  }
+
+  async getDraftSet(organizationId: Id, draftSetId: Id): Promise<DraftSetRecord | null> {
+    const row = await one<Row>(
+      this.from("draft_sets")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("id", draftSetId)
+        .limit(1),
+      "draft_sets.get",
+    );
+    return row ? mapDraftSet(row) : null;
+  }
+
+  async listDraftSets(organizationId: Id, inventionId: Id): Promise<DraftSetRecord[]> {
+    const rows = await many<Row>(
+      this.from("draft_sets")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "draft_sets.list",
+    );
+    return rows.map(mapDraftSet);
+  }
+
+  /** Mirrors the partial unique index: at most one non-terminal set. */
+  async getActiveDraftSet(
+    organizationId: Id,
+    inventionId: Id,
+  ): Promise<DraftSetRecord | null> {
+    const rows = await many<Row>(
+      this.from("draft_sets")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .not("state", "in", "(ready_for_review,failed)")
+        .order("created_at", { ascending: false })
+        .limit(1),
+      "draft_sets.active",
+    );
+    return rows[0] ? mapDraftSet(rows[0]) : null;
+  }
+
+  async updateDraftSet(
+    organizationId: Id,
+    draftSetId: Id,
+    patch: Partial<DraftSetRecord>,
+  ): Promise<DraftSetRecord | null> {
+    const update: Record<string, unknown> = {};
+    if (patch.state !== undefined) update.state = toDbPassState(patch.state);
+    if (patch.interruptedStage !== undefined) {
+      update.interrupted_stage = patch.interruptedStage
+        ? toDbPassState(patch.interruptedStage)
+        : null;
+    }
+    if (patch.passOneVersionId !== undefined) update.pass_1_version_id = patch.passOneVersionId;
+    if (patch.passTwoVersionId !== undefined) update.pass_2_version_id = patch.passTwoVersionId;
+    if (patch.figureSetId !== undefined) update.figure_set_id = patch.figureSetId;
+    if (patch.illustrationsBrief !== undefined) {
+      update.illustrations_brief = patch.illustrationsBrief ?? {};
+    }
+    if (patch.briefVersion !== undefined) update.brief_version = patch.briefVersion;
+    if (patch.reconciliation !== undefined) update.reconciliation = patch.reconciliation ?? null;
+    if (patch.reconciled !== undefined) update.reconciled = patch.reconciled;
+    if (patch.reconciliationVersion !== undefined) {
+      update.reconciliation_version = patch.reconciliationVersion;
+    }
+    if (patch.statusDetail !== undefined) update.status_detail = patch.statusDetail;
+    if (patch.acceptedByUserId !== undefined) update.accepted_by = patch.acceptedByUserId;
+    if (patch.acceptedAt !== undefined) update.accepted_at = patch.acceptedAt;
+    if (patch.passOneReservationId !== undefined) {
+      update.pass_1_reservation_id = patch.passOneReservationId;
+    }
+    if (patch.passTwoReservationId !== undefined) {
+      update.pass_2_reservation_id = patch.passTwoReservationId;
+    }
+    if (patch.passOneChargeCents !== undefined) {
+      update.pass_1_charge_cents = patch.passOneChargeCents;
+    }
+    if (patch.passTwoChargeCents !== undefined) {
+      update.pass_2_charge_cents = patch.passTwoChargeCents;
+    }
+    update.updated_at = new Date().toISOString();
+
+    const row = await one<Row>(
+      this.from("draft_sets")
+        .update(update)
+        .eq("organization_id", organizationId)
+        .eq("id", draftSetId)
+        .select(),
+      "draft_sets.update",
+    );
+    return row ? mapDraftSet(row) : null;
+  }
+
+  async appendDraftSetTransition(
+    input: Omit<DraftSetTransitionRecord, "id" | "createdAt">,
+  ): Promise<DraftSetTransitionRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("draft_set_transitions")
+          .insert({
+            organization_id: input.organizationId,
+            draft_set_id: input.draftSetId,
+            from_state: input.fromState ? toDbPassState(input.fromState) : null,
+            to_state: toDbPassState(input.toState),
+            actor: input.actor,
+            reason: input.reason,
+          })
+          .select(),
+        "draft_set_transitions.insert",
+      ),
+      "draft_set_transitions.insert",
+    );
+    return mapDraftSetTransition(row);
+  }
+
+  async listDraftSetTransitions(
+    organizationId: Id,
+    draftSetId: Id,
+  ): Promise<DraftSetTransitionRecord[]> {
+    const rows = await many<Row>(
+      this.from("draft_set_transitions")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("draft_set_id", draftSetId)
+        .order("created_at", { ascending: true }),
+      "draft_set_transitions.list",
+    );
+    return rows.map(mapDraftSetTransition);
+  }
+
+  /* ------------------------- patent figures ------------------------- */
+
+  async createFigureSet(
+    input: Omit<FigureSetRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<FigureSetRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("figure_sets")
+          .insert({
+            organization_id: input.organizationId,
+            invention_id: input.inventionId,
+            draft_version_id: input.draftVersionId,
+            state: input.state,
+            sheet_size: input.sheetSize,
+            orientation_policy: input.orientationPolicy,
+            rules_version: input.rulesVersion,
+            planner_version: input.plannerVersion,
+            composer_version: input.composerVersion,
+            model_id: input.modelId,
+            prompt_template_version: input.promptTemplateVersion,
+            input_hash: input.inputHash,
+            total_cost_cents: input.totalCostCents,
+            total_provider_cost_cents: input.totalProviderCostCents,
+            // ai_state is left at its ai_proposed default on purpose: the
+            // platform can never write a confirmed state (invariant 1).
+            status_detail: input.statusDetail,
+          })
+          .select(),
+        "figure_sets.insert",
+      ),
+      "figure_sets.insert",
+    );
+    return mapFigureSet(row);
+  }
+
+  async getFigureSet(organizationId: Id, figureSetId: Id): Promise<FigureSetRecord | null> {
+    const row = await one<Row>(
+      this.from("figure_sets")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("id", figureSetId),
+      "figure_sets.get",
+    );
+    return row ? mapFigureSet(row) : null;
+  }
+
+  async listFigureSets(organizationId: Id, inventionId: Id): Promise<FigureSetRecord[]> {
+    const rows = await many<Row>(
+      this.from("figure_sets")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("invention_id", inventionId)
+        .order("created_at", { ascending: true }),
+      "figure_sets.list",
+    );
+    return rows.map(mapFigureSet);
+  }
+
+  async updateFigureSet(
+    organizationId: Id,
+    figureSetId: Id,
+    patch: Partial<FigureSetRecord>,
+  ): Promise<FigureSetRecord | null> {
+    const update: Row = { updated_at: new Date().toISOString() };
+    if (patch.state !== undefined) update.state = patch.state;
+    if (patch.aiState !== undefined) update.ai_state = patch.aiState;
+    if (patch.statusDetail !== undefined) update.status_detail = patch.statusDetail;
+    if (patch.totalCostCents !== undefined) update.total_cost_cents = patch.totalCostCents;
+    if (patch.totalProviderCostCents !== undefined) {
+      update.total_provider_cost_cents = patch.totalProviderCostCents;
+    }
+    if (patch.composerVersion !== undefined) update.composer_version = patch.composerVersion;
+    if (patch.modelId !== undefined) update.model_id = patch.modelId;
+    if (patch.promptTemplateVersion !== undefined) {
+      update.prompt_template_version = patch.promptTemplateVersion;
+    }
+    const row = await one<Row>(
+      this.from("figure_sets")
+        .update(update)
+        .eq("organization_id", organizationId)
+        .eq("id", figureSetId)
+        .select(),
+      "figure_sets.update",
+    );
+    return row ? mapFigureSet(row) : null;
+  }
+
+  async createFigure(
+    input: Omit<FigureRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<FigureRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("figures")
+          .insert({
+            organization_id: input.organizationId,
+            figure_set_id: input.figureSetId,
+            figure_number: input.figureNumber,
+            partial_suffix: input.partialSuffix,
+            view_type: input.viewType,
+            title: input.title,
+            is_prior_art: input.isPriorArt,
+            subject_ref: input.subjectRef,
+            source_kind: input.sourceKind,
+            generation_prompt: input.generationPrompt,
+            brief_description: input.briefDescription,
+            section_of: input.sectionOf,
+            state: input.state,
+            needs_input_question: input.needsInputQuestion,
+            needs_input_missing: input.needsInputMissing,
+          })
+          .select(),
+        "figures.insert",
+      ),
+      "figures.insert",
+    );
+    return mapFigure(row);
+  }
+
+  async listFigures(organizationId: Id, figureSetId: Id): Promise<FigureRecord[]> {
+    const rows = await many<Row>(
+      this.from("figures")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("figure_set_id", figureSetId)
+        .order("figure_number", { ascending: true }),
+      "figures.list",
+    );
+    return rows.map(mapFigure);
+  }
+
+  async getFigure(organizationId: Id, figureId: Id): Promise<FigureRecord | null> {
+    const row = await one<Row>(
+      this.from("figures").select("*").eq("organization_id", organizationId).eq("id", figureId),
+      "figures.get",
+    );
+    return row ? mapFigure(row) : null;
+  }
+
+  async updateFigure(
+    organizationId: Id,
+    figureId: Id,
+    patch: Partial<FigureRecord>,
+  ): Promise<FigureRecord | null> {
+    const update: Row = { updated_at: new Date().toISOString() };
+    if (patch.title !== undefined) update.title = patch.title;
+    if (patch.state !== undefined) update.state = patch.state;
+    if (patch.aiState !== undefined) update.ai_state = patch.aiState;
+    if (patch.isPriorArt !== undefined) update.is_prior_art = patch.isPriorArt;
+    const row = await one<Row>(
+      this.from("figures")
+        .update(update)
+        .eq("organization_id", organizationId)
+        .eq("id", figureId)
+        .select(),
+      "figures.update",
+    );
+    return row ? mapFigure(row) : null;
+  }
+
+  async createFigureNumeral(
+    input: Omit<FigureNumeralRecord, "id" | "createdAt">,
+  ): Promise<FigureNumeralRecord> {
+    // Upsert on (figure_set_id, numeral): the registry's uniqueness is what
+    // makes cross-view consistency mechanical, so a repeat write must
+    // resolve to the same row rather than fail the whole pipeline.
+    const row = must(
+      await one<Row>(
+        this.from("figure_reference_numerals")
+          .upsert(
+            {
+              organization_id: input.organizationId,
+              figure_set_id: input.figureSetId,
+              numeral: input.numeral,
+              part_label: input.partLabel,
+              component_id: input.componentId,
+              first_assigned_figure_id: input.firstAssignedFigureId,
+            },
+            { onConflict: "figure_set_id,numeral" },
+          )
+          .select(),
+        "figure_numerals.upsert",
+      ),
+      "figure_numerals.upsert",
+    );
+    return mapFigureNumeral(row);
+  }
+
+  async listFigureNumerals(
+    organizationId: Id,
+    figureSetId: Id,
+  ): Promise<FigureNumeralRecord[]> {
+    const rows = await many<Row>(
+      this.from("figure_reference_numerals")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("figure_set_id", figureSetId)
+        .order("created_at", { ascending: true }),
+      "figure_numerals.list",
+    );
+    return rows.map(mapFigureNumeral);
+  }
+
+  async updateFigureNumeralLabel(
+    organizationId: Id,
+    numeralId: Id,
+    partLabel: string,
+  ): Promise<FigureNumeralRecord | null> {
+    const row = await one<Row>(
+      this.from("figure_reference_numerals")
+        .update({ part_label: partLabel })
+        .eq("organization_id", organizationId)
+        .eq("id", numeralId)
+        .select(),
+      "figure_numerals.rename",
+    );
+    return row ? mapFigureNumeral(row) : null;
+  }
+
+  async replaceFigureAnnotations(
+    organizationId: Id,
+    figureId: Id,
+    annotations: Array<Omit<FigureAnnotationRecord, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<FigureAnnotationRecord[]> {
+    const { error } = await this.from("figure_annotations")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("figure_id", figureId);
+    if (error) throw new Error(`supabase_adapter:figure_annotations.clear:${error.message}`);
+    if (annotations.length === 0) return [];
+    const rows = await many<Row>(
+      this.from("figure_annotations")
+        .insert(
+          annotations.map((annotation) => ({
+            organization_id: annotation.organizationId,
+            figure_id: annotation.figureId,
+            numeral: annotation.numeral,
+            anchor_x: annotation.anchorX,
+            anchor_y: annotation.anchorY,
+            label_x: annotation.labelX,
+            label_y: annotation.labelY,
+            lead_line_path: annotation.leadLinePath,
+            underlined: annotation.underlined,
+            placed_by: annotation.placedBy,
+          })),
+        )
+        .select(),
+      "figure_annotations.insert",
+    );
+    return rows.map(mapFigureAnnotation);
+  }
+
+  async listFigureAnnotations(
+    organizationId: Id,
+    figureId: Id,
+  ): Promise<FigureAnnotationRecord[]> {
+    const rows = await many<Row>(
+      this.from("figure_annotations")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("figure_id", figureId),
+      "figure_annotations.list",
+    );
+    return rows.map(mapFigureAnnotation);
+  }
+
+  async appendFigureSheet(
+    input: Omit<FigureSheetRecord, "id" | "createdAt">,
+  ): Promise<FigureSheetRecord> {
+    const row = must(
+      await one<Row>(
+        this.from("figure_sheets")
+          .insert({
+            organization_id: input.organizationId,
+            figure_set_id: input.figureSetId,
+            sheet_number: input.sheetNumber,
+            total_sheets: input.totalSheets,
+            orientation: input.orientation,
+            content_type: input.contentType,
+            storage_path: input.storagePath,
+            checksum_sha256: input.checksumSha256,
+            byte_size: input.byteSize,
+          })
+          .select(),
+        "figure_sheets.insert",
+      ),
+      "figure_sheets.insert",
+    );
+    return mapFigureSheet(row);
+  }
+
+  async listFigureSheets(organizationId: Id, figureSetId: Id): Promise<FigureSheetRecord[]> {
+    const rows = await many<Row>(
+      this.from("figure_sheets")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("figure_set_id", figureSetId)
+        .order("sheet_number", { ascending: true }),
+      "figure_sheets.list",
+    );
+    return rows.map(mapFigureSheet);
+  }
+
+  async appendFigureValidations(
+    rows: Array<Omit<FigureValidationRecord, "id" | "createdAt">>,
+  ): Promise<FigureValidationRecord[]> {
+    if (rows.length === 0) return [];
+    const written = await many<Row>(
+      this.from("figure_validations")
+        .insert(
+          rows.map((row) => ({
+            organization_id: row.organizationId,
+            figure_set_id: row.figureSetId,
+            figure_id: row.figureId,
+            rule_id: row.ruleId,
+            status: row.status,
+            detail: row.detail,
+            rules_version: row.rulesVersion,
+          })),
+        )
+        .select(),
+      "figure_validations.insert",
+    );
+    return written.map(mapFigureValidation);
+  }
+
+  async listFigureValidations(
+    organizationId: Id,
+    figureSetId: Id,
+  ): Promise<FigureValidationRecord[]> {
+    const rows = await many<Row>(
+      this.from("figure_validations")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("figure_set_id", figureSetId)
+        .order("created_at", { ascending: true }),
+      "figure_validations.list",
+    );
+    return rows.map(mapFigureValidation);
   }
 
   async appendAuditEvent(
@@ -2577,6 +3125,164 @@ const mapPsPair = (row: Row): PsPairRecord => ({
   sourceAnchors: stringArray(row, "source_anchors"),
   createdAt: s(row, "created_at"),
   updatedAt: s(row, "updated_at"),
+});
+
+/**
+ * The database enum is lower_snake (`pass_1_drafting`); the shared domain
+ * uses SCREAMING_SNAKE (`PASS_1_DRAFTING`). These two functions are the ONLY
+ * place the two representations meet, so a rename in either direction is a
+ * one-line change with a compiler check behind it.
+ */
+function toDbPassState(state: string): string {
+  return state.toLowerCase();
+}
+
+function fromDbPassState(value: string): DraftSetStateValue {
+  return value.toUpperCase() as DraftSetStateValue;
+}
+
+const mapDraftSet = (row: Row): DraftSetRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  state: fromDbPassState(s(row, "state")),
+  interruptedStage: (() => {
+    const raw = sOrNull(row, "interrupted_stage");
+    return raw ? (fromDbPassState(raw) as DraftSetStageValue) : null;
+  })(),
+  passOneVersionId: sOrNull(row, "pass_1_version_id"),
+  passTwoVersionId: sOrNull(row, "pass_2_version_id"),
+  figureSetId: sOrNull(row, "figure_set_id"),
+  illustrationsBrief: row.illustrations_brief ?? {},
+  briefVersion: s(row, "brief_version"),
+  reconciliation: row.reconciliation ?? null,
+  reconciled: b(row, "reconciled"),
+  reconciliationVersion: s(row, "reconciliation_version"),
+  statusDetail: s(row, "status_detail"),
+  acceptedByUserId: sOrNull(row, "accepted_by"),
+  acceptedAt: sOrNull(row, "accepted_at"),
+  passOneReservationId: sOrNull(row, "pass_1_reservation_id"),
+  passTwoReservationId: sOrNull(row, "pass_2_reservation_id"),
+  passOneChargeCents: n(row, "pass_1_charge_cents"),
+  passTwoChargeCents: n(row, "pass_2_charge_cents"),
+  createdAt: s(row, "created_at"),
+  updatedAt: s(row, "updated_at"),
+});
+
+const mapDraftSetTransition = (row: Row): DraftSetTransitionRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  draftSetId: s(row, "draft_set_id"),
+  fromState: (() => {
+    const raw = sOrNull(row, "from_state");
+    return raw ? fromDbPassState(raw) : null;
+  })(),
+  toState: fromDbPassState(s(row, "to_state")),
+  actor: s(row, "actor"),
+  reason: s(row, "reason"),
+  createdAt: s(row, "created_at"),
+});
+
+const mapFigureSet = (row: Row): FigureSetRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  inventionId: s(row, "invention_id"),
+  draftVersionId: sOrNull(row, "draft_version_id"),
+  state: s(row, "state") as FigureSetStateValue,
+  sheetSize: s(row, "sheet_size") === "letter" ? "letter" : "a4",
+  orientationPolicy:
+    s(row, "orientation_policy") === "landscape_allowed"
+      ? "landscape_allowed"
+      : "portrait_preferred",
+  rulesVersion: s(row, "rules_version"),
+  plannerVersion: s(row, "planner_version"),
+  composerVersion: s(row, "composer_version"),
+  modelId: sOrNull(row, "model_id"),
+  promptTemplateVersion: sOrNull(row, "prompt_template_version"),
+  inputHash: s(row, "input_hash"),
+  totalCostCents: n(row, "total_cost_cents"),
+  totalProviderCostCents: n(row, "total_provider_cost_cents"),
+  aiState: s(row, "ai_state") as FigureAiState,
+  statusDetail: s(row, "status_detail"),
+  createdAt: s(row, "created_at"),
+  updatedAt: s(row, "updated_at"),
+});
+
+const mapFigure = (row: Row): FigureRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  figureSetId: s(row, "figure_set_id"),
+  figureNumber: n(row, "figure_number"),
+  partialSuffix: sOrNull(row, "partial_suffix"),
+  viewType: s(row, "view_type"),
+  title: s(row, "title"),
+  isPriorArt: b(row, "is_prior_art"),
+  subjectRef: s(row, "subject_ref"),
+  sourceKind: s(row, "source_kind"),
+  generationPrompt: sOrNull(row, "generation_prompt"),
+  briefDescription: s(row, "brief_description"),
+  sectionOf: nOrNull(row, "section_of"),
+  state: s(row, "state") as FigureStateValue,
+  needsInputQuestion: sOrNull(row, "needs_input_question"),
+  needsInputMissing: sOrNull(row, "needs_input_missing"),
+  aiState: s(row, "ai_state") as FigureAiState,
+  createdAt: s(row, "created_at"),
+  updatedAt: s(row, "updated_at"),
+});
+
+const mapFigureNumeral = (row: Row): FigureNumeralRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  figureSetId: s(row, "figure_set_id"),
+  numeral: s(row, "numeral"),
+  partLabel: s(row, "part_label"),
+  componentId: sOrNull(row, "component_id"),
+  firstAssignedFigureId: sOrNull(row, "first_assigned_figure_id"),
+  createdAt: s(row, "created_at"),
+});
+
+const mapFigureAnnotation = (row: Row): FigureAnnotationRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  figureId: s(row, "figure_id"),
+  numeral: s(row, "numeral"),
+  anchorX: n(row, "anchor_x"),
+  anchorY: n(row, "anchor_y"),
+  labelX: n(row, "label_x"),
+  labelY: n(row, "label_y"),
+  leadLinePath: Array.isArray(row.lead_line_path)
+    ? (row.lead_line_path as Array<{ x: number; y: number }>)
+    : [],
+  underlined: b(row, "underlined"),
+  placedBy: s(row, "placed_by") === "user" ? "user" : "auto",
+  createdAt: s(row, "created_at"),
+  updatedAt: s(row, "updated_at"),
+});
+
+const mapFigureSheet = (row: Row): FigureSheetRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  figureSetId: s(row, "figure_set_id"),
+  sheetNumber: n(row, "sheet_number"),
+  totalSheets: n(row, "total_sheets"),
+  orientation: s(row, "orientation") === "landscape" ? "landscape" : "portrait",
+  contentType: s(row, "content_type"),
+  storagePath: s(row, "storage_path"),
+  checksumSha256: s(row, "checksum_sha256"),
+  byteSize: n(row, "byte_size"),
+  createdAt: s(row, "created_at"),
+});
+
+const mapFigureValidation = (row: Row): FigureValidationRecord => ({
+  id: s(row, "id"),
+  organizationId: s(row, "organization_id"),
+  figureSetId: s(row, "figure_set_id"),
+  figureId: sOrNull(row, "figure_id"),
+  ruleId: s(row, "rule_id"),
+  status: s(row, "status") as FigureValidationRecord["status"],
+  detail: s(row, "detail"),
+  rulesVersion: s(row, "rules_version"),
+  createdAt: s(row, "created_at"),
 });
 
 const mapComponent = (row: Row): ComponentRecord => ({

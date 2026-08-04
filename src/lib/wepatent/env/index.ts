@@ -55,6 +55,50 @@ const envSchema = z.object({
   MODEL_GATEWAY_KILL_SWITCH: z.enum(["0", "1"]).default("0"),
 
   /**
+   * Google Gemini (Nano Banana 2 / Gemini 3 Pro Image) — Layer-1 patent
+   * line art. Server-side only, never client-exposed.
+   *
+   * TWO independent gates, both required (spec §8 approval gate):
+   * - GEMINI_API_KEY: the credential;
+   * - FIGURES_GEMINI_ENABLED: the explicit enable flag, default OFF.
+   * With the flag off the adapter refuses and the product says "line art
+   * unavailable" rather than drawing anything.
+   */
+  GEMINI_API_KEY: z.string().optional(),
+  FIGURES_GEMINI_ENABLED: z.enum(["0", "1"]).default("0"),
+
+  /**
+   * WHICH Gemini image model Layer 1 calls (Jeff's directive, 2026-08-04).
+   *
+   * Empty selects the configured default, Nano Banana 2 (Gemini 3 Pro
+   * Image). The alternative is `gemini-2.5-flash-image`. Selection is
+   * registry-level and validated at resolution time: an id that is not in
+   * IMAGE_MODEL_REGISTRY is refused, never silently substituted, because an
+   * unpriced model must not receive spend. Both models carry their own
+   * effective-dated price entry, bill at the same 2.0 generation
+   * multiplier, and pass the same Layer-1 hygiene gate.
+   */
+  FIGURES_IMAGE_MODEL: z.string().default(""),
+
+  /**
+   * Automatic background figure generation for existing customers is
+   * itself approval-gated (spec §8). Default OFF: the pipeline still runs
+   * on demand from the studio, but nothing is triggered automatically until
+   * this is switched on.
+   */
+  FIGURES_AUTO_GENERATE: z.enum(["0", "1"]).default("0"),
+
+  /**
+   * Per-draft figure budget cap, in customer-charge cents. When a run would
+   * exceed it the pipeline PAUSES and says so rather than spending silently.
+   * $3.00 default ≈ six accepted images at the 2.0 image multiplier.
+   */
+  FIGURE_SET_BUDGET_CENTS: z.coerce.number().int().min(0).default(300),
+
+  /** Org-wide daily figure spend cap, customer-charge cents. $20.00 default. */
+  FIGURES_ORG_DAILY_CAP_CENTS: z.coerce.number().int().min(0).default(2_000),
+
+  /**
    * Interview session spend-cap default in cents (Intake Studio FR-INT-10).
    * $5.00 by default; model-touching interview turns halt when a session's
    * settled spend reaches its cap, with an in-product path to raise it.
@@ -94,6 +138,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY,
     XAI_API_KEY: source.XAI_API_KEY,
     MODEL_GATEWAY_KILL_SWITCH: source.MODEL_GATEWAY_KILL_SWITCH,
+    GEMINI_API_KEY: source.GEMINI_API_KEY,
+    FIGURES_GEMINI_ENABLED: source.FIGURES_GEMINI_ENABLED,
+    FIGURES_IMAGE_MODEL: source.FIGURES_IMAGE_MODEL,
+    FIGURES_AUTO_GENERATE: source.FIGURES_AUTO_GENERATE,
+    FIGURE_SET_BUDGET_CENTS: source.FIGURE_SET_BUDGET_CENTS,
+    FIGURES_ORG_DAILY_CAP_CENTS: source.FIGURES_ORG_DAILY_CAP_CENTS,
     INTERVIEW_SESSION_SPEND_CAP_CENTS: source.INTERVIEW_SESSION_SPEND_CAP_CENTS,
   });
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import IntakeStageForm from "@/components/wepatent/IntakeStageForm";
 import {
   canEnterStage,
   DISCLOSURE_EVENT_KINDS,
@@ -28,7 +29,7 @@ function str(data: Record<string, unknown> | undefined, key: string): string {
 export default async function NewInventionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ stage?: string; saved?: string; error?: string; issues?: string }>;
+  searchParams: Promise<{ stage?: string; error?: string; issues?: string }>;
 }) {
   const params = await searchParams;
   const context = await requireOnboarded();
@@ -76,7 +77,12 @@ export default async function NewInventionPage({
                     {complete ? "✓" : index + 1}
                   </span>
                   {reachable ? (
-                    <Link href={`/wepatent/app/inventions/new?stage=${s.key}`}>{s.title}</Link>
+                    <Link
+                      href={`/wepatent/app/inventions/new?stage=${s.key}`}
+                      data-intake-stage-link=""
+                    >
+                      {s.title}
+                    </Link>
                   ) : (
                     <span>{s.title}</span>
                   )}
@@ -86,8 +92,9 @@ export default async function NewInventionPage({
             })}
           </ol>
           <p className="consent-legal">
-            Progress is saved on this server session. Use “Save draft” at any time and resume
-            later from where you left off.
+            Progress saves itself on this server session as you type — leave any time and resume
+            from where you left off. A saved draft is not a validated stage: “Save and continue”
+            still checks the stage before it counts as complete.
           </p>
         </div>
 
@@ -97,11 +104,6 @@ export default async function NewInventionPage({
           </p>
           <h2>{stageMeta.title}</h2>
 
-          {params.saved === "1" && (
-            <p className="wp-boundary-banner" role="status">
-              Draft saved. You can leave and resume this intake later.
-            </p>
-          )}
           {params.error && issues.length === 0 && (
             <p className="form-error" role="alert">
               {params.error === "stage_locked"
@@ -117,8 +119,11 @@ export default async function NewInventionPage({
             </ul>
           )}
 
-          <form action={intakeStageAction} className="wp-form">
-            <input type="hidden" name="stage" value={enterable} />
+          <IntakeStageForm
+            stage={enterable}
+            autosave={enterable !== "review"}
+            action={intakeStageAction}
+          >
 
             {enterable === "identity" && (
               <>
@@ -316,22 +321,15 @@ export default async function NewInventionPage({
             )}
 
             <div className="wp-actions">
-              {enterable !== "review" ? (
-                <>
-                  <button className="button venture-button" type="submit" name="intent" value="continue">
-                    Save and continue
-                  </button>
-                  <button className="button button-secondary" type="submit" name="intent" value="save" formNoValidate>
-                    Save draft
-                  </button>
-                </>
-              ) : (
-                <button className="button venture-button" type="submit" name="intent" value="continue">
-                  Submit to invention record
-                </button>
-              )}
+              {/* Design rule (minimal human input): no "Save draft" button —
+                  the stage autosaves. "Save and continue" remains the
+                  validation + navigation step, and the review stage keeps
+                  its explicit accuracy attestation (KEEP list). */}
+              <button className="button venture-button" type="submit" name="intent" value="continue">
+                {enterable !== "review" ? "Save and continue" : "Submit to invention record"}
+              </button>
             </div>
-          </form>
+          </IntakeStageForm>
         </div>
       </div>
     </>

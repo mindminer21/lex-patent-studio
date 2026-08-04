@@ -1,8 +1,8 @@
 # Lex Patent Studio Production Application PRD
 
 **Status:** Implementation source of truth
-**Version:** 1.0
-**Date:** August 1, 2026
+**Version:** 1.2
+**Date:** August 4, 2026
 **Repository:** https://github.com/mindminer21/lex-patent-studio
 **Primary product in this PRD:** **Lex Patent Studio** (professional lane)
 **Related but separate product:** wepatent (see `PRD-wepatent.md`)
@@ -32,7 +32,7 @@ A production release succeeds when a supervising practitioner can create an isol
 ## 2. Assumptions
 
 1. Responsive web application: Next.js App Router + TypeScript on Vercel; Supabase Auth, Postgres, Storage, RLS for private application data; a separate Supabase project for the public knowledge corpus (identical platform assumptions to `PRD-wepatent.md` §2 — the two products share infrastructure patterns, not identity).
-2. Stripe handles subscriptions, customer portal, and prepaid usage-wallet top-ups; usage is billed at provider cost × 1.50 per the business proposal.
+2. Stripe handles subscriptions, customer portal, and prepaid usage-wallet top-ups; usage is billed at provider cost × 2.0 for generation tasks and × 1.5 for analysis tasks (see FR-9).
 3. OpenAI, Anthropic, and xAI models are reachable only through the server-side model gateway. Model choice (including Grok models) is a user-facing feature.
 4. Long-running work (drafting orchestration, OCR, corpus indexing, exports, verification passes) runs in durable asynchronous jobs.
 5. The knowledge corpus ships **public and expressly licensed sources only**. Jeff's internal corpus is the architectural blueprint; each source class ports only after the license audit clears it (Section 6.4).
@@ -362,6 +362,27 @@ As `PRD-wepatent.md` FR-1, plus: SSO/SAML and SCIM for Enterprise (Phase 4); MFA
 
 As `PRD-wepatent.md` FR-4 (signed uploads, validation, malware scan, quarantine, async OCR/extraction, tenant-scoped embeddings), plus: patent-document awareness (auto-detect published patents/applications and link to public-corpus records rather than duplicating them), and page/paragraph coordinate preservation for pinpoint citations.
 
+### FR-4a Three-pass patent drafting (the canonical drafting process)
+
+**Jeff's directive, 2026-08-04.** Specification drafting in Lex uses the **same three-pass flow as wepatent**, implemented in **shared code** with Lex-specific configuration only. The state machine, the illustrations-brief schema and authoring, the reference-numeral registry rules, the two-way reconciliation, and the delivery gate are `src/lib/shared/drafting/`; Lex's adapter over them is `src/lib/domain/lex-draft-passes.ts`. The logic is not forked.
+
+```
+PASS_1_DRAFTING → FIGURES_PENDING → FIGURES_READY → PASS_2_REVISING → READY_FOR_REVIEW
+                (+ NEEDS_INPUT · PAUSED_BUDGET · FAILED)
+```
+
+**Pass 1** produces the specification draft **and the illustrations brief** — the ordered figure list, view types, what each figure must show, the parts in each, and **the reference-numeral assignments** — plus Lex's **claim-support material** (§8.2). Pass 1 authors the numeral registry so the prose and the drawings share one numbering scheme. Drafting is from the **counsel-approved fact ledger** only; where the ledger does not support a figure, the brief carries an open question.
+
+**Figures stage** runs off the brief and **consumes** its numerals; the planner may not mint new ones. It chains automatically — no practitioner step.
+
+**Pass 2** re-drafts against the figures actually produced: it reconciles prose ↔ drawings **both ways** as a gate, rewrites the Brief Description of the Drawings from what was produced, strengthens §112(a) support for every depicted element, and **flags rather than fixes** any figure/record disagreement. Its output is a **new document version**; Pass 1's remains inspectable.
+
+**Tier and review-queue semantics.** A three-pass draft is **Tier B — draft for review** (§5.3). The number of passes does not change the tier: drafting is substantive work product, the responsible practitioner reviews and edits before any downstream use, and the completed set **enters the review queue** as a Tier-B item carrying the reconciliation summary and any unresolved flags. A tenant may promote to Tier C; demotion below the Tier-B floor is refused (Invariant 15), in application code and by a schema CHECK.
+
+**Delivery gate.** Nothing is exported or delivered until the set reaches `READY_FOR_REVIEW` with a passing reconciliation **and the responsible practitioner accepts**. A blocked set states exactly what is wrong and what it needs — never a bare "not ready".
+
+**Metering.** Per pass, at the **generation** multiplier (FR-9): the estimate is shown before each pass, a cap pauses between passes without losing the pass already paid for, and a retry never double-charges.
+
 ### FR-5 Knowledge and retrieval service
 
 - Public corpus project with the layer model of Section 6.1, registry, releases, and refresh jobs.
@@ -388,7 +409,17 @@ As `PRD-wepatent.md` FR-5 (provider adapters for OpenAI, Anthropic, xAI; effecti
 
 ### FR-9 Billing
 
-As `PRD-wepatent.md` FR-6 (Stripe, wallet, reservation/settlement, ×1.50 markup, effective-dated rates), with professional-lane plans:
+As `PRD-wepatent.md` FR-6 (Stripe, wallet, reservation/settlement, effective-dated rates), with professional-lane plans.
+
+**Task-type markup (Jeff's directive, 2026-08-04).** The retail multiplier is set by what a run PRODUCES, not by which model served it. Published rate sentence: *provider cost × 2.0 for generation tasks, × 1.5 for analysis tasks*.
+
+- **2.00 — generation.** `section_draft`, `claim_tree_draft`, `dependent_claim_draft`, `oa_response_draft`, `research_memo`, `search_report`, `declaration_132`, `response_path_options`, `claim_scope_strategy`, `filing_strategy_options`. This is a **correction**: the earlier round left the whole Lex lane at 1.50 on the reasoning that Lex has no image generation. The rule is by task type, and Lex's drafting workflows are generation.
+- **1.50 — analysis.** `ids_packet`, `formalities_check`, `status_digest`, `invention_intake`, `fact_extraction`, `oa_analysis`. Byte-identical to what these workflows charged before 2026-08-04.
+- Within a run, only the `GENERATING` stage inherits the workflow's category. `INGESTING`, `RETRIEVING`, and `VERIFYING` are always analysis; `RENDERING` spends nothing. An analysis workflow does not pay the generation multiplier merely because its middle stage is named "GENERATING".
+- The exhaustive table is `src/lib/shared/billing/task-category.ts`, shared with wepatent. Adding a `WorkflowKey` without a category fails `tsc` and therefore the build.
+- The multiplier catalog is `src/lib/shared/billing/markup.ts`, shared with wepatent; `/pricing`, `/models`, `/professionals`, `/legal/terms`, the root landing page, and the in-app composer, usage, and settings surfaces all derive their copy from it.
+
+Professional-lane plans:
 
 | Plan | Monthly fee | Included usage credit | Intended customer |
 |---|---:|---:|---|

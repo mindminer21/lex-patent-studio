@@ -361,6 +361,64 @@ export function interpretationClassFor(
   return getAllowedType(mimeType, filename ?? undefined)?.interpretation ?? "stored_only";
 }
 
+/* ------------------------------------------------------------------ */
+/* Source "kind" derivation (friction audit #6)                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Source kinds offered in the UI. `kind` is organizational metadata for the
+ * counsel package (it never affects validation, quarantine, or which
+ * interpretation pass runs — that is `InterpretationClass`).
+ */
+export const UPLOAD_KINDS = [
+  "document",
+  "image",
+  "model",
+  "audio",
+  "filing_receipt",
+  "lab_notebook",
+  "design_doc",
+  "code",
+  "presentation",
+  "data",
+  "other",
+] as const;
+export type UploadKind = (typeof UPLOAD_KINDS)[number];
+
+/**
+ * Default the upload "Kind" from the detected file class (design rule:
+ * where a step can be inferred, prefer that — the Kind select no longer
+ * blocks the file input).
+ *
+ * image → image · pdf/docx/pptx/xlsx/txt/md/svg → document ·
+ * stl/step/obj/3mf → model · mp3/wav/m4a → audio · filing-receipt surface →
+ * filing_receipt · anything else (including video) → other.
+ *
+ * Derivation uses the SAME allowlist lookup the validator uses, so a file
+ * the pipeline would reject never produces a confident kind. The user can
+ * always override it in the "Add details" disclosure.
+ */
+export function deriveUploadKind(input: {
+  filename: string;
+  mimeType: string;
+  /** The filing-receipt surface pins its own kind regardless of file type. */
+  context?: "filing_receipt";
+}): UploadKind {
+  if (input.context === "filing_receipt") return "filing_receipt";
+  switch (interpretationClassFor(input.mimeType || null, input.filename)) {
+    case "image":
+      return "image";
+    case "document":
+      return "document";
+    case "model3d":
+      return "model";
+    case "audio":
+      return "audio";
+    default:
+      return "other";
+  }
+}
+
 /**
  * Quarantine/extraction state machine (FR-4). `registered` is a metadata
  * row; bytes move it to `uploaded` and immediately into `quarantined`; only

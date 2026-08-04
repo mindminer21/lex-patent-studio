@@ -216,7 +216,7 @@ export async function runDistillation(params: {
     kind: "settlement",
     amountCents: -settled.customerChargeCents,
     reservationId: reservationRecord.id,
-    note: `Distillation settlement (${tier.rate.rateVersion}); provider cost × 1.50.`,
+    note: `Distillation settlement (${tier.rate.rateVersion}); provider cost × 1.5 (analysis task).`,
   });
   await data.appendUsageEvent({
     organizationId: params.organizationId,

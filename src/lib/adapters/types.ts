@@ -1,5 +1,9 @@
 import type { Role } from "@/lib/domain/roles";
 import type {
+  LexDraftSet,
+  LexDraftSetTransition,
+} from "@/lib/domain/lex-draft-passes";
+import type {
   AuditEvent,
   ChatMessage,
   ChatPostInput,
@@ -131,6 +135,35 @@ export interface DataAdapter {
     request: RunRequest,
     context: { requestedBy: string; role: Role },
   ): Promise<{ ok: true; run: WorkflowRun } | { ok: false; error: string }>;
+  /* ------------- three-pass drafting (shared core, Lex shape) ------------ */
+  /**
+   * Start the three-pass flow for a matter and run it to wherever it
+   * settles. Idempotent: a matter already has at most one non-terminal set
+   * (partial unique index, Lex migration 0007), so a second start returns
+   * the existing one.
+   */
+  startDraftSet(
+    organizationId: string,
+    matterId: string,
+    actor: ActorContext,
+  ): Promise<{ ok: true; set: LexDraftSet } | { ok: false; error: string }>;
+  listDraftSets(organizationId: string, matterId?: string): Promise<LexDraftSet[]>;
+  getDraftSet(organizationId: string, draftSetId: string): Promise<LexDraftSet | null>;
+  listDraftSetTransitions(
+    organizationId: string,
+    draftSetId: string,
+  ): Promise<LexDraftSetTransition[]>;
+  /**
+   * The responsible practitioner accepts the set. Refused unless the set is
+   * READY_FOR_REVIEW with a passing reconciliation — the platform can never
+   * accept on a practitioner's behalf.
+   */
+  acceptDraftSet(
+    organizationId: string,
+    draftSetId: string,
+    actor: ActorContext,
+  ): Promise<{ ok: true; set: LexDraftSet } | { ok: false; error: string }>;
+
   listReviewItems(
     organizationId: string,
     filter?: { matterId?: string; state?: ReviewItem["state"] },

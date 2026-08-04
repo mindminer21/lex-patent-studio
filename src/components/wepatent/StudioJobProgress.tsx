@@ -23,6 +23,7 @@ const STATUS_LABELS: Record<JobView["status"], string> = {
 const KIND_LABELS: Record<string, string> = {
   source_interpretation: "Interpretation",
   distillation: "Distillation",
+  figure_plan: "Figure generation",
 };
 
 /**

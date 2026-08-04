@@ -6,79 +6,26 @@ import {
   emptyIntakeState,
   firstIncompleteStage,
   INTAKE_STAGE_KEYS,
-  parseComponentLines,
-  parseContributorLines,
-  parseSourceLines,
-  parseTimelineLines,
   saveStageDraft,
   stageIndex,
   type IntakeStageKey,
 } from "@/lib/wepatent/domain/intake";
 import { getAdapters } from "@/lib/server/adapters";
 import { requireOnboarded } from "@/lib/server/session";
+import { parseIntakeStageForm } from "@/lib/server/services/intake-draft";
 import { submitIntake } from "@/lib/server/services/inventions";
 
-function text(formData: FormData, key: string): string {
-  return String(formData.get(key) ?? "").trim();
-}
-
-function parseStageForm(stage: IntakeStageKey, formData: FormData): unknown {
-  switch (stage) {
-    case "identity":
-      return {
-        title: text(formData, "title"),
-        summary: text(formData, "summary"),
-        businessContext: text(formData, "businessContext"),
-      };
-    case "problem_solution":
-      return {
-        problem: text(formData, "problem"),
-        solution: text(formData, "solution"),
-      };
-    case "components":
-      return {
-        components: parseComponentLines(text(formData, "componentsText")),
-        steps: text(formData, "stepsText")
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean),
-        alternatives: text(formData, "alternatives"),
-        advantages: text(formData, "advantages"),
-      };
-    case "contributors":
-      return { contributors: parseContributorLines(text(formData, "contributorsText")) };
-    case "timeline":
-      return {
-        events: parseTimelineLines(text(formData, "eventsText")),
-        noEventsConfirmed: formData.get("noEventsConfirmed") === "on",
-      };
-    case "ownership":
-      return {
-        employmentAgreementsExist: text(formData, "employmentAgreementsExist"),
-        assignmentsExecuted: text(formData, "assignmentsExecuted"),
-        thirdPartyObligations: text(formData, "thirdPartyObligations"),
-        openQuestions: text(formData, "openQuestions"),
-      };
-    case "sources":
-      return {
-        sources: parseSourceLines(text(formData, "sourcesText")),
-        noSourcesConfirmed: formData.get("noSourcesConfirmed") === "on",
-      };
-    case "review":
-      return { confirmAccuracy: formData.get("confirmAccuracy") === "on" };
-  }
-}
-
 /**
- * Save-and-resume plus validated stage completion for the staged intake
- * (PRD §7.3). All validation happens server-side against the stage schemas.
+ * Validated stage completion for the classic guided form (PRD §7.3). All
+ * validation happens server-side against the stage schemas — unchanged by
+ * the autosave work (friction audit #2). Draft persistence now lives in
+ * `services/intake-draft.ts` and is shared with `POST /api/intake/draft`.
  */
 export async function intakeStageAction(formData: FormData): Promise<void> {
   const context = await requireOnboarded();
   const { data } = getAdapters();
 
   const stageRaw = String(formData.get("stage") ?? "");
-  const intent = String(formData.get("intent") ?? "continue");
   if (!INTAKE_STAGE_KEYS.includes(stageRaw as IntakeStageKey)) {
     redirect("/wepatent/app/inventions/new");
   }
@@ -86,19 +33,7 @@ export async function intakeStageAction(formData: FormData): Promise<void> {
 
   const session = await data.getIntakeSession(context.organization.id, context.user.id);
   const state = session?.state ?? emptyIntakeState();
-  const stageData = parseStageForm(stage, formData);
-
-  if (intent === "save") {
-    const nextState = saveStageDraft(state, stage, stageData);
-    await data.saveIntakeSession({
-      id: session?.id,
-      organizationId: context.organization.id,
-      userId: context.user.id,
-      state: nextState,
-      submittedInventionId: null,
-    });
-    redirect(`/wepatent/app/inventions/new?stage=${stage}&saved=1`);
-  }
+  const stageData = parseIntakeStageForm(stage, formData);
 
   const result = completeStage(state, stage, stageData);
   if (!result.ok) {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import OrganizationNameField from "@/components/wepatent/OrganizationNameField";
 import RetentionField from "@/components/wepatent/RetentionField";
 import { can } from "@/lib/wepatent/domain/roles";
 import { openPortalAction } from "../billing/actions";
@@ -35,17 +36,18 @@ export default async function SettingsPage({
 }) {
   const params = await searchParams;
   const context = await requireOrg();
+  const organization = context.organization;
   const { data } = getAdapters();
-  const memberships = await data.getMembershipsForOrganization(context.organization.id);
+  const memberships = await data.getMembershipsForOrganization(organization.id);
   const members = await Promise.all(
     memberships.map(async (membership) => ({
       membership,
       user: await data.getUserById(membership.userId),
     })),
   );
-  const invitations = await data.listInvitations(context.organization.id);
-  const audit = await data.listAuditEvents(context.organization.id);
-  const softDeleted = await data.listSoftDeletedInventions(context.organization.id);
+  const invitations = await data.listInvitations(organization.id);
+  const audit = await data.listAuditEvents(organization.id);
+  const softDeleted = await data.listSoftDeletedInventions(organization.id);
   const canManage = can(context.membership.role, "org.members.manage");
   const canManageOrg = can(context.membership.role, "org.manage");
 
@@ -53,7 +55,7 @@ export default async function SettingsPage({
     <>
       <div className="wp-topbar">
         <h1>Settings</h1>
-        <span className="org">{context.organization.name}</span>
+        <span className="org">{organization.name}</span>
       </div>
 
       <div className="wp-card" style={{ marginBottom: 22 }}>
@@ -77,19 +79,28 @@ export default async function SettingsPage({
       <div className="wp-grid cols-2">
         <div className="wp-card">
           <h2>Organization</h2>
-          <table className="wp-table">
+          {/* Design rule (minimal human input): the workspace is created
+              automatically on first sign-in with a placeholder name — this
+              autosaving field is how it becomes the real name. Owner-gated
+              and audited server-side, exactly like retention. */}
+          {canManageOrg ? (
+            <OrganizationNameField initialName={organization.name} />
+          ) : (
+            <p className="consent-legal">Only the organization owner can rename the workspace.</p>
+          )}
+          <table className="wp-table" style={{ marginTop: 14 }}>
             <tbody>
               <tr>
                 <td>Name</td>
-                <td>{context.organization.name}</td>
+                <td>{organization.name}</td>
               </tr>
               <tr>
                 <td>Created</td>
-                <td>{new Date(context.organization.createdAt).toLocaleString()}</td>
+                <td>{new Date(organization.createdAt).toLocaleString()}</td>
               </tr>
               <tr>
                 <td>Retention</td>
-                <td>{context.organization.retentionDays} days</td>
+                <td>{organization.retentionDays} days</td>
               </tr>
             </tbody>
           </table>
@@ -120,7 +131,7 @@ export default async function SettingsPage({
                   autosaves — no Update button. The purge button stays: it
                   permanently deletes content and must remain an explicit,
                   deliberate action. */}
-              <RetentionField initialDays={context.organization.retentionDays} />
+              <RetentionField initialDays={organization.retentionDays} />
               <form action={runPurgeAction} style={{ marginTop: 10 }}>
                 <button className="button button-secondary button-small" type="submit">
                   Run retention purge now

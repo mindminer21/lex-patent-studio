@@ -322,7 +322,7 @@ async function runMetered<T extends { providerCostCents: number; inputTokens: nu
     kind: "settlement",
     amountCents: -settled.customerChargeCents,
     reservationId: reservationRecord.id,
-    note: `${note} settlement (${tier.rate.rateVersion}); provider cost × 1.50.`,
+    note: `${note} settlement (${tier.rate.rateVersion}); provider cost × 1.5 (analysis task).`,
   });
   await data.appendUsageEvent({
     organizationId,

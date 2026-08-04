@@ -5,8 +5,8 @@ import { can } from "@/lib/domain/roles";
 import {
   MODEL_CATALOG,
   MODEL_TIER_LABELS,
-  USAGE_MARKUP,
 } from "@/lib/domain/pricing";
+import { markupDisclosure } from "@/lib/shared/billing/markup";
 
 export const metadata: Metadata = {
   title: "Settings — Lex Patent Studio",
@@ -44,8 +44,8 @@ export default async function SettingsPage() {
         </h2>
         <p className="max-w-[760px] text-[0.85rem] text-[var(--muted)]">
           All model calls go through the server-side gateway (no provider key
-          ever reaches the browser). Charges are provider cost ×{" "}
-          {USAGE_MARKUP.toFixed(2)} with effective-dated rates. Gateway status:{" "}
+          ever reaches the browser). Charges are {markupDisclosure()} with
+          effective-dated rates. Gateway status:{" "}
           <strong>{live ? "LIVE" : "not live — local mode, no provider reachable"}</strong>.
         </p>
         <div className="overflow-x-auto">
