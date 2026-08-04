@@ -15,7 +15,7 @@ const KIND_OPTIONS = [
 
 const REJECTION_MESSAGES: Record<string, string> = {
   mime_not_allowed:
-    "That file type is not allowed. Allowed: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG, PNG, JPEG, TIFF, HEIC, STL, STEP, OBJ, 3MF.",
+    "That file type is not allowed. Allowed: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG, PNG, JPEG, TIFF, HEIC, STL, STEP, OBJ, 3MF, MP3, WAV, M4A, MP4, MOV.",
   extension_mismatch: "The file extension does not match its declared type.",
   too_large: "The file exceeds the size cap for its type.",
   empty_file: "The file is empty.",
@@ -105,13 +105,13 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
       <div className="field">
         <label htmlFor="upload-file">
           File (documents: PDF, DOCX, PPTX, XLSX, TXT/MD, SVG · images: PNG, JPEG, TIFF, HEIC ·
-          3D models: STL, STEP, OBJ, 3MF)
+          3D models: STL, STEP, OBJ, 3MF · audio: MP3, WAV, M4A · video: MP4, MOV)
         </label>
         <input
           id="upload-file"
           ref={fileRef}
           type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf"
+          accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf,.mp3,.wav,.m4a,.mp4,.mov"
           required
         />
       </div>

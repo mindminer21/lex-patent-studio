@@ -163,6 +163,7 @@ export async function addSourceAction(formData: FormData): Promise<void> {
     checksumSha256: null,
     quarantineReason: null,
     interpretationStatus: null,
+    derivedFromSourceId: null,
   });
   redirect(`/wepatent/app/inventions/${inventionId}/sources`);
 }

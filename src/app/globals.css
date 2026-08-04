@@ -376,3 +376,23 @@ footer { min-height: 110px; border-top: 1px solid var(--line); padding: 28px 4vw
 /* Studio cards wrap their content (overflow-wrap above) instead of becoming
    keyboard-unreachable scroll regions (axe scrollable-region-focusable). */
 .wp-studio .wp-card { overflow-x: visible; }
+
+/* ------------------------------------------------------------------------ */
+/* Intake Studio M3: source viewer region anchors + evidence gallery.        */
+/* ai_proposed anchors are dashed amber (unreviewed proposals);              */
+/* user-confirmed/edited anchors are solid green (invariant 13 styling).     */
+/* ------------------------------------------------------------------------ */
+.wp-region-surface { position: relative; display: block; max-width: 100%; border: 1px solid var(--venture-line); background: #fff; touch-action: none; user-select: none; }
+.wp-region-surface img { display: block; width: 100%; height: auto; pointer-events: none; }
+.wp-region-surface:focus-visible { outline: 3px solid #1d4f91; outline-offset: 2px; }
+.wp-page-proxy { aspect-ratio: 17 / 22; overflow: hidden; padding: 4%; box-sizing: border-box; font-size: 0.72rem; line-height: 1.5; color: #444; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wp-region-box { position: absolute; box-sizing: border-box; border: 2px solid #0d5c2e; background: rgba(13, 92, 46, 0.12); }
+.wp-region-box.ai_proposed { border: 2px dashed #8a5a00; background: rgba(224, 185, 106, 0.18); }
+.wp-region-box.draft { border: 2px solid #1d4f91; background: rgba(29, 79, 145, 0.15); }
+.wp-region-box.focused { box-shadow: 0 0 0 3px rgba(29, 79, 145, 0.55); }
+.wp-region-box .wp-region-tag { position: absolute; top: -1.4em; left: -2px; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; background: inherit; border: 1px solid; padding: 0 4px; white-space: nowrap; }
+.wp-evidence-crop { position: relative; overflow: hidden; border: 1px solid var(--venture-line); background-repeat: no-repeat; }
+.wp-mesh-views { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.wp-mesh-views figure { margin: 0; }
+.wp-mesh-views canvas { width: 100%; height: auto; border: 1px solid var(--venture-line); background: #fff; }
+.wp-mesh-views figcaption { font-size: 0.75rem; font-weight: 650; }

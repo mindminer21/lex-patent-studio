@@ -382,7 +382,7 @@ export default function InterviewPanel({
                 id="interview-attachment"
                 ref={fileRef}
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf"
+                accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf,.mp3,.wav,.m4a,.mp4,.mov"
                 onChange={() => void attachFile()}
               />
               {attachments.length > 0 && (

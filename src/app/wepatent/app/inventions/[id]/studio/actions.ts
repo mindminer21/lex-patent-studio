@@ -8,11 +8,14 @@ import { enqueueJob } from "@/lib/server/jobs/runner";
 import { requireOnboarded } from "@/lib/server/session";
 import {
   addManualPair,
+  bulkReviewProposals,
   confirmPair,
   deletePair,
   editPair,
   linkPairs,
+  mergePairs,
   setWorkingTitle,
+  splitPair,
 } from "@/lib/server/services/ps-ledger";
 
 function studioPath(inventionId: string, suffix = ""): string {
@@ -146,6 +149,57 @@ export async function setTitleAction(formData: FormData): Promise<void> {
     userId: context.user.id,
     inventionId,
     text: String(formData.get("text") ?? ""),
+  });
+  redirect(studioPath(inventionId, result.ok ? "" : `?error=${result.error}`));
+}
+
+/**
+ * M3 re-distillation diff review: bulk accept/reject of the CURRENT AI
+ * proposals. Each item still passes the per-item guard + event trail;
+ * confirmed/edited items are structurally untouchable.
+ */
+export async function bulkReviewAction(formData: FormData): Promise<void> {
+  const context = await requireOnboarded();
+  const inventionId = String(formData.get("inventionId") ?? "");
+  const action = String(formData.get("action") ?? "");
+  if (action !== "confirm" && action !== "reject") {
+    redirect(studioPath(inventionId, "?error=invalid_input"));
+  }
+  const result = await bulkReviewProposals({
+    organizationId: context.organization.id,
+    userId: context.user.id,
+    inventionId,
+    action: action as "confirm" | "reject",
+  });
+  redirect(studioPath(inventionId, result.ok ? "" : `?error=${result.error}`));
+}
+
+/** M3 ledger polish (feature PRD §5.4): merge two same-kind pairs. */
+export async function mergePairsAction(formData: FormData): Promise<void> {
+  const context = await requireOnboarded();
+  const inventionId = String(formData.get("inventionId") ?? "");
+  const result = await mergePairs({
+    organizationId: context.organization.id,
+    userId: context.user.id,
+    primaryId: String(formData.get("primaryId") ?? ""),
+    secondaryId: String(formData.get("secondaryId") ?? ""),
+  });
+  redirect(studioPath(inventionId, result.ok ? "" : `?error=${result.error}`));
+}
+
+/** M3 ledger polish (feature PRD §5.4): split a pair into statements. */
+export async function splitPairAction(formData: FormData): Promise<void> {
+  const context = await requireOnboarded();
+  const inventionId = String(formData.get("inventionId") ?? "");
+  const statements = String(formData.get("statements") ?? "")
+    .split(/\r?\n/)
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+  const result = await splitPair({
+    organizationId: context.organization.id,
+    userId: context.user.id,
+    pairId: String(formData.get("pairId") ?? ""),
+    statements,
   });
   redirect(studioPath(inventionId, result.ok ? "" : `?error=${result.error}`));
 }

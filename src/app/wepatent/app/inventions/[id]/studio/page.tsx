@@ -11,15 +11,20 @@ import { estimateForTier } from "@/lib/server/services/generation";
 import { estimateDistillation } from "@/lib/server/services/distillation";
 import { getLedger } from "@/lib/server/services/ps-ledger";
 import { requireOnboarded } from "@/lib/server/session";
+import Link from "next/link";
+import { interpretationClassFor } from "@/lib/wepatent/domain/uploads";
 import {
   addPairAction,
+  bulkReviewAction,
   confirmPairAction,
   deletePairAction,
   distillAction,
   editPairAction,
   interpretSourcesAction,
   linkPairsAction,
+  mergePairsAction,
   setTitleAction,
+  splitPairAction,
 } from "./actions";
 
 function centsToUsd(cents: number): string {
@@ -78,6 +83,11 @@ export default async function StudioPage({
   const solutions = ledger.pairs.filter((pair) => pair.kind === "solution");
   const observations = events.filter((event) => event.detail.startsWith("observation: "));
   const componentById = new Map(ledger.components.map((component) => [component.id, component]));
+  // M3 re-distillation diff review: current unreviewed proposals vs the
+  // reviewed ledger, with per-item and bulk accept/reject.
+  const proposedPairs = ledger.pairs.filter((pair) => pair.state === "ai_proposed");
+  const reviewedPairs = ledger.pairs.filter((pair) => pair.state !== "ai_proposed");
+  const hasPriorDistillation = events.some((event) => event.kind === "title_proposed");
 
   return (
     <>
@@ -106,32 +116,64 @@ export default async function StudioPage({
               <p>No files yet. Upload documents or images to get started.</p>
             ) : (
               <ul className="wp-studio-list">
-                {sources.map((source) => (
-                  <li key={source.id}>
-                    <strong>{source.name}</strong>
-                    <br />
-                    <span className="wp-badge neutral">{source.status}</span>{" "}
-                    {source.interpretationStatus === "interpreted" && (
-                      <span className="wp-badge source_supported">interpreted</span>
-                    )}
-                    {source.interpretationStatus === "stored_uninterpreted" && (
-                      <span className="wp-badge needs_confirmation">
-                        stored, not auto-interpreted
-                      </span>
-                    )}
-                    {source.status === "rejected" && source.quarantineReason && (
-                      <span className="hint" style={{ display: "block" }}>
-                        {source.quarantineReason}
-                      </span>
-                    )}
-                    {source.interpretationStatus === "stored_uninterpreted" && (
-                      <span className="hint" style={{ display: "block" }}>
-                        Stored for the counsel package. Please describe its contents as facts in
-                        your record.
-                      </span>
-                    )}
-                  </li>
-                ))}
+                {sources.map((source) => {
+                  const cleared =
+                    source.status === "scanned" || source.status === "extracted";
+                  const sourceClass = interpretationClassFor(
+                    source.mimeType,
+                    source.originalFilename ?? source.name,
+                  );
+                  const filename = (source.originalFilename ?? source.name).toLowerCase();
+                  const viewable =
+                    cleared &&
+                    (sourceClass === "image" ||
+                      sourceClass === "document" ||
+                      sourceClass === "audio" ||
+                      sourceClass === "video" ||
+                      (sourceClass === "model3d" &&
+                        (filename.endsWith(".stl") || filename.endsWith(".obj"))));
+                  return (
+                    <li key={source.id}>
+                      <strong>{source.name}</strong>
+                      <br />
+                      <span className="wp-badge neutral">{source.status}</span>{" "}
+                      {source.interpretationStatus === "interpreted" && (
+                        <span className="wp-badge source_supported">interpreted</span>
+                      )}
+                      {source.interpretationStatus === "stored_uninterpreted" && (
+                        <span className="wp-badge needs_confirmation">
+                          stored, not auto-interpreted
+                        </span>
+                      )}
+                      {source.derivedFromSourceId && (
+                        <span className="wp-badge neutral">derived 3D view</span>
+                      )}
+                      {viewable && (
+                        <>
+                          {" "}
+                          <Link
+                            href={`/wepatent/app/inventions/${id}/sources/${source.id}/view`}
+                          >
+                            {sourceClass === "model3d"
+                              ? "Open 3D viewer"
+                              : "Open viewer / draw regions"}
+                          </Link>
+                        </>
+                      )}
+                      {source.status === "rejected" && source.quarantineReason && (
+                        <span className="hint" style={{ display: "block" }}>
+                          {source.quarantineReason}
+                        </span>
+                      )}
+                      {source.interpretationStatus === "stored_uninterpreted" && (
+                        <span className="hint" style={{ display: "block" }}>
+                          Stored for the counsel package. Please describe its contents as facts
+                          in your record.
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -169,12 +211,15 @@ export default async function StudioPage({
           <div className="wp-card">
             <h2>Upload anything</h2>
             <p>
-              Documents (PDF, DOCX, PPTX, XLSX, TXT/MD, SVG), images (PNG, JPEG, TIFF, HEIC), and
-              3D models (STL, STEP, OBJ, 3MF). Every file passes type validation, quarantine, and
-              a scan before anything reads it. STL models that parse cleanly get a deterministic
-              geometry summary (dimensions, triangles, bounding box, symmetries — computed by
-              code, no AI); other 3D formats are stored for counsel and honestly flagged
-              &ldquo;stored, not auto-interpreted&rdquo;.
+              Documents (PDF, DOCX, PPTX, XLSX, TXT/MD, SVG), images (PNG, JPEG, TIFF, HEIC),
+              3D models (STL, STEP, OBJ, 3MF), audio (MP3, WAV, M4A), and video (MP4, MOV).
+              Every file passes type validation, quarantine, and a scan before anything reads
+              it. STL models that parse cleanly get a deterministic geometry summary (computed
+              by code, no AI), and STL/OBJ open in the browser 3D viewer for snapshot capture;
+              audio is transcribed through the server-side gateway (cost shown before the
+              run); video is stored for counsel with an honest &ldquo;interpretation not yet
+              available&rdquo; status and a prompt to describe it — never a fake
+              interpretation.
             </p>
             <UploadForm inventionId={id} />
           </div>
@@ -220,7 +265,7 @@ export default async function StudioPage({
           </div>
 
           <div className="wp-card" style={{ marginTop: 18 }}>
-            <h2>Distill into the ledger</h2>
+            <h2>{hasPriorDistillation ? "Re-distill with new material" : "Distill into the ledger"}</h2>
             <p>
               Synthesizes a working title, problems, solutions, and pairings across everything
               interpreted so far ({distillEstimate?.artifactCount ?? 0} interpreted artifact(s) +
@@ -245,10 +290,47 @@ export default async function StudioPage({
               <input type="hidden" name="inventionId" value={id} />
               <input type="hidden" name="idempotencyKey" value={crypto.randomUUID()} />
               <button className="button venture-button" type="submit">
-                Distill with AI
+                {hasPriorDistillation ? "Re-distill with new material" : "Distill with AI"}
               </button>
             </form>
           </div>
+
+          {proposedPairs.length > 0 && (
+            <div className="wp-card" style={{ marginTop: 18 }} data-testid="proposal-review">
+              <h2>Review AI proposals ({proposedPairs.length} new)</h2>
+              <p className="hint">
+                Diff-style review: these proposals are NOT part of your reviewed ledger
+                until you accept them. Your {reviewedPairs.length} confirmed/edited item(s)
+                were never touched by the re-distillation — AI only adds proposals. Accept
+                or reject each item in the ledger panel, or act on all of them at once:
+              </p>
+              <ul className="wp-studio-list">
+                {proposedPairs.map((pair) => (
+                  <li key={pair.id}>
+                    <span className="wp-badge neutral">{pair.kind}</span>{" "}
+                    <span className="wp-badge needs_confirmation">proposed</span>{" "}
+                    {pair.statement.slice(0, 160)}
+                  </li>
+                ))}
+              </ul>
+              <div className="wp-actions" style={{ marginTop: 10 }}>
+                <form action={bulkReviewAction}>
+                  <input type="hidden" name="inventionId" value={id} />
+                  <input type="hidden" name="action" value="confirm" />
+                  <button className="button venture-button button-small" type="submit">
+                    Accept all proposals
+                  </button>
+                </form>
+                <form action={bulkReviewAction}>
+                  <input type="hidden" name="inventionId" value={id} />
+                  <input type="hidden" name="action" value="reject" />
+                  <button className="button button-small" type="submit">
+                    Reject all proposals
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
 
           {observations.length > 0 && (
             <div className="wp-card" style={{ marginTop: 18 }}>
@@ -369,6 +451,17 @@ export default async function StudioPage({
                       )
                       .filter(Boolean)
                       .join(", ") || "none linked yet"}
+                    {" · "}
+                    {
+                      ledger.associations.filter(
+                        (association) =>
+                          association.solutionId === pair.id && association.region !== null,
+                      ).length
+                    }{" "}
+                    region anchor(s) ·{" "}
+                    <Link href={`/wepatent/app/inventions/${id}/solutions/${pair.id}`}>
+                      Evidence gallery
+                    </Link>
                   </p>
                 )}
                 <div className="wp-actions">
@@ -403,6 +496,60 @@ export default async function StudioPage({
                       </button>
                     </form>
                   </details>
+                  <details>
+                    <summary>Split</summary>
+                    <form action={splitPairAction} className="wp-form">
+                      <input type="hidden" name="inventionId" value={id} />
+                      <input type="hidden" name="pairId" value={pair.id} />
+                      <div className="field">
+                        <label htmlFor={`split-${pair.id}`}>
+                          One statement per line (2–5 lines); the first replaces this item
+                        </label>
+                        <textarea
+                          id={`split-${pair.id}`}
+                          name="statements"
+                          required
+                          rows={3}
+                          defaultValue={pair.statement}
+                        />
+                      </div>
+                      <button className="button button-small" type="submit">
+                        Split into separate items
+                      </button>
+                    </form>
+                  </details>
+                  {ledger.pairs.filter(
+                    (candidate) => candidate.kind === pair.kind && candidate.id !== pair.id,
+                  ).length > 0 && (
+                    <details>
+                      <summary>Merge</summary>
+                      <form action={mergePairsAction} className="wp-form">
+                        <input type="hidden" name="inventionId" value={id} />
+                        <input type="hidden" name="primaryId" value={pair.id} />
+                        <div className="field">
+                          <label htmlFor={`merge-${pair.id}`}>
+                            Absorb this {pair.kind} into the item above (its links and
+                            evidence move over)
+                          </label>
+                          <select id={`merge-${pair.id}`} name="secondaryId">
+                            {ledger.pairs
+                              .filter(
+                                (candidate) =>
+                                  candidate.kind === pair.kind && candidate.id !== pair.id,
+                              )
+                              .map((candidate) => (
+                                <option key={candidate.id} value={candidate.id}>
+                                  {candidate.statement.slice(0, 80)}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <button className="button button-small" type="submit">
+                          Merge
+                        </button>
+                      </form>
+                    </details>
+                  )}
                   <form action={deletePairAction}>
                     <input type="hidden" name="inventionId" value={id} />
                     <input type="hidden" name="pairId" value={pair.id} />

@@ -9,7 +9,7 @@ import { getAdapters } from "@/lib/server/adapters";
 import { getInterviewView } from "@/lib/server/services/interview";
 import { getLedger } from "@/lib/server/services/ps-ledger";
 import { requireOnboarded } from "@/lib/server/session";
-import { applyProposedEditAction } from "./actions";
+import { applyProposedEditAction, dismissProposedEditAction } from "./actions";
 
 const STATE_LABELS: Record<string, string> = {
   ai_proposed: "AI proposed — awaiting your review",
@@ -115,14 +115,23 @@ export default async function InterviewPage({
                 {initialView.proposedEdits.map((edit) => (
                   <div key={edit.eventId} className="wp-studio-pair">
                     <p style={{ marginTop: 0 }}>Proposed edit: {edit.proposedStatement}</p>
-                    <form action={applyProposedEditAction}>
-                      <input type="hidden" name="inventionId" value={id} />
-                      <input type="hidden" name="pairId" value={edit.pairId} />
-                      <input type="hidden" name="statement" value={edit.proposedStatement} />
-                      <button className="button button-small" type="submit">
-                        Apply as my edit
-                      </button>
-                    </form>
+                    <div className="wp-actions">
+                      <form action={applyProposedEditAction}>
+                        <input type="hidden" name="inventionId" value={id} />
+                        <input type="hidden" name="pairId" value={edit.pairId} />
+                        <input type="hidden" name="statement" value={edit.proposedStatement} />
+                        <button className="button button-small" type="submit">
+                          Apply as my edit
+                        </button>
+                      </form>
+                      <form action={dismissProposedEditAction}>
+                        <input type="hidden" name="inventionId" value={id} />
+                        <input type="hidden" name="eventId" value={edit.eventId} />
+                        <button className="button button-small" type="submit">
+                          Dismiss
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 ))}
               </div>
