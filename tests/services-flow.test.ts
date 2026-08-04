@@ -189,6 +189,25 @@ describe("service-level integration flow (local adapters, synthetic data)", () =
     expect(result).toEqual({ ok: false, error: "invention_not_found" });
   });
 
+  it("counsel request creation accepts an omitted inventionId (API path)", async () => {
+    const { user, org } = await setup();
+    // With the in-app intake form removed, requests arrive via the API and
+    // may omit the optional invention reference entirely ("None / general").
+    const created = await createCounselRequest({
+      organizationId: org.id,
+      userId: user.id,
+      input: {
+        requestSummary: "Consultation about protecting our synthetic separator design.",
+        jurisdiction: "Colorado, USA",
+        contactEmail: "flow@example.test",
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.request.inventionId).toBeNull();
+    expect(created.request.state).toBe("draft");
+  });
+
   it("counsel request flow enforces role guards end to end", async () => {
     const { user, org } = await setup();
     const created = await createCounselRequest({

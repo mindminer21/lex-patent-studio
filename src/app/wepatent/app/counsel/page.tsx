@@ -10,7 +10,7 @@ import {
 import { isLocalMode } from "@/lib/wepatent/env";
 import { getAdapters } from "@/lib/server/adapters";
 import { requireOnboarded } from "@/lib/server/session";
-import { createCounselRequestAction, requesterCounselAction } from "./actions";
+import { requesterCounselAction } from "./actions";
 
 const ACTION_LABELS: Record<CounselRequestAction, string> = {
   submit: "Submit conflict-intake request",
@@ -224,68 +224,14 @@ export default async function CounselPage({
         )}
       </div>
 
-      <div style={{ marginTop: 34 }}>
-        <h2>Structured conflict-screening intake</h2>
-        <p className="hint" style={{ maxWidth: 860 }}>
-          Alternatively, request a screened introduction to connected counsel through the
-          platform. Only limited conflict-check information is shared; representation requires
-          conflict review, attorney acceptance, and a signed engagement letter.
-        </p>
+      {request && (
+        <div style={{ marginTop: 34 }}>
+          <h2>Connected counsel request status</h2>
+          <p className="hint" style={{ maxWidth: 860 }}>
+            Representation requires conflict review, attorney acceptance, and a signed engagement
+            letter with the identified law firm.
+          </p>
 
-        {!request ? (
-          <div className="wp-card" style={{ maxWidth: 860 }}>
-            <p className="venture-kicker">Limited conflict intake</p>
-            <h3>Request a consultation with connected counsel</h3>
-            <p>
-              Only the limited information below is shared for conflict checking. Your invention
-              record contents are <strong>not</strong> disclosed to counsel at this stage.
-            </p>
-            <form action={createCounselRequestAction} className="wp-form">
-              <div className="field">
-                <label htmlFor="cr-invention">Related invention record (reference only)</label>
-                <select id="cr-invention" name="inventionId" defaultValue="">
-                  <option value="">None / general</option>
-                  {inventions.map((invention) => (
-                    <option key={invention.id} value={invention.id}>
-                      {invention.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="cr-summary">What do you want to discuss?</label>
-                <textarea id="cr-summary" name="requestSummary" required minLength={10} />
-                <p className="hint">
-                  High-level only — for example “patent strategy for our cooling system”. Do not
-                  include confidential technical detail here.
-                </p>
-              </div>
-              <div className="field">
-                <label htmlFor="cr-adverse">
-                  Companies or people on the other side of any dispute (for conflict checking)
-                </label>
-                <textarea id="cr-adverse" name="adverseParties" />
-              </div>
-              <div className="field">
-                <label htmlFor="cr-jurisdiction">Your company location (state/country)</label>
-                <input id="cr-jurisdiction" name="jurisdiction" required minLength={2} />
-              </div>
-              <div className="field">
-                <label htmlFor="cr-email">Contact email</label>
-                <input id="cr-email" name="contactEmail" type="email" required />
-              </div>
-              <div>
-                <button className="button venture-button" type="submit">
-                  Create draft request
-                </button>
-              </div>
-              <p className="hint">
-                Creating and submitting a request does not make you a client and does not create an
-                attorney-client relationship.
-              </p>
-            </form>
-          </div>
-        ) : (
           <div className="wp-grid cols-2">
             <div className="wp-card">
               <p className="venture-kicker">Request status</p>
@@ -379,8 +325,8 @@ export default async function CounselPage({
               )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </>
   );
 }

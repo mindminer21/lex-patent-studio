@@ -6,26 +6,7 @@ import {
   type CounselRequestAction,
 } from "@/lib/wepatent/domain/counsel-request";
 import { requireOnboarded } from "@/lib/server/session";
-import {
-  createCounselRequest,
-  performCounselAction,
-} from "@/lib/server/services/counsel";
-
-export async function createCounselRequestAction(formData: FormData): Promise<void> {
-  const context = await requireOnboarded();
-  const result = await createCounselRequest({
-    organizationId: context.organization.id,
-    userId: context.user.id,
-    input: {
-      inventionId: String(formData.get("inventionId") ?? "") || null,
-      requestSummary: String(formData.get("requestSummary") ?? ""),
-      adverseParties: String(formData.get("adverseParties") ?? ""),
-      jurisdiction: String(formData.get("jurisdiction") ?? ""),
-      contactEmail: String(formData.get("contactEmail") ?? ""),
-    },
-  });
-  redirect(`/wepatent/app/counsel${result.ok ? "" : "?error=invalid_input"}`);
-}
+import { performCounselAction } from "@/lib/server/services/counsel";
 
 /**
  * Requester-side transitions only: the actor is the signed-in user's real

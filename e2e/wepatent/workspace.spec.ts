@@ -158,12 +158,15 @@ test("export creation renders DOCX/PDF artifacts with checksums", async ({ page 
 
 test("counsel request shows conspicuous not-represented status", async ({ page }) => {
   await signIn(page, FOUNDER_EMAIL, "E2E Founder");
+  const created = await page.request.post("/api/counsel-requests", {
+    data: {
+      requestSummary: "Consultation about protecting our synthetic separator design.",
+      jurisdiction: "Colorado, USA",
+      contactEmail: FOUNDER_EMAIL,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
   await page.goto("/wepatent/app/counsel");
-
-  await page.getByLabel("What do you want to discuss?").fill("Patent strategy for the synthetic manifold.");
-  await page.getByLabel("Your company location (state/country)").fill("Colorado, USA");
-  await page.getByLabel("Contact email").fill(FOUNDER_EMAIL);
-  await page.getByRole("button", { name: "Create draft request" }).click();
 
   await expect(page.getByText("Not yet represented")).toBeVisible();
   await page.getByRole("button", { name: "Submit conflict-intake request" }).click();

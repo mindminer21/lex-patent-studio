@@ -81,11 +81,12 @@ test("get-help page: records list, both buttons, disclaimer, receipt upload", as
     ),
   ).toBeVisible();
 
-  // The structured conflict-screening intake remains on the page.
+  // The structured conflict-screening intake was removed (handled outside
+  // the application); no in-app creation form is offered.
   await expect(
     page.getByRole("heading", { name: "Structured conflict-screening intake" }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create draft request" })).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Create draft request" })).toHaveCount(0);
 
   // Upload a filing receipt (fixture PDF) through the FR-4 pipeline.
   await expect(record.getByText("No filing receipts uploaded yet.", { exact: false })).toBeVisible();

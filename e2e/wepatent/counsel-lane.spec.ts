@@ -16,13 +16,17 @@ test("requester submits a counsel request", async ({ page }) => {
   const tenant = await onboardFreshTenant(page, `lane-${RUN}`);
   requesterEmail = tenant.email;
 
+  // Intake form was removed from the app (handled outside the application);
+  // requests are created via the API and tracked in-app.
+  const created = await page.request.post("/api/counsel-requests", {
+    data: {
+      requestSummary: "Consultation about protecting our synthetic separator design.",
+      jurisdiction: "Colorado, USA",
+      contactEmail: requesterEmail,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
   await page.goto("/wepatent/app/counsel");
-  await page
-    .getByLabel("What do you want to discuss?")
-    .fill("Consultation about protecting our synthetic separator design.");
-  await page.getByLabel("Your company location (state/country)").fill("Colorado, USA");
-  await page.getByLabel("Contact email").fill(requesterEmail);
-  await page.getByRole("button", { name: "Create draft request" }).click();
   await expect(page.getByText("Not yet represented")).toBeVisible();
   await page.getByRole("button", { name: "Submit conflict-intake request" }).click();
   await expect(page.getByText("Not yet represented")).toBeVisible();

@@ -17,7 +17,9 @@ import type { CounselRequestRecord, Id } from "../adapters/types";
  * its contents.
  */
 export const counselRequestInputSchema = z.object({
-  inventionId: z.string().min(1).nullable(),
+  // Optional reference only. With the in-app intake form removed, requests
+  // arrive via the API; omitting the field means "None / general".
+  inventionId: z.string().min(1).nullable().default(null),
   requestSummary: z.string().trim().min(10).max(2_000),
   adverseParties: z.string().trim().max(2_000).default(""),
   jurisdiction: z.string().trim().min(2).max(200),
