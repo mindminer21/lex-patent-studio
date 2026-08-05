@@ -41,25 +41,53 @@ test("matter workspace: composer contract fields and tier floor label", async ({
   await expect(composer).toContainText("generation");
 });
 
+/**
+ * The matter tab bar is Jeff's approved six-tab set (2026-08-04). Every
+ * §8.2 route still exists and still renders its surface — the five that
+ * left the tab bar are reached from the surface that already shows their
+ * content, so this spec navigates the way a user actually would.
+ */
 test("every §8.2 matter tab renders its surface", async ({ page }) => {
-  const checks: Array<[string, string | RegExp]> = [
+  const tabbed: Array<[string, string | RegExp]> = [
     ["Chat", "Grounded chat"],
-    ["Facts", /fact ledger|provenance|Counsel reviewed/i],
-    ["Sources", /extraction|upload/i],
-    ["Workflows", "Guided workflows"],
     ["Documents", /document|export/i],
     ["Claims", /claim/i],
-    ["Citations", "Authority panel"],
     ["Reviews", "Review queue for this matter"],
-    ["Counsel", "NOT YET REPRESENTED"],
     ["Activity", /audit|activity/i],
   ];
+  const nav = page.getByRole("navigation", { name: "Matter sections" });
   await page.goto("/app/matters/matter_thermal");
-  for (const [tab, expected] of checks) {
-    await page
-      .getByRole("navigation", { name: "Matter sections" })
-      .getByRole("link", { name: tab, exact: true })
-      .click();
+  await expect(nav.getByRole("link")).toHaveText([
+    "Workspace",
+    "Chat",
+    "Documents",
+    "Claims",
+    "Reviews",
+    "Activity",
+  ]);
+  for (const [tab, expected] of tabbed) {
+    await nav.getByRole("link", { name: tab, exact: true }).click();
+    await expect(page.locator("main")).toContainText(expected);
+  }
+});
+
+test("every §8.2 route dropped from the tab bar renders, reached in context", async ({
+  page,
+}) => {
+  // Facts, Sources, and Citations hang off the workspace panels that
+  // already display them; Workflows off the run composer's task picker;
+  // Counsel off the matter header (counsel status has no other home).
+  const contextual: Array<[RegExp, RegExp, string | RegExp]> = [
+    [/Full fact ledger/, /\/facts$/, /fact ledger|provenance|Counsel reviewed/i],
+    [/All sources and extraction status/, /\/sources$/, /extraction|upload/i],
+    [/Authority panel and citation checks/, /\/citations$/, "Authority panel"],
+    [/Workflow catalog, tier floors, and run history/, /\/workflows$/, "Guided workflows"],
+    [/^Connected counsel$/, /\/counsel$/, "NOT YET REPRESENTED"],
+  ];
+  for (const [linkName, url, expected] of contextual) {
+    await page.goto("/app/matters/matter_thermal");
+    await page.getByRole("link", { name: linkName }).first().click();
+    await expect(page).toHaveURL(url);
     await expect(page.locator("main")).toContainText(expected);
   }
 });
@@ -91,11 +119,20 @@ test("keyboard: matter tabs are reachable and operable via keyboard", async ({
   page,
 }) => {
   await page.goto("/app/matters/matter_thermal");
-  const factsTab = page
+  const claimsTab = page
     .getByRole("navigation", { name: "Matter sections" })
-    .getByRole("link", { name: "Facts", exact: true });
-  await factsTab.focus();
-  await expect(factsTab).toBeFocused();
+    .getByRole("link", { name: "Claims", exact: true });
+  await claimsTab.focus();
+  await expect(claimsTab).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/claims/);
+
+  // The contextual links that replaced the dropped tabs are keyboard
+  // operable too — a removed tab must not mean a mouse-only route.
+  await page.goto("/app/matters/matter_thermal");
+  const factsLink = page.getByRole("link", { name: /Full fact ledger/ });
+  await factsLink.focus();
+  await expect(factsLink).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/facts/);
 });

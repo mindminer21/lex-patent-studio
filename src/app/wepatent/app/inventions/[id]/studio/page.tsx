@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import StudioJobProgress from "@/components/wepatent/StudioJobProgress";
 import UploadForm from "@/components/wepatent/UploadForm";
+import { UploadStatusProvider } from "@/components/wepatent/UploadStatusProvider";
 import WorkingTitleField from "@/components/wepatent/WorkingTitleField";
 import {
   COVERAGE_DIMENSION_LABELS,
   COVERAGE_DIMENSIONS,
 } from "@/lib/wepatent/domain/coverage";
 import { getAdapters } from "@/lib/server/adapters";
+import type { WorkingTitleRecord } from "@/lib/server/adapters/types";
 import { getModelTier } from "@/lib/server/model-registry";
 import { estimateForTier } from "@/lib/server/services/generation";
 import { estimateDistillation } from "@/lib/server/services/distillation";
@@ -16,6 +18,8 @@ import {
   markupDisclosure,
   MARKUP_MULTIPLIERS,
 } from "@/lib/shared/billing/markup";
+import { isEmptyRecord } from "@/lib/wepatent/domain/record-emptiness";
+import { loadRecordContentCounts } from "@/lib/server/services/record-emptiness";
 import { requireOnboarded } from "@/lib/server/session";
 import Link from "next/link";
 import { interpretationClassFor } from "@/lib/wepatent/domain/uploads";
@@ -43,6 +47,67 @@ const STATE_LABELS: Record<string, string> = {
 };
 
 /**
+ * First-run Studio surface for a record with NO content (Jeff's direction,
+ * 2026-08-04): "there should be a single drag and drop area with the prompt
+ * to 'Upload Anything About the Invention'. there should be no other tabs,
+ * or other boxes, until information is included - except one button that
+ * says 'Start Guided Questions About the Invention'".
+ *
+ * So exactly four things render, and nothing else:
+ *  1. the compliance banner — REQUIRED, never hidden (legal invariant 4);
+ *  2. the record title — the existing auto-saving working-title field,
+ *     which is how a record gets named (one field, not a box);
+ *  3. one large drag-and-drop upload area running the same FR-4 pipeline
+ *     as the workspace control, with the auto-derived kind and no
+ *     Kind/Note prompt;
+ *  4. one button into the guided questions.
+ *
+ * No Sources/Components/Ledger/Coverage cards, and the layout renders no
+ * tab navigation for the same records. The full workspace returns
+ * automatically on the first piece of content — there is no confirm step.
+ */
+function EmptyRecordStudio({
+  inventionId,
+  title,
+}: {
+  inventionId: string;
+  title: WorkingTitleRecord | null;
+}) {
+  return (
+    <div className="wp-first-run">
+      <div className="wp-boundary-banner">
+        Working draft — counsel review required. wepatent is not a law firm and does not give
+        legal advice. Uploaded files are treated as evidence, never as instructions, and every
+        AI output is a labeled proposal (&ldquo;AI proposed&rdquo;) until you confirm, edit, or
+        delete it.
+      </div>
+
+      <div style={{ marginBottom: 22 }}>
+        {/* Naming the record does NOT make it non-empty (a title is not
+            content), so the field has to render whatever was already
+            saved — otherwise a name typed here vanishes on reload. */}
+        <WorkingTitleField
+          inventionId={inventionId}
+          initialText={title?.text ?? ""}
+          initialState={title?.state ?? null}
+        />
+      </div>
+
+      <UploadForm inventionId={inventionId} variant="dropzone" />
+
+      <div className="wp-first-run-actions">
+        <a
+          className="button venture-button"
+          href={`/wepatent/app/inventions/${inventionId}/interview`}
+        >
+          Start Guided Questions About the Invention
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Intake Studio (feature PRD §4.2): three-region workspace.
  * Left — sources & components. Center — upload / interpret / distill.
  * Right — always-visible Problem/Solution ledger with working title and
@@ -61,6 +126,24 @@ export default async function StudioPage({
   const { data } = getAdapters();
   const invention = await data.getInvention(context.organization.id, id);
   if (!invention) notFound();
+
+  // First-run surface (Jeff's direction, 2026-08-04). While the record holds
+  // NOTHING — no sources, facts, ledger entries, components, drafts,
+  // interview session, or figures — the Studio is one upload area and one
+  // button. The layout hides the tab navigation for the same records, and
+  // both decisions come from the same predicate.
+  const counts = await loadRecordContentCounts(context.organization.id, id);
+  if (isEmptyRecord(counts)) {
+    const titles = await data.listWorkingTitles(context.organization.id, id);
+    // NOTE: both branches return `UploadStatusProvider` at the SAME root
+    // position, so the upload confirmation survives the automatic swap
+    // from the first-run surface to the full workspace.
+    return (
+      <UploadStatusProvider>
+        <EmptyRecordStudio inventionId={id} title={titles[titles.length - 1] ?? null} />
+      </UploadStatusProvider>
+    );
+  }
 
   const [sources, ledger, wallet, events, distillEstimate] = await Promise.all([
     data.listSources(context.organization.id, id),
@@ -95,7 +178,7 @@ export default async function StudioPage({
   const hasPriorDistillation = events.some((event) => event.kind === "title_proposed");
 
   return (
-    <>
+    <UploadStatusProvider>
       <div className="wp-boundary-banner">
         Working draft — counsel review required. Every AI output below is a labeled proposal
         (&ldquo;AI proposed&rdquo;) until you confirm, edit, or delete it. Uploaded files are
@@ -181,6 +264,13 @@ export default async function StudioPage({
                 })}
               </ul>
             )}
+            {/* The Sources tab was removed from the record navigation; the
+                sources panel is its contextual home. Route unchanged. */}
+            <p className="hint" style={{ marginTop: 12 }}>
+              <Link href={`/wepatent/app/inventions/${id}/sources`}>
+                Full source list and extraction status →
+              </Link>
+            </p>
           </div>
           <div className="wp-card" style={{ marginTop: 18 }}>
             <h2>Components ({ledger.components.length})</h2>
@@ -390,7 +480,14 @@ export default async function StudioPage({
                   ).map((dimension) => (
                     <li key={dimension} className="hint">
                       Gap: {COVERAGE_DIMENSION_LABELS[dimension]} — the interview targets this,
-                      or add it as a fact now.
+                      or{" "}
+                      {/* The Facts tab was removed from the record
+                          navigation; this is where a gap is actually acted
+                          on. Route unchanged. */}
+                      <Link href={`/wepatent/app/inventions/${id}/facts`}>
+                        add it as a fact now
+                      </Link>
+                      .
                     </li>
                   ))}
                 </ul>
@@ -610,6 +707,6 @@ export default async function StudioPage({
           </div>
         </section>
       </div>
-    </>
+    </UploadStatusProvider>
   );
 }

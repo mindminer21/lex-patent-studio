@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAdapters } from "@/lib/server/adapters";
 import {
@@ -126,6 +127,14 @@ export default async function DraftsPage({
         Every output is an automated <strong>working draft — counsel review required</strong>. The
         model reads your fact record; it can never change facts, approve itself, or take actions.
       </div>
+      {/* The Review tab was folded into Drafts (the review is about these
+          drafts). The /review route is unchanged — only its entry point
+          moved here, where the drafts being reviewed actually live. */}
+      <p className="hint" style={{ marginTop: 10 }}>
+        <Link href={`/wepatent/app/inventions/${id}/review`}>
+          Record readiness review — what is still unresolved for counsel →
+        </Link>
+      </p>
       {error && (
         <p className="form-error" role="alert">
           {ERROR_MESSAGES[error] ?? "Something went wrong."}

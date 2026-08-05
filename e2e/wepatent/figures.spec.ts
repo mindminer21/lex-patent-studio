@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { onboardFreshTenant } from "./helpers";
+import { onboardFreshTenant, UPLOAD_INPUT_LABEL } from "./helpers";
 
 /**
  * Patent-figure journey (spec §9):
@@ -29,7 +29,7 @@ const MEMO_MD = [
 ].join("\n");
 
 async function uploadMemo(page: Page): Promise<void> {
-  await page.getByLabel(/^File \(documents/).setInputFiles({
+  await page.getByLabel(UPLOAD_INPUT_LABEL).setInputFiles({
     name: "memo.md",
     mimeType: "text/markdown",
     buffer: Buffer.from(MEMO_MD),

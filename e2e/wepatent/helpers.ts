@@ -1,5 +1,21 @@
 import { expect, type Page } from "@playwright/test";
 
+/**
+ * Accessible name of the file input, which differs by surface:
+ * - an empty record shows the first-run drag-and-drop area labeled
+ *   "Upload Anything About the Invention" (Jeff's copy, verbatim);
+ * - once the record has content the workspace shows the compact control
+ *   labeled "File (documents: …)".
+ *
+ * Both are the SAME control and the same FR-4 pipeline, so specs target
+ * them by accessible name through this one pattern.
+ */
+export const UPLOAD_INPUT_LABEL =
+  /^(File \(documents|Upload Anything About the Invention)/;
+
+/** The record navigation after the ten → five tab reduction. */
+export const RECORD_TABS = ["Overview", "Studio", "Drafts", "Figures", "Export"];
+
 /** Signs in through the real form; local mode creates the synthetic user. */
 export async function signIn(page: Page, email: string, name: string): Promise<void> {
   await page.goto("/wepatent/sign-in");

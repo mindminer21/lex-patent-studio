@@ -983,6 +983,18 @@ export interface DataPort {
   // Intake Studio: components, associations, extraction artifacts, coverage.
   createComponent(input: Omit<ComponentRecord, "id" | "createdAt">): Promise<ComponentRecord>;
   listComponents(organizationId: Id, inventionId: Id): Promise<ComponentRecord[]>;
+  getComponent(organizationId: Id, componentId: Id): Promise<ComponentRecord | null>;
+  /**
+   * User-lane edit/confirm of a component through the ps-ledger state guard
+   * (M4 interview components panel). The model lane has no path here — it
+   * only ever calls `createComponent` with `ai_proposed` (invariant 1).
+   */
+  updateComponent(
+    organizationId: Id,
+    componentId: Id,
+    patch: Partial<Pick<ComponentRecord, "name" | "description" | "state">>,
+  ): Promise<ComponentRecord | null>;
+  deleteComponent(organizationId: Id, componentId: Id): Promise<void>;
   createAssociation(
     input: Omit<AssociationRecord, "id" | "createdAt">,
   ): Promise<AssociationRecord>;

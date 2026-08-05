@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAdapters } from "@/lib/adapters";
 import { MatterTabs } from "./MatterTabs";
@@ -33,6 +34,15 @@ export default async function MatterLayout({
           {matter.jurisdiction} · {matter.technologyArea} · {matter.lifecycle} ·
           synthetic demo matter
         </span>
+        {/* Counsel left the tab bar and has no other contextual home —
+            connected-counsel status is not surfaced on any other matter
+            surface — so it keeps ONE small link here. Route unchanged. */}
+        <Link
+          href={`/app/matters/${matterId}/counsel`}
+          className="text-[0.78rem] underline underline-offset-4 text-[var(--muted)]"
+        >
+          Connected counsel
+        </Link>
       </header>
       <MatterTabs matterId={matterId} />
       {children}

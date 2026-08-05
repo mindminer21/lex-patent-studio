@@ -630,6 +630,34 @@ export class LocalDataAdapter implements DataPort {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  async getComponent(organizationId: Id, componentId: Id): Promise<ComponentRecord | null> {
+    const record = tables().components.get(componentId);
+    if (!record || record.organizationId !== organizationId) return null;
+    return record;
+  }
+
+  async updateComponent(
+    organizationId: Id,
+    componentId: Id,
+    patch: Partial<Pick<ComponentRecord, "name" | "description" | "state">>,
+  ): Promise<ComponentRecord | null> {
+    const record = tables().components.get(componentId);
+    if (!record || record.organizationId !== organizationId) return null;
+    Object.assign(record, patch);
+    return record;
+  }
+
+  async deleteComponent(organizationId: Id, componentId: Id): Promise<void> {
+    const t = tables();
+    const record = t.components.get(componentId);
+    if (!record || record.organizationId !== organizationId) return;
+    t.components.delete(componentId);
+    // Associations pointing at the component go with it (schema 0009 cascades).
+    for (const [id, association] of t.associations) {
+      if (association.componentId === componentId) t.associations.delete(id);
+    }
+  }
+
   async createAssociation(
     input: Omit<AssociationRecord, "id" | "createdAt">,
   ): Promise<AssociationRecord> {

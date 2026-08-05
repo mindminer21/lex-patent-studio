@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createRunAction, type ActionState } from "@/app/app/actions";
 import { LEX_WORKFLOW_CATEGORY } from "@/lib/shared/billing/task-category";
@@ -110,6 +111,18 @@ export function Composer({
               </option>
             ))}
           </select>
+          {/* Workflows left the matter tab bar (Jeff's six-tab set,
+              2026-08-04). The composer's task picker is where a workflow is
+              actually chosen, so the catalog is reached from here. Route
+              unchanged. */}
+          <p className="mb-0 mt-1.5 text-[0.72rem]">
+            <Link
+              href={`/app/matters/${matterId}/workflows`}
+              className="font-semibold underline underline-offset-4 text-[var(--muted)]"
+            >
+              Workflow catalog, tier floors, and run history →
+            </Link>
+          </p>
         </div>
         <div>
           <label htmlFor="composer-deliverable" className={labelCls}>

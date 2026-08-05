@@ -111,3 +111,153 @@ design rule:
 has failed formality checks requires a recorded reason. That mirrors the
 existing dismissal-reason pattern for approving over failed checks and
 exists so the record shows a person decided, not that a machine passed it.
+
+---
+
+## Round 4 — navigation reduction and the first-run Studio (2026-08-04)
+
+Two friction reductions Jeff approved directly. Both are pure UI: no route
+was deleted, no migration was needed, and every compliance step in the
+KEEP list above is untouched.
+
+### 4.1 Fewer tabs in both products
+
+Tab bars are navigation ceremony: a user pays attention to every tab on
+every visit, whether or not the surface behind it is relevant yet. Jeff
+approved these exact sets.
+
+| Product | Before | After | Left the tab bar |
+|---|---|---|---|
+| wepatent record (`inventions/[id]/layout.tsx`) | 10 | **5** — Overview · Studio · Drafts · Figures · Export | Facts, Contributors, Timeline, Sources, Review |
+| Lex matter (`matters/[matterId]/MatterTabs.tsx`) | 11 | **6** — Workspace · Chat · Documents · Claims · Reviews · Activity | Facts, Sources, Workflows, Citations, Counsel |
+
+**The routes stay.** Deep links, links from other pages, and E2E
+navigation all still work. Each dropped surface is reached from the place
+that already shows its content — one compact link, never a second tab bar
+(that would move the clutter rather than remove it):
+
+| Route | Now reached from |
+|---|---|
+| wepatent `/facts` | Overview "Record status" row ("View"); the Studio coverage meter's gap prompt ("add it as a fact now") |
+| wepatent `/contributors` | Overview "Record status" row ("View") |
+| wepatent `/timeline` | Overview "Record status" row ("View") |
+| wepatent `/sources` | Overview "Record status" row ("View"); the Studio sources panel ("Full source list and extraction status") |
+| wepatent `/review` | Folded into **Drafts** — the review is about those drafts — plus the Overview "What counsel still decides" card |
+| Lex `/facts` | Workspace left pane, "Fact ledger" panel |
+| Lex `/sources` | Workspace left pane, "Sources" panel |
+| Lex `/citations` | Workspace right pane, "Citations · verification" panel |
+| Lex `/workflows` | The run composer's task picker, where a workflow is chosen |
+| Lex `/counsel` | One small link in the matter header — counsel status is surfaced on no other matter surface, so per Jeff's instruction it gets a header link rather than its tab back |
+
+### 4.2 The first-run Studio (empty invention record)
+
+Jeff, verbatim: *"there should be a single drag and drop area with the
+prompt to 'Upload Anything About the Invention'. there should be no other
+tabs, or other boxes, until information is included - except one button
+that says 'Start Guided Questions About the Invention'"*.
+
+**"Empty" is one predicate**, `isEmptyRecord` in
+`src/lib/wepatent/domain/record-emptiness.ts`: no sources, no facts, no
+P/S ledger pairs, no components, no drafts, no interview session, no
+figure sets. Any one present ⇒ not empty. It is a pure function over
+counts, so the layout (tab navigation) and the Studio page can never
+disagree, and an unreadable count fails towards the full workspace rather
+than hiding a user's content. Pinned by `tests/record-emptiness.test.ts`.
+
+While a record is empty the Studio renders exactly four things:
+
+1. the compliance banner — **REQUIRED and never hidden**; the working-draft
+   / not-a-law-firm labeling is a legal invariant (AGENTS.md invariant 4,
+   legal-ethics memo);
+2. the record title — the existing auto-saving working-title field, which
+   is how a record gets named (one field, not a box);
+3. **one** large drag-and-drop area labeled "Upload Anything About the
+   Invention";
+4. **one** button, "Start Guided Questions About the Invention".
+
+No Sources/Components/Ledger/Coverage cards and **no tab navigation at
+all**; the record's own URL forwards to the Studio rather than rendering a
+page of empty cards. The first piece of content restores the normal
+five-tab layout and the Studio panels **automatically** — no "continue"
+step, per the app-wide minimize-inputs rule.
+
+Steps removed for a brand-new record: the Kind/Note disclosure is not
+rendered at all (the kind is always the auto-derived one, friction audit
+#6 taken to its conclusion), the wall of accepted-format text collapses to
+one closed disclosure, and drag-and-drop removes the file-picker round
+trip entirely. Nothing about the FR-4 pipeline changed: same allowlist,
+same sign → PUT → quarantine → scan path, same validation.
+
+**Accessibility.** The drop area is not a div pretending to be a control:
+it contains a real, visible, labeled `<input type="file">`, so it is
+reachable with Tab, Enter/Space opens the picker, and its accessible name
+is Jeff's label. Upload start is announced through the existing aria-live
+region; focus is visible through the global `:focus-visible` rule. Both
+the input and the button are covered by an axe pass in
+`e2e/wepatent/studio.spec.ts`.
+
+**One supporting change.** The empty → workspace swap remounts the upload
+control, which would have wiped the "Uploaded memo.md as document"
+confirmation the instant it appeared. Since the transition is deliberately
+automatic, that confirmation is the user's only feedback that the named
+file was accepted, so its state moved into `UploadStatusProvider` — an
+optional context rendered at a stable position by both branches. Surfaces
+without the provider are unchanged.
+
+## Round 5 — the invention interview becomes one thread (2026-08-05)
+
+Jeff, verbatim: *"This needs to be a single thread chat, and then invention
+components should populate in a box on the right side that appears only
+after there is enough information to distill components."*
+
+### 5.1 What the interview surface used to make a person do
+
+| # | Step / input | Verdict | What shipped |
+|---|---|---|---|
+| 1 | Read ~150 words of explanatory prose ("Adaptive invention interview / Seven Slusky-guided stages… / Each answered turn runs two metered AI passes…") before anything happened | **REMOVED** | One line stays visible: *"One conversation about your invention — answer what you can, skip what you can't."* Everything else moved into a closed disclosure ("How this interview works, and what a turn costs"). |
+| 2 | Press **"Start the interview"** before being asked a question | **REMOVED** | Arriving at the route with no session auto-creates it and shows the first question. There is no reason to ask someone to press Start before asking them a question (the app-wide minimize-inputs rule). |
+| 3 | Look at two right-hand cards — *Enablement coverage of this record* and *Problem/Solution ledger* — both reading zero before a single answer | **REMOVED** | The coverage meter and the full ledger are Studio surfaces and are no longer duplicated here. The one right-hand box that remains (components) does not render at all until the gate below opens. |
+| 4 | Re-read the transcript as a numbered list separate from the live question | **REMOVED** | One continuous thread: question → your answer → next question, with the composer pinned at the bottom. |
+| 5 | Lose the counsel-referral message on reload | **REMOVED** | The referral is part of the thread and persists, still the FIXED template, still zero model spend. |
+| 6 | Reload to see components extracted from an attachment | **REMOVED** | The surface refreshes itself for a short window after an attachment turn, so interpreted components land in the box on their own. |
+
+Kept, deliberately: the compliance banner (legal invariant 4), the
+per-turn cost estimate shown *before* spend, the running spend and cap,
+skip / "I don't know" / skip-stage, pause-resume, and the proposed-edit
+review (AI never mutates a confirmed item).
+
+### 5.2 "Enough information to distill components" is one predicate
+
+`shouldShowComponentsPanel` in `src/lib/wepatent/domain/interview.ts`:
+
+```
+componentCount ≥ 1
+  OR (substantiveAnswerCount ≥ 3 AND extractedItemCount ≥ 1)
+```
+
+- `componentCount` — components the extraction pass actually produced (or
+  the user added). One real component is enough: there is something to
+  show, so show it.
+- `substantiveAnswerCount` — turns answered with real text. Skips, "I
+  don't know", and advice referrals are excluded; they feed no extraction.
+- `extractedItemCount` — P/S ledger items this interview's extraction
+  produced.
+
+The second arm exists for prose-heavy records that describe structure
+without naming a part; it requires **both** enough substantive answers and
+real extracted items, so the box can never open on turn count alone. The
+server computes it for the first paint and the client re-computes it with
+the same function after every turn and every inline edit, so the two can
+never disagree. Pinned by `tests/interview.test.ts` (predicate in
+isolation, through the live view, and after an injected instruction).
+
+### 5.3 Accessibility of the thread
+
+The thread is a real `role="log"` with `aria-live="polite"` and
+`tabIndex=0` (a scrollable region must be keyboard reachable), so each new
+question is announced without stealing focus. The composer's textarea is
+labeled, focus returns to it after every turn, and the components box uses
+per-row labeled inputs that autosave — no Save button, and no control that
+is only reachable with a pointer. axe reports no serious/critical
+violations on the live surface at 320/768/1024/1440, where the components
+box collapses to a one-line summary below 980px.

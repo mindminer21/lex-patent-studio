@@ -3,6 +3,10 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { deriveUploadKind, UPLOAD_KINDS } from "@/lib/wepatent/domain/uploads";
+import {
+  useUploadStatusStore,
+  type UploadMessage,
+} from "@/components/wepatent/UploadStatusProvider";
 
 const REJECTION_MESSAGES: Record<string, string> = {
   mime_not_allowed:
@@ -16,6 +20,16 @@ const REJECTION_MESSAGES: Record<string, string> = {
   already_uploaded: "This upload was already completed.",
   invalid_token: "The upload authorization expired. Please try again.",
 };
+
+/** The FR-4 allowlist, shared by both variants of this control. */
+const ACCEPT =
+  ".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf,.mp3,.wav,.m4a,.mp4,.mov";
+
+/** Jeff's copy, verbatim — do not reword. */
+export const DROPZONE_LABEL = "Upload Anything About the Invention";
+
+const FORMATS_LINE =
+  "Documents (PDF, DOCX, PPTX, XLSX, TXT/MD, SVG) · images (PNG, JPEG, TIFF, HEIC) · 3D models (STL, STEP, OBJ, 3MF) · audio (MP3, WAV, M4A) · video (MP4, MOV).";
 
 /**
  * Direct signed upload (FR-4): sign → PUT bytes → quarantine. The server
@@ -31,23 +45,49 @@ const REJECTION_MESSAGES: Record<string, string> = {
  *   default, for the cases where the derived kind is wrong or a note helps.
  *   Both are set before choosing the file, since the upload starts on
  *   selection.
+ *
+ * Two variants, ONE pipeline:
+ * - `"compact"` (default) — the in-workspace control described above.
+ * - `"dropzone"` — the empty-record first-run surface (Jeff's direction,
+ *   2026-08-04): one large drag-and-drop area labeled "Upload Anything
+ *   About the Invention", no Kind/Note prompt at all, accepted formats
+ *   demoted to a closed disclosure. The file input is a real, labeled,
+ *   Tab-reachable `<input type="file">` (Enter/Space opens the picker),
+ *   and upload start is announced through the same aria-live region.
  */
-export default function UploadForm({ inventionId }: { inventionId: string }) {
+export default function UploadForm({
+  inventionId,
+  variant = "compact",
+}: {
+  inventionId: string;
+  variant?: "compact" | "dropzone";
+}) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   /** `null` means "auto (from file type)" — the default. */
   const [kindOverride, setKindOverride] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  // Progress + confirmation live in the shared store when one is present,
+  // so they survive the automatic first-run → workspace remount; local
+  // state otherwise (behavior unchanged wherever there is no provider).
+  const shared = useUploadStatusStore();
+  const [localBusyName, setLocalBusyName] = useState("");
+  const [localMessage, setLocalMessage] = useState<UploadMessage>(null);
+  const busyName = shared ? shared.busyName : localBusyName;
+  const setBusyName = shared ? shared.setBusyName : setLocalBusyName;
+  const message = shared ? shared.message : localMessage;
+  const setMessage = shared ? shared.setMessage : setLocalMessage;
+  const dropzone = variant === "dropzone";
 
-  async function handleFileSelected() {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
+  async function uploadOne(file: File): Promise<void> {
     const mimeType = file.type || "application/octet-stream";
-    const kind =
-      kindOverride ?? deriveUploadKind({ filename: file.name, mimeType });
+    // In the dropzone variant there is no Kind/Note prompt at all, so the
+    // kind is always the auto-derived one.
+    const kind = (dropzone ? null : kindOverride) ?? deriveUploadKind({ filename: file.name, mimeType });
     setBusy(true);
+    setBusyName(file.name);
     setMessage(null);
     try {
       const signResponse = await fetch(`/api/inventions/${inventionId}/uploads/sign`, {
@@ -58,7 +98,7 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
           mimeType,
           declaredBytes: file.size,
           kind,
-          note,
+          note: dropzone ? "" : note,
         }),
       });
       const signBody = (await signResponse.json()) as {
@@ -92,12 +132,92 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
       });
       if (fileRef.current) fileRef.current.value = "";
       setNote("");
+      // The first accepted upload makes the record non-empty, so this
+      // refresh is also what swaps the first-run surface for the full
+      // Studio and its tab navigation — no user action required.
       router.refresh();
     } catch {
       setMessage({ kind: "error", text: "Upload failed. Please try again." });
     } finally {
       setBusy(false);
+      setBusyName("");
     }
+  }
+
+  async function handleFileSelected() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    await uploadOne(file);
+  }
+
+  async function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (busy) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+    await uploadOne(file);
+  }
+
+  const status = (
+    <>
+      <p aria-live="polite" className="hint" data-testid="upload-progress">
+        {busy ? `Uploading ${busyName}…` : ""}
+      </p>
+      {message && (
+        <p
+          className={message.kind === "error" ? "form-error" : "wp-boundary-banner"}
+          role={message.kind === "error" ? "alert" : "status"}
+          data-testid="upload-message"
+        >
+          {message.text}
+        </p>
+      )}
+    </>
+  );
+
+  if (dropzone) {
+    return (
+      <div
+        className={`wp-dropzone${dragging ? " dragging" : ""}`}
+        data-testid="upload-dropzone"
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => void handleDrop(event)}
+      >
+        {/* A real, labeled file input — Tab reaches it, Enter/Space opens
+            the picker, and the label is its accessible name. Dragging a
+            file onto the area does exactly the same thing. */}
+        <label className="wp-dropzone-label" htmlFor="upload-file">
+          {DROPZONE_LABEL}
+        </label>
+        <p className="wp-dropzone-hint">
+          Drag files here, or choose one below — the upload starts as soon as you do.
+        </p>
+        <input
+          id="upload-file"
+          ref={fileRef}
+          type="file"
+          accept={ACCEPT}
+          disabled={busy}
+          onChange={() => void handleFileSelected()}
+        />
+        {status}
+        <details className="wp-disclosure" data-testid="upload-formats">
+          <summary>Accepted formats and how files are handled</summary>
+          <p className="hint">{FORMATS_LINE}</p>
+          <p className="hint">
+            Every file is validated (type allowlist, extension, size, content signature), stored
+            privately, quarantined, and scanned before extraction. File contents are treated as
+            untrusted data — instructions inside documents carry no authority. The kind is set
+            automatically from the file type.
+          </p>
+        </details>
+      </div>
+    );
   }
 
   return (
@@ -112,7 +232,7 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
           id="upload-file"
           ref={fileRef}
           type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.docx,.pptx,.xlsx,.svg,.tif,.tiff,.heic,.stl,.step,.stp,.obj,.3mf,.mp3,.wav,.m4a,.mp4,.mov"
+          accept={ACCEPT}
           disabled={busy}
           onChange={() => void handleFileSelected()}
         />
@@ -121,18 +241,7 @@ export default function UploadForm({ inventionId }: { inventionId: string }) {
           document, 3D models as model, audio as audio.
         </p>
       </div>
-      <p aria-live="polite" className="hint" data-testid="upload-progress">
-        {busy ? "Uploading…" : ""}
-      </p>
-      {message && (
-        <p
-          className={message.kind === "error" ? "form-error" : "wp-boundary-banner"}
-          role={message.kind === "error" ? "alert" : "status"}
-          data-testid="upload-message"
-        >
-          {message.text}
-        </p>
-      )}
+      {status}
       <details className="wp-disclosure" data-testid="upload-details">
         <summary>Add details (optional)</summary>
         <div className="field">
