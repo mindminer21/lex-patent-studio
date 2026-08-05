@@ -19,6 +19,7 @@
     "test:rls:wepatent": "bash scripts/test-rls-wepatent.sh",
     "test:production-adapter": "scripts/test-production-adapter.sh",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "audit:schema:live": "node scripts/audit-live-schema.mjs",
     "scan:secrets": "bash scripts/scan-secrets.sh",
     "verify": "npm run lint && npm run typecheck && npm run test:lex && npm run test:wepatent && npm run build"
   },
