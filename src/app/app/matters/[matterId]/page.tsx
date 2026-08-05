@@ -18,6 +18,26 @@ import { isTerminalRunState, runProgress } from "@/lib/domain/run-state";
 const paneHeading =
   "m-0 mb-2 text-[0.68rem] font-bold uppercase tracking-[0.13em] text-[var(--muted)]";
 
+/**
+ * Facts, Sources, and Citations left the matter tab bar (Jeff's approved
+ * six-tab set, 2026-08-04). Their ROUTES are unchanged; this three-pane
+ * workspace already displays each of those panels, so it is where their
+ * full surfaces are reached from now — one compact link per pane, and no
+ * secondary tab bar.
+ */
+function PaneLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <p className="mb-0 mt-2.5 text-right">
+      <Link
+        href={href}
+        className="text-[0.75rem] font-semibold underline underline-offset-4 text-[var(--muted)]"
+      >
+        {children}
+      </Link>
+    </p>
+  );
+}
+
 export default async function MatterWorkspace({
   params,
 }: {
@@ -128,6 +148,7 @@ export default async function MatterWorkspace({
                 ))}
               </ul>
             )}
+            <PaneLink href={`/app/matters/${matterId}/facts`}>Full fact ledger →</PaneLink>
           </section>
 
           <section aria-label="Sources" className="border border-[var(--line)] bg-[var(--white)] p-3">
@@ -147,6 +168,9 @@ export default async function MatterWorkspace({
                 ))}
               </ul>
             )}
+            <PaneLink href={`/app/matters/${matterId}/sources`}>
+              All sources and extraction status →
+            </PaneLink>
           </section>
 
           {matterDeadlines.length > 0 && (
@@ -294,6 +318,9 @@ export default async function MatterWorkspace({
               A quote or citation that fails verification blocks
               &ldquo;verified&rdquo; status and flags the document.
             </p>
+            <PaneLink href={`/app/matters/${matterId}/citations`}>
+              Authority panel and citation checks →
+            </PaneLink>
           </section>
 
           <section aria-label="Warnings" className="border border-[var(--line)] bg-[var(--white)] p-3">

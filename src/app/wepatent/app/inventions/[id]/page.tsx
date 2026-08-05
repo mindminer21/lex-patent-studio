@@ -1,10 +1,18 @@
 import Link from "next/link";
 import { softDeleteInventionAction } from "./actions";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { isUnresolved } from "@/lib/wepatent/domain/facts";
+import { isEmptyRecord } from "@/lib/wepatent/domain/record-emptiness";
 import { getAdapters } from "@/lib/server/adapters";
+import { loadRecordContentCounts } from "@/lib/server/services/record-emptiness";
 import { requireOnboarded } from "@/lib/server/session";
 
+/**
+ * Overview also carries the contextual homes for the four routes dropped
+ * from the record navigation: the "Record status" rows link to Facts,
+ * Contributors, Timeline, and Sources, and the counsel card links to
+ * Review. Every route is unchanged — only the tab bar shrank.
+ */
 export default async function InventionOverviewPage({
   params,
 }: {
@@ -15,6 +23,14 @@ export default async function InventionOverviewPage({
   const { data } = getAdapters();
   const invention = await data.getInvention(context.organization.id, id);
   if (!invention) notFound();
+
+  // An empty record has one surface only — the Studio's first-run upload
+  // area and guided-questions button (Jeff's direction, 2026-08-04). There
+  // is no tab navigation to get back here, so the overview forwards rather
+  // than showing a page of empty cards.
+  if (isEmptyRecord(await loadRecordContentCounts(context.organization.id, id))) {
+    redirect(`/wepatent/app/inventions/${id}/studio`);
+  }
 
   const [facts, contributors, events, sources, drafts, exports] = await Promise.all([
     data.listFacts(context.organization.id, id),

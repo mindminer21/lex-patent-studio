@@ -159,6 +159,110 @@ export async function deletePair(params: {
   return { ok: true, pair: null };
 }
 
+/* ------------------------ component inventory ---------------------------- */
+
+/**
+ * Component edit / confirm / delete (M4: the interview's gated components
+ * panel edits inline, and the studio lists the same rows).
+ *
+ * These run through the SAME domain guard as ledger pairs with actor
+ * "user". There is no model path into this module: extraction can only
+ * call `createComponent` with the `ai_proposed` state the guard returns
+ * for actor "model" (invariant 1). Component events are appended to the
+ * ps_events log with `pairId: null` — the column is a ps_pairs foreign
+ * key, so a component id must never be written into it.
+ */
+export type ComponentMutationResult =
+  | { ok: true; component: ComponentRecord | null }
+  | { ok: false; error: "not_found" | "forbidden_transition" | "invalid_input" };
+
+export async function confirmComponent(params: {
+  organizationId: Id;
+  userId: Id;
+  componentId: Id;
+}): Promise<ComponentMutationResult> {
+  const { data } = getAdapters();
+  const component = await data.getComponent(params.organizationId, params.componentId);
+  if (!component) return { ok: false, error: "not_found" };
+  const guard = applyPsAction("user", "confirm", component.state);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+  const updated = await data.updateComponent(params.organizationId, params.componentId, {
+    state: guard.nextState,
+  });
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: component.inventionId,
+    pairId: null,
+    kind: "confirmed",
+    actor: `user:${params.userId}`,
+    detail: `component:${component.id} ${component.name.slice(0, 200)}`,
+  });
+  return { ok: true, component: updated };
+}
+
+export async function editComponent(params: {
+  organizationId: Id;
+  userId: Id;
+  componentId: Id;
+  name?: string;
+  description?: string;
+}): Promise<ComponentMutationResult> {
+  const name = params.name?.trim();
+  const description = params.description?.trim();
+  if (name === undefined && description === undefined) {
+    return { ok: false, error: "invalid_input" };
+  }
+  if (name !== undefined && (name.length < 2 || name.length > 200)) {
+    return { ok: false, error: "invalid_input" };
+  }
+  if (description !== undefined && description.length > 2_000) {
+    return { ok: false, error: "invalid_input" };
+  }
+  const { data } = getAdapters();
+  const component = await data.getComponent(params.organizationId, params.componentId);
+  if (!component) return { ok: false, error: "not_found" };
+  const guard = applyPsAction("user", "edit", component.state);
+  if (!guard.allowed || !guard.nextState) return { ok: false, error: "forbidden_transition" };
+  const updated = await data.updateComponent(params.organizationId, params.componentId, {
+    ...(name === undefined ? {} : { name }),
+    ...(description === undefined ? {} : { description }),
+    state: guard.nextState,
+  });
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: component.inventionId,
+    pairId: null,
+    kind: "edited",
+    actor: `user:${params.userId}`,
+    detail: `component:${component.id} ${(name ?? component.name).slice(0, 200)}`,
+  });
+  return { ok: true, component: updated };
+}
+
+export async function deleteComponent(params: {
+  organizationId: Id;
+  userId: Id;
+  componentId: Id;
+}): Promise<ComponentMutationResult> {
+  const { data } = getAdapters();
+  const component = await data.getComponent(params.organizationId, params.componentId);
+  if (!component) return { ok: false, error: "not_found" };
+  const guard = applyPsAction("user", "delete", component.state);
+  if (!guard.allowed) return { ok: false, error: "forbidden_transition" };
+  // Deleting an AI proposal is a recorded rejection signal (§5.4).
+  const eventKind = deletionEventKind(component.state);
+  await data.deleteComponent(params.organizationId, params.componentId);
+  await data.appendPsEvent({
+    organizationId: params.organizationId,
+    inventionId: component.inventionId,
+    pairId: null,
+    kind: eventKind,
+    actor: `user:${params.userId}`,
+    detail: `component:${component.id} ${component.name.slice(0, 200)}`,
+  });
+  return { ok: true, component: null };
+}
+
 export async function linkPairs(params: {
   organizationId: Id;
   userId: Id;

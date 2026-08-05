@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { onboardFreshTenant } from "./helpers";
+import { onboardFreshTenant, UPLOAD_INPUT_LABEL } from "./helpers";
 
 /**
  * THE END-TO-END THREE-PASS JOURNEY (Jeff's directive, 2026-08-04):
@@ -38,7 +38,7 @@ async function seedInterpretedRecord(page: Page): Promise<string> {
   await page.waitForURL(/\/studio$/);
   const studioUrl = page.url();
 
-  await page.getByLabel(/^File \(documents/).setInputFiles({
+  await page.getByLabel(UPLOAD_INPUT_LABEL).setInputFiles({
     name: "memo.md",
     mimeType: "text/markdown",
     buffer: Buffer.from(MEMO_MD),

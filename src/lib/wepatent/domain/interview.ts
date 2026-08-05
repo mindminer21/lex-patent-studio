@@ -483,3 +483,52 @@ export function interviewProgress(
     coverageTotal: coverage.total,
   };
 }
+
+/* ------------------- components-panel gating (M4 chat) ------------------- */
+
+/**
+ * The interview's right-hand components panel is GATED: it does not render
+ * at all until the record carries enough information to distill components
+ * (Jeff's direction, 2026-08-05 — "invention components should populate in
+ * a box on the right side that appears only after there is enough
+ * information to distill components"). Before that, the interview is one
+ * thread and nothing else; no box of zeros greets a user who has not
+ * answered a question yet.
+ *
+ * ONE predicate decides this, and both the server render and the live
+ * client update call it, so the two can never disagree.
+ *
+ * The signal is real extraction output, never a turn counter on its own:
+ *
+ *  - `componentCount` — components the extraction pass actually produced
+ *    (or the user added). One is enough: there is something to show.
+ *  - `substantiveAnswerCount` — turns answered with real text. Skips,
+ *    "I don't know", and advice referrals do not count; they produce no
+ *    extraction input.
+ *  - `extractedItemCount` — problem/solution items the interview's own
+ *    extraction produced. Non-zero means extraction is finding structure
+ *    in this record even though it has not named a discrete part yet.
+ *
+ * The second arm exists so a record whose answers are prose-heavy still
+ * gets the panel once extraction is demonstrably working on it; it needs
+ * BOTH enough substantive answers AND real extracted items, so it can
+ * never fire on turn count alone.
+ */
+export const COMPONENTS_PANEL_MIN_SUBSTANTIVE_ANSWERS = 3;
+
+export type ComponentsPanelSignal = {
+  /** Components on the record right now (any state). */
+  componentCount: number;
+  /** Turns answered with substantive text (not skip/unknown/referral). */
+  substantiveAnswerCount: number;
+  /** P/S ledger items this interview's extraction produced. */
+  extractedItemCount: number;
+};
+
+export function shouldShowComponentsPanel(signal: ComponentsPanelSignal): boolean {
+  if (signal.componentCount >= 1) return true;
+  return (
+    signal.substantiveAnswerCount >= COMPONENTS_PANEL_MIN_SUBSTANTIVE_ANSWERS &&
+    signal.extractedItemCount >= 1
+  );
+}

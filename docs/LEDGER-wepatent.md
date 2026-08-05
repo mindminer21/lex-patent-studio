@@ -682,6 +682,69 @@ wepatent pgTAP **269** · lex pgTAP **110 + 7** · wepatent E2E **49** ·
 lex E2E **16** (both 0 did-not-run) · build success · `npm audit --omit=dev
 --audit-level=high` clean.
 
+---
+
+## Round 4 — navigation reduction + first-run Studio (2026-08-04)
+
+Two UI changes Jeff approved directly. **No route was deleted, no
+migration was needed, and no invariant moved.** Detail and rationale live
+in `docs/FRICTION-AUDIT.md` §"Round 4".
+
+### What changed
+
+1. **Tab bars shrank.** wepatent record navigation 10 → **5** (Overview ·
+   Studio · Drafts · Figures · Export); Lex matter navigation 11 → **6**
+   (Workspace · Chat · Documents · Claims · Reviews · Activity). The ten
+   dropped entries kept their routes and gained contextual entry points —
+   the mapping table is in the friction audit.
+2. **First-run Studio.** An invention record with no content shows the
+   compliance banner, the auto-saving title field, ONE drag-and-drop area
+   ("Upload Anything About the Invention"), ONE button ("Start Guided
+   Questions About the Invention"), and **no tab navigation**. The full
+   five-tab layout and the Studio panels return automatically on the first
+   piece of content.
+
+### Invariants re-checked
+
+- **Invariant 4 (working-draft labeling).** The compliance banner is part
+  of the four things the first-run surface renders and cannot be reached
+  in a state where it is absent; the layout's "Working record — counsel
+  review required" badge is unconditional. E2E asserts both strings on the
+  empty surface.
+- **Invariant 1 (`ai_proposed` until a human acts).** Untouched. The empty
+  state runs no model; the working-title field keeps its existing
+  provenance path.
+- **Invariant 2 (uploads are evidence, never instructions).** The drop
+  area is the same `UploadForm` behind a variant flag — same FR-4
+  allowlist, same sign → PUT → quarantine → scan path, same validation and
+  the same untrusted-content handling.
+- **Invariants 3, 5–8.** No metering, counsel, tenancy, drafting, or
+  figure code was touched.
+
+### Traceability
+
+| Requirement | Implementation | Test |
+|---|---|---|
+| "Empty record" defined once, used everywhere | `src/lib/wepatent/domain/record-emptiness.ts` (`isEmptyRecord`, 7 signals) + `src/lib/server/services/record-emptiness.ts` | `tests/record-emptiness.test.ts` (12) |
+| First-run Studio renders only the four allowed things | `inventions/[id]/studio/page.tsx` (`EmptyRecordStudio`) | `e2e/wepatent/studio.spec.ts` "empty record: one drop area, one button, no tabs" |
+| No tab navigation while empty; record URL forwards | `inventions/[id]/layout.tsx`, `inventions/[id]/page.tsx` | same E2E |
+| Automatic return to the five-tab layout on first content | `router.refresh()` after upload + shared predicate | same E2E (tabs + panels after one upload) |
+| Drop zone: same FR-4 pipeline, auto kind, no Kind/Note | `components/wepatent/UploadForm.tsx` (`variant="dropzone"`) | `e2e/wepatent/studio.spec.ts` (journey + first-run) |
+| Drop zone a11y: labeled real file input, Tab-reachable, aria-live, axe | same + `globals.css` `.wp-dropzone` | first-run E2E (Tab walk, accessible name, live region, axe) |
+| Upload confirmation survives the automatic swap | `components/wepatent/UploadStatusProvider.tsx` | first-run E2E ("as document" after the transition) |
+| wepatent: five tabs, dropped routes reachable | `inventions/[id]/layout.tsx`, Overview rows, Studio panels, Drafts | first-run E2E (tab list + every contextual href) |
+| Lex: six tabs, dropped routes reachable | `matters/[matterId]/{MatterTabs,layout,page,Composer}.tsx` | `e2e/lex/02_workspace.spec.ts` (tab list; contextual walk of all five) |
+
+### Gates (fresh, this container, round 4)
+
+lint 0 · tsc clean · wepatent units **635** · lex units **505** (+8
+skipped) · wepatent pgTAP **269** · lex pgTAP **110 + 7** · wepatent E2E
+**50** · lex E2E **17** (both 0 did-not-run) · build success.
+
+Unit and E2E counts rose by the tests added here (12 unit for the
+emptiness predicate; 1 wepatent E2E for the first-run Studio; 1 Lex E2E
+for the contextual routes). No test was deleted, skipped, or weakened.
+
 ### Needs Jeff
 
 1. **The category mapping table** — six borderline calls are flagged in the
@@ -696,3 +759,101 @@ lex E2E **16** (both 0 did-not-run) · build success · `npm audit --omit=dev
    and needs an explicit go/no-go before deploy.
 4. The four pre-existing figure approval gates in `PATENT-FIGURES.md` §7
    remain open, plus §7.2a: whether to run the image-model comparison at all.
+
+## Round 5 — the invention interview as a single-thread chat (2026-08-05)
+
+Branch `agent/fable/interview-chat` off `track/wepatent-app-reconciled`
+@ 33eb0df. Presentation change plus one gating rule; the M2 interview
+engine is untouched.
+
+### What changed
+
+1. **One thread.** `/wepatent/app/inventions/[id]/interview` is now a
+   single continuous conversation: prior turns scroll in a message thread,
+   the composer is pinned at the bottom, and the counsel referral lives in
+   the thread instead of disappearing on reload. No stage cards, no
+   multi-panel intake, no landing wall.
+2. **Auto-created session.** Arriving with no session creates one and
+   drafts the first question — no "Start the interview" click. The POST
+   runs on mount (not during the server render), so a `Link` prefetch can
+   never draft, and bill for, a question nobody asked for. It is
+   idempotent: an existing or paused session is resumed, never duplicated.
+3. **Gated components box.** A right-hand panel listing the invention's
+   distilled components renders **only** when `shouldShowComponentsPanel`
+   opens (see the friction audit §5.2 for the predicate and its rationale).
+   It carries `ai_proposed` / confirmed state exactly as before, edits
+   autosave inline, and Confirm/Remove run through the ps-ledger guard.
+   The coverage meter and the full P/S ledger stay in the Studio — they are
+   no longer duplicated on the interview surface (Jeff: the right side
+   holds components and nothing else).
+4. **Component mutations exist for the first time.** `confirmComponent` /
+   `editComponent` / `deleteComponent` in `services/ps-ledger.ts` plus
+   `getComponent` / `updateComponent` / `deleteComponent` on the
+   `DataAdapter` port, implemented in **both** adapters, and
+   `PATCH|DELETE /api/components/:id` + `POST /api/components/:id/confirm`.
+   No migration: `components` carries no immutability trigger and its
+   writes are service-role, so the existing schema and RLS already allow
+   this. Component events append to `ps_events` with `pairId: null` —
+   that column is a `ps_pairs` foreign key and must never hold a component
+   id.
+
+### Invariants re-checked
+
+- **Invariant 1 (`ai_proposed` until a human acts).** Extraction still
+  writes components through `applyPsAction("model", "propose", null)`, and
+  the new confirm path is user-only: `applyPsAction("model", "confirm", …)`
+  is refused, and there is no model-facing route to `/confirm`. Asserted
+  in unit tests and in the E2E injection turn (nothing reads "Confirmed by
+  you" after an answer that orders it, before or after a reload).
+- **Invariant 2 (evidence, never instructions).** Attachments run the same
+  FR-4 sign → PUT → quarantine → scan → interpretation path. A new fixture
+  covers an instruction planted **inside a chat answer** attempting to
+  confirm, rename, and delete components; all three are inert.
+- **Invariant 3 (metering).** Untouched. Both passes still run estimate →
+  reservation → run → settlement, the estimate is displayed before spend,
+  and the session cap still halts model calls with the raise-cap path.
+  Skips, "I don't know", and advice referrals still cost nothing.
+- **Invariant 4 (working-draft labeling).** The fixed interview-surface
+  disclaimer renders above the thread on every paint; it is not inside any
+  disclosure or conditional.
+- **Invariants 5–8.** No counsel, tenancy, drafting, or figure code was
+  touched. Cross-tenant refusal is asserted for the new component paths.
+
+### Traceability
+
+| Requirement | Implementation | Test |
+|---|---|---|
+| Single-thread chat, composer pinned, no landing wall | `components/wepatent/InterviewPanel.tsx`, `globals.css` `.wp-chat*` | `e2e/wepatent/interview.spec.ts` (thread, message roles, reload persistence) |
+| First question on arrival with no Start click | same (mount effect) + `startInterviewSession` idempotence | `tests/interview.test.ts` "auto-created session on arrival" (3); E2E asserts no Start button exists |
+| Components box gated by ONE predicate | `domain/interview.ts` `shouldShowComponentsPanel`; `services/interview.ts` view fields; client re-evaluates the same function | `tests/interview.test.ts` (4 predicate + 2 view); E2E absent → appears without reload |
+| Components: inventory only, inline edit/confirm/delete, autosave | `components/wepatent/InterviewComponentsPanel.tsx`, `services/ps-ledger.ts`, `/api/components/*` | `tests/interview.test.ts` (4); E2E inline confirm |
+| Coverage meter / full ledger not duplicated here | interview page renders neither | E2E asserts both test ids absent |
+| Compliance banner stays visible | `interview/page.tsx` | E2E disclaimer assertion |
+| Injected instruction inside a chat answer is inert | unchanged pipeline | `tests/interview.test.ts` "prompt injection inside a chat answer"; E2E injection turn |
+| a11y: log/live region, labeled composer, focus after each turn, axe | `InterviewPanel.tsx` | E2E keyboard-only variant + axe scan |
+| Responsive 320–1440; components collapse on mobile | `globals.css` + `matchMedia` in the panel | E2E viewport loop (overflow + `details` vs `section`) |
+
+### Gates (fresh, this container, round 5)
+
+lint 0 · tsc clean · wepatent units **649** · lex units **505** (+8
+skipped) · wepatent E2E **50** · lex E2E **17** (both 0 did-not-run) ·
+build success. pgTAP unchanged and not re-run (no schema change in this
+round): wepatent **269**, lex **110 + 7**.
+
+Unit count rose 635 → 649 (+14: gate predicate, gated view, auto-session
+creation/resume, component confirm/edit/delete, cross-tenant refusal, and
+the chat-answer injection fixture). No test was deleted, skipped, or
+weakened; the interview E2E was adapted to the new selectors and flow and
+gained the gate, inline-confirm, and responsive assertions.
+
+### Needs Jeff
+
+1. **The threshold numbers.** The second arm of the gate is "≥ 3
+   substantive answers AND ≥ 1 extracted item". Three is a judgement call;
+   say the word and it becomes two or four — it is one constant
+   (`COMPONENTS_PANEL_MIN_SUBSTANTIVE_ANSWERS`).
+2. **Coverage in-thread.** Per your instruction the right side holds
+   components and nothing else. If you later want the coverage meter back
+   on this surface, that is a separate decision — it is still one line of
+   data from the same view.
+3. Everything under "Needs Jeff" in round 4 remains open.

@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { onboardFreshTenant } from "./helpers";
+import { onboardFreshTenant, UPLOAD_INPUT_LABEL } from "./helpers";
 
 /**
  * Intake Studio M3 journeys (feature PRD §7, §13 M3):
@@ -85,7 +85,7 @@ async function uploadFile(
 ): Promise<void> {
   // No upload button (design rule: minimal human input) — selecting the
   // file starts the validated upload; the success message names the file.
-  await page.getByLabel(/^File \(documents/).setInputFiles(file);
+  await page.getByLabel(UPLOAD_INPUT_LABEL).setInputFiles(file);
   await expect(page.getByTestId("upload-message")).toContainText(`Uploaded ${file.name}`, {
     timeout: 15_000,
   });

@@ -7,8 +7,10 @@ import {
   factCategoryForStage,
   interviewProgress,
   selectNextTarget,
+  shouldShowComponentsPanel,
   stageSkipRefs,
   deterministicQuestionText,
+  type ComponentsPanelSignal,
   type EngineInput,
   type InterviewProgress,
 } from "@/lib/wepatent/domain/interview";
@@ -21,6 +23,7 @@ import { getModelTier, type ModelTier } from "../model-registry";
 import { estimateForTier } from "./generation";
 import { getLedger, recomputeCoverage } from "./ps-ledger";
 import type {
+  ComponentRecord,
   Id,
   InterviewSessionRecord,
   InterviewTurnRecord,
@@ -67,6 +70,16 @@ export type InterviewView = {
   proposedEdits: Array<{ eventId: Id; pairId: Id; proposedStatement: string }>;
   perTurnEstimate: { lowCents: number; highCents: number };
   walletAvailableCents: number;
+  /**
+   * Component inventory for the interview's gated right-hand panel (M4).
+   * Carried on the turn response so the panel can appear the moment the
+   * threshold is met — no reload, no user action.
+   */
+  components: ComponentRecord[];
+  /** Inputs to `shouldShowComponentsPanel` — the ONE gating predicate. */
+  componentsSignal: ComponentsPanelSignal;
+  /** `shouldShowComponentsPanel(componentsSignal)`, computed server-side. */
+  componentsPanelVisible: boolean;
 };
 
 export type StartResult =
@@ -169,6 +182,12 @@ async function buildView(
       /* non-JSON details are ordinary events */
     }
   }
+  // Components-panel gate (M4): real extraction signal, one predicate.
+  const componentsSignal: ComponentsPanelSignal = {
+    componentCount: ledger.components.length,
+    substantiveAnswerCount: turns.filter((turn) => turn.answerKind === "answer").length,
+    extractedItemCount: ledger.pairs.filter((pair) => pair.origin === "interview").length,
+  };
   return {
     session,
     turns,
@@ -181,6 +200,9 @@ async function buildView(
     proposedEdits,
     perTurnEstimate: perTurnEstimate() ?? { lowCents: 0, highCents: 0 },
     walletAvailableCents: wallet ? wallet.balanceCents - wallet.reservedCents : 0,
+    components: ledger.components,
+    componentsSignal,
+    componentsPanelVisible: shouldShowComponentsPanel(componentsSignal),
   };
 }
 

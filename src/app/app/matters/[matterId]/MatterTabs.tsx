@@ -3,19 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// §8.2 route order: chat, facts, sources, workflows, documents, claims,
-// citations, reviews, counsel, activity — plus the composer workspace.
+/**
+ * Matter navigation — six tabs (Jeff's approved set, 2026-08-04), reduced
+ * from eleven. Every §8.2 ROUTE still exists; Facts, Sources, Workflows,
+ * Citations, and Counsel simply stopped being tabs and are reached from
+ * the surface that already shows their content:
+ *
+ * - Facts    → the Workspace left pane's "Fact ledger" panel
+ * - Sources  → the Workspace left pane's "Sources" panel
+ * - Citations→ the Workspace right pane's "Citations · verification" panel
+ * - Workflows→ the run composer's task picker
+ * - Counsel  → the matter header (counsel status has no other home)
+ */
 const TABS = [
   { slug: "", label: "Workspace" },
   { slug: "chat", label: "Chat" },
-  { slug: "facts", label: "Facts" },
-  { slug: "sources", label: "Sources" },
-  { slug: "workflows", label: "Workflows" },
   { slug: "documents", label: "Documents" },
   { slug: "claims", label: "Claims" },
-  { slug: "citations", label: "Citations" },
   { slug: "reviews", label: "Reviews" },
-  { slug: "counsel", label: "Counsel" },
   { slug: "activity", label: "Activity" },
 ] as const;
 

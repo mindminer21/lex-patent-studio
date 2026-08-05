@@ -2747,6 +2747,47 @@ export class SupabaseDataAdapter implements DataPort {
     return rows.map(mapComponent);
   }
 
+  async getComponent(organizationId: Id, componentId: Id): Promise<ComponentRecord | null> {
+    const row = await one<Row>(
+      this.from("components")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("id", componentId),
+      "components.get",
+    );
+    return row ? mapComponent(row) : null;
+  }
+
+  async updateComponent(
+    organizationId: Id,
+    componentId: Id,
+    patch: Partial<Pick<ComponentRecord, "name" | "description" | "state">>,
+  ): Promise<ComponentRecord | null> {
+    const payload: Row = {};
+    if (patch.name !== undefined) payload.name = patch.name;
+    if (patch.description !== undefined) payload.description = patch.description;
+    if (patch.state !== undefined) payload.state = patch.state;
+    if (Object.keys(payload).length === 0) return this.getComponent(organizationId, componentId);
+    const row = await one<Row>(
+      this.from("components")
+        .update(payload)
+        .eq("organization_id", organizationId)
+        .eq("id", componentId)
+        .select(),
+      "components.update",
+    );
+    return row ? mapComponent(row) : null;
+  }
+
+  async deleteComponent(organizationId: Id, componentId: Id): Promise<void> {
+    // Associations referencing the component cascade in the schema (0009).
+    const { error } = await this.from("components")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", componentId);
+    if (error) throw new Error(`supabase_adapter:components.delete:${error.message}`);
+  }
+
   async createAssociation(
     input: Omit<AssociationRecord, "id" | "createdAt">,
   ): Promise<AssociationRecord> {
