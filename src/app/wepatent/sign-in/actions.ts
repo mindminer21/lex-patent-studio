@@ -6,6 +6,7 @@ import { z } from "zod";
 import { needsReacceptance } from "@/lib/wepatent/domain/clickwrap";
 import { isLocalMode } from "@/lib/wepatent/env";
 import { getAdapters } from "@/lib/server/adapters";
+import { createConsumerAuthServices } from "@/lib/server/auth/consumer-auth";
 import { ensurePersonalOrganization } from "@/lib/server/services/orgs";
 import { incrementCounter, logEvent } from "@/lib/server/observability";
 import {
@@ -13,7 +14,12 @@ import {
   SIGN_IN_EMAIL_LIMIT,
   SIGN_IN_IP_LIMIT,
 } from "@/lib/server/rate-limit";
-import { createSession, destroySession, requestIpHash } from "@/lib/server/session";
+import {
+  createAuthenticatedSession,
+  createSession,
+  destroySession,
+  requestIpHash,
+} from "@/lib/server/session";
 
 const emailSchema = z.email();
 
@@ -65,9 +71,29 @@ export async function signInAction(formData: FormData): Promise<void> {
     String(formData.get("name") ?? "").trim().slice(0, 120) || parsed.data.split("@")[0];
 
   const { data } = getAdapters();
-  const user =
-    (await data.getUserByEmail(parsed.data)) ??
-    (await data.createUser({ email: parsed.data, displayName }));
+  let user;
+  if (isLocalMode) {
+    user =
+      (await data.getUserByEmail(parsed.data)) ??
+      (await data.createUser({ email: parsed.data, displayName }));
+    await createSession(user.id);
+  } else {
+    const password = String(formData.get("password") ?? "");
+    const authentication = await createConsumerAuthServices().passwordAuth.signIn({
+      email: parsed.data,
+      password,
+    });
+    if (!authentication.ok) {
+      redirect("/wepatent/sign-in?error=invalid_credentials");
+    }
+    const appUserId = await createAuthenticatedSession({
+      authentication,
+      displayName,
+      linkMethod: "existing_identity",
+    });
+    user = await data.getUserById(appUserId);
+    if (!user) throw new Error("Verified user profile could not be loaded.");
+  }
 
   if (isLocalMode && LOCAL_COUNSEL_SEEDS[parsed.data]) {
     await data.setCounselAssignment({
@@ -82,7 +108,6 @@ export async function signInAction(formData: FormData): Promise<void> {
     });
   }
 
-  await createSession(user.id);
   const assignment = await data.getCounselAssignment(user.id);
   if (assignment) redirect("/counsel");
 
@@ -101,7 +126,8 @@ export async function signInAction(formData: FormData): Promise<void> {
       redirect("/wepatent/app/terms");
     }
   }
-  redirect("/wepatent/app");
+  const requestedNext = String(formData.get("next") ?? "");
+  redirect(requestedNext.startsWith("/wepatent/app") ? requestedNext : "/wepatent/app");
 }
 
 export async function signOutAction(): Promise<void> {

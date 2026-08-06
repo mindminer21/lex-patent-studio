@@ -12,14 +12,19 @@ export const metadata: Metadata = {
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; status?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next, status } = await searchParams;
   return (
     <PublicShell>
       <div className="policy-page signin-page">
         <p className="venture-kicker">Authentication</p>
         <h1>Sign in to wepatent.</h1>
+        {status === "password_updated" && (
+          <div className="terms-warning" role="status">
+            Your password was updated. Sign in with the new password.
+          </div>
+        )}
         {isLocalMode && (
           <div className="terms-warning" role="note">
             <strong>Local preview mode.</strong> This build runs without external accounts. Enter any
@@ -38,6 +43,16 @@ export default async function SignInPage({
               Too many sign-in attempts. Please wait a few minutes and try again.
             </p>
           )}
+          {error === "invalid_credentials" && (
+            <p className="form-error" role="alert">
+              The email or password was not accepted. Verify both and try again.
+            </p>
+          )}
+          {error === "verification_failed" && (
+            <p className="form-error" role="alert">
+              That verification link is invalid or expired. Request a new link and try again.
+            </p>
+          )}
           {error === "mfa_required" && (
             <p className="form-error" role="alert">
               Counsel administrator access requires multi-factor authentication enrollment.
@@ -54,14 +69,36 @@ export default async function SignInPage({
               aria-describedby={error === "invalid_email" ? "email-error" : undefined}
             />
           </div>
-          <div className="field">
-            <label htmlFor="name">Display name (optional)</label>
-            <input id="name" name="name" type="text" autoComplete="name" maxLength={120} />
-          </div>
+          {isLocalMode ? (
+            <div className="field">
+              <label htmlFor="name">Display name (optional)</label>
+              <input id="name" name="name" type="text" autoComplete="name" maxLength={120} />
+            </div>
+          ) : (
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                minLength={12}
+                maxLength={512}
+                required
+              />
+            </div>
+          )}
+          <input type="hidden" name="next" value={next ?? ""} />
           <button className="button venture-button" type="submit">
             Continue
           </button>
         </form>
+        {!isLocalMode && (
+          <p className="consent-legal">
+            New here? <Link href="/wepatent/sign-up">Create an account</Link>. Forgot your
+            password? <Link href="/wepatent/recover">Reset it securely</Link>.
+          </p>
+        )}
         <p className="consent-legal">
           Signing in does not make you a client of any law firm and does not create an
           attorney-client relationship. See the <Link href="/wepatent/terms">Self-Service Terms</Link>.

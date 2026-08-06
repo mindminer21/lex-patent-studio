@@ -20,6 +20,8 @@ const envSchema = z.object({
     .string()
     .min(16)
     .default("wepatent-local-dev-secret-not-for-production"),
+  /** Base64-encoded 32-byte AES key for provider tokens in auth_sessions. */
+  AUTH_SESSION_ENCRYPTION_KEY: z.string().optional(),
   /** Salt for privacy-preserving IP hashing on clickwrap records. */
   IP_HASH_SALT: z.string().min(8).default("wepatent-local-ip-salt"),
 
@@ -112,6 +114,7 @@ const PRODUCTION_REQUIRED: Array<keyof Env> = [
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
+  "AUTH_SESSION_ENCRYPTION_KEY",
   "CORPUS_SUPABASE_URL",
   "CORPUS_SUPABASE_SERVICE_ROLE_KEY",
   "STRIPE_SECRET_KEY",
@@ -123,6 +126,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     APP_MODE: source.APP_MODE,
     NEXT_PUBLIC_APP_URL: source.NEXT_PUBLIC_APP_URL,
     SESSION_SECRET: source.SESSION_SECRET,
+    AUTH_SESSION_ENCRYPTION_KEY: source.AUTH_SESSION_ENCRYPTION_KEY,
     IP_HASH_SALT: source.IP_HASH_SALT,
     SUPABASE_URL: source.SUPABASE_URL,
     SUPABASE_ANON_KEY: source.SUPABASE_ANON_KEY,
@@ -156,6 +160,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     }
     if (parsed.SESSION_SECRET.includes("not-for-production")) {
       throw new Error("APP_MODE=production requires a real SESSION_SECRET");
+    }
+    const authKey = Buffer.from(parsed.AUTH_SESSION_ENCRYPTION_KEY ?? "", "base64");
+    if (authKey.length !== 32) {
+      throw new Error(
+        "APP_MODE=production requires AUTH_SESSION_ENCRYPTION_KEY as a 32-byte base64 value",
+      );
     }
     if (parsed.STRIPE_WEBHOOK_SECRET.includes("not_for_production")) {
       throw new Error("APP_MODE=production requires a real STRIPE_WEBHOOK_SECRET");
