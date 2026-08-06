@@ -1,7 +1,7 @@
-import { cookies } from "next/headers";
 import type { Pool } from "pg";
 import type { AuthAdapter, Session } from "@/lib/adapters/types";
 import type { Role } from "@/lib/domain/roles";
+import { getLexActiveProviderSession } from "./lex-auth-session";
 
 /**
  * PRODUCTION AuthAdapter — Supabase Auth (FR-1).
@@ -66,39 +66,43 @@ export function extractAccessToken(
 }
 
 export class SupabaseAuthAdapter implements AuthAdapter {
-  constructor(
-    private readonly pool: Pool,
-    private readonly verifyToken: TokenVerifier,
-  ) {}
+  constructor(private readonly pool: Pool) {}
 
   async getSession(): Promise<Session | null> {
-    const cookieStore = await cookies();
-    const token = extractAccessToken(cookieStore.getAll());
-    if (!token) return null;
-
-    const user = await this.verifyToken(token);
-    if (!user) return null;
+    const providerSession = await getLexActiveProviderSession(this.pool);
+    if (!providerSession) return null;
 
     // Tenant + role from the membership table, by verified user id only.
     const { rows } = await this.pool.query(
       `select m.organization_id, m.role, o.name as organization_name,
+              l.email,
               coalesce(p.display_name, $2) as display_name
          from organization_memberships m
          join organizations o on o.id = m.organization_id
          left join users_profile p on p.user_id = m.user_id
+         left join auth_identity_links l on l.app_user_id = m.user_id
         where m.user_id = $1
         order by m.created_at
         limit 1`,
-      [user.id, user.email],
+      [providerSession.appUserId, "Invited Lex user"],
     );
     if (!rows[0]) return null;
+    const role = rows[0].role as Role;
+    if (
+      ["owner", "practitioner_admin", "counsel_intake", "counsel_attorney", "platform_support"].includes(
+        role,
+      ) &&
+      providerSession.assuranceLevel !== "aal2"
+    ) {
+      return null;
+    }
     return {
-      userId: user.id,
+      userId: providerSession.appUserId,
       displayName: String(rows[0].display_name),
-      email: user.email,
+      email: String(rows[0].email ?? ""),
       organizationId: String(rows[0].organization_id),
       organizationName: String(rows[0].organization_name),
-      role: rows[0].role as Role,
+      role,
       synthetic: false,
     };
   }

@@ -46,7 +46,7 @@ export default function Home() {
             </p>
             <div className="hero-actions">
               <a className="button" href="#pricing">Add Lex to your team</a>
-              <a className="text-link" href="#work">See the workbench <span aria-hidden="true">→</span></a>
+              <a className="text-link" href="/demo">Explore the read-only demo <span aria-hidden="true">→</span></a>
             </div>
             <p className="boundary-note">Lex is software—not a licensed person, attorney, patent agent, employee, or substitute for professional judgment. The responsible practitioner independently reviews all work and controls advice, client communications, deadlines, signatures, and filings.</p>
           </div>

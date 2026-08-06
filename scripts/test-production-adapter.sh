@@ -30,6 +30,6 @@ done
 
 echo "== Running integration suite"
 LEX_PG_TEST_URL="postgres://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${DB}" \
-  npx vitest run src/lib/adapters/production
+  npx vitest run --config vitest.lex.config.mts src/lib/adapters/production
 
 echo "== Production-adapter suite passed"

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getAdapters } from "@/lib/adapters";
 import { ROLE_LABELS } from "@/lib/domain/roles";
+import { lexSignOutAction } from "@/app/login/actions";
 
 export const metadata: Metadata = {
   title: "Workspace — Lex Patent Studio",
@@ -42,13 +43,20 @@ export default async function AppLayout({
           supervision. All outputs are drafts for professional review.
         </p>
         {session && (
-          <span className="ml-auto min-w-0 max-w-full text-right text-[0.78rem] leading-tight">
+          <div className="ml-auto flex min-w-0 max-w-full items-center gap-3 text-right text-[0.78rem] leading-tight">
+          <span>
             <strong>{session.displayName}</strong>
             <br />
             <span className="text-[var(--muted)]">
               {ROLE_LABELS[session.role]} · {session.organizationName}
             </span>
           </span>
+          {!session.synthetic && (
+            <form action={lexSignOutAction}>
+              <button className="text-xs font-semibold underline" type="submit">Sign out</button>
+            </form>
+          )}
+          </div>
         )}
       </header>
 

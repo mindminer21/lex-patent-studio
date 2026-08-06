@@ -24,8 +24,8 @@ export default function SignupPage() {
     <MarketingShell>
       <PageIntro
         kicker="Create an account"
-        title="Signup opens with the production environment."
-        lede="Tenant creation, seat invitations, and billing are approval-gated. What you see below is the exact supervision clickwrap every tenant will acknowledge before first substantive use."
+        title="Lex is invitation-only during practitioner beta."
+        lede="A tenant administrator invites approved practitioners and team members. Open signup can be enabled later without changing the tenancy or supervision contract."
       />
       <section className="section" aria-label="Signup status">
         <div className="max-w-[680px] border border-[var(--line)] bg-[var(--white)] p-6">
@@ -41,7 +41,8 @@ export default function SignupPage() {
             Each acknowledgement requires an explicit action; acceptance is
             recorded server-side with the terms version, and changed material
             terms require re-acceptance. Evaluate the product now in the
-            local-mode workspace with synthetic data.
+            local-mode workspace with synthetic data. Invited users receive a
+            verified authentication email and set their password before access.
           </p>
           <Link className="button mt-5 inline-block" href="/app">
             Explore the local-mode workspace

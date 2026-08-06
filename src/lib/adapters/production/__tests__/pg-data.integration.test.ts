@@ -3,6 +3,8 @@ import { Pool } from "pg";
 import { PgDataAdapter } from "@/lib/adapters/production/data";
 import { PgBillingAdapter } from "@/lib/adapters/production/billing";
 import { extractAccessToken } from "@/lib/adapters/production/auth";
+import { LexPgAuthSessionRepository } from "@/lib/adapters/production/lex-session-repository";
+import { ServerSessionService } from "@/lib/shared/auth/server-session";
 
 /**
  * PRODUCTION adapter integration suite — runs against a REAL PostgreSQL 16
@@ -265,6 +267,42 @@ describe.skipIf(!TEST_URL)("PgDataAdapter against real PostgreSQL", () => {
   it("team roster derives from memberships", async () => {
     const team = await data.listTeamMembers(ORG_A);
     expect(team.map((m) => m.role).sort()).toEqual(["contributor", "practitioner_admin"]);
+  });
+
+  it("persists provider tokens encrypted and revokes opaque auth sessions", async () => {
+    await pool.query(
+      `insert into users_profile (user_id, display_name)
+       values ($1, 'Ana (synthetic auth test)')
+       on conflict (user_id) do nothing`,
+      [ANA],
+    );
+    const sessions = new ServerSessionService(
+      new LexPgAuthSessionRepository(pool),
+      "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+    );
+    const created = await sessions.create({
+      appUserId: ANA,
+      authUserId: ANA,
+      accessToken: "prod-test-access-secret",
+      refreshToken: "prod-test-refresh-secret",
+      accessExpiresAt: "2033-05-18T03:33:20.000Z",
+      assuranceLevel: "aal2",
+      ipHash: "synthetic-ip-hash",
+      userAgentHash: "synthetic-agent-hash",
+    });
+    const stored = await pool.query(
+      `select access_token, refresh_token from auth_sessions where id = $1`,
+      [created.id],
+    );
+    expect(stored.rows[0].access_token).not.toContain("prod-test-access-secret");
+    expect(stored.rows[0].refresh_token).not.toContain("prod-test-refresh-secret");
+    await expect(sessions.resolve(created.id)).resolves.toMatchObject({
+      appUserId: ANA,
+      assuranceLevel: "aal2",
+      accessToken: "prod-test-access-secret",
+    });
+    await sessions.revoke(created.id);
+    await expect(sessions.resolve(created.id)).resolves.toBeNull();
   });
 });
 

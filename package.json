@@ -17,7 +17,7 @@
     "test:rls": "npm run test:rls:lex && npm run test:rls:wepatent",
     "test:rls:lex": "bash scripts/test-rls-lex.sh",
     "test:rls:wepatent": "bash scripts/test-rls-wepatent.sh",
-    "test:production-adapter": "scripts/test-production-adapter.sh",
+    "test:production-adapter": "bash scripts/test-production-adapter.sh",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "audit:schema:live": "node scripts/audit-live-schema.mjs",
     "scan:secrets": "bash scripts/scan-secrets.sh",

@@ -1,6 +1,6 @@
 import type { Adapters } from "@/lib/adapters/types";
 import { getEnv } from "@/lib/env";
-import { SupabaseAuthAdapter, supabaseTokenVerifier } from "./auth";
+import { SupabaseAuthAdapter } from "./auth";
 import { PgBillingAdapter } from "./billing";
 import { PgDataAdapter } from "./data";
 import { getPool } from "./db";
@@ -41,10 +41,7 @@ export function createProductionAdapters(): Adapters {
   // getEnv() has already validated the required production variables.
   const pool = getPool(env.LEX_DATABASE_URL!);
   return {
-    auth: new SupabaseAuthAdapter(
-      pool,
-      supabaseTokenVerifier(env.LEX_SUPABASE_URL!, env.LEX_SUPABASE_ANON_KEY!),
-    ),
+    auth: new SupabaseAuthAdapter(pool),
     data: new PgDataAdapter(pool),
     billing: new PgBillingAdapter(pool),
     modelGateway: new ProviderGatewayAdapter(),

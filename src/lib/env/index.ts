@@ -30,11 +30,15 @@ const envSchema = z
      * - "production": real adapters required; refuses to boot without them.
      */
     LEX_APP_MODE: z.enum(APP_MODES).default("local"),
+    NEXT_PUBLIC_LEX_APP_URL: z.string().url().default("http://localhost:3000"),
 
     // ---- Private application project (Supabase) — production mode only ----
     LEX_SUPABASE_URL: z.string().url().optional(),
     LEX_SUPABASE_ANON_KEY: z.string().min(20).optional(),
     LEX_SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
+    LEX_SESSION_SECRET: z.string().min(16).optional(),
+    /** Base64-encoded 32-byte AES key for provider tokens in auth_sessions. */
+    LEX_AUTH_SESSION_ENCRYPTION_KEY: z.string().optional(),
     /** Direct Postgres connection string (Supabase database URL). The
      *  production data adapter runs on SQL so it is testable against a plain
      *  PostgreSQL 16 server without any Supabase credentials. */
@@ -60,6 +64,8 @@ const envSchema = z
         "LEX_SUPABASE_ANON_KEY",
         "LEX_SUPABASE_SERVICE_ROLE_KEY",
         "LEX_DATABASE_URL",
+        "LEX_SESSION_SECRET",
+        "LEX_AUTH_SESSION_ENCRYPTION_KEY",
         "LEX_STRIPE_SECRET_KEY",
         "LEX_STRIPE_WEBHOOK_SECRET",
       ];
@@ -69,6 +75,23 @@ const envSchema = z
             code: z.ZodIssueCode.custom,
             path: [key],
             message: `${key} is required when LEX_APP_MODE=production`,
+          });
+        }
+      }
+      if (env.NEXT_PUBLIC_LEX_APP_URL.includes("localhost")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["NEXT_PUBLIC_LEX_APP_URL"],
+          message: "must be the deployed HTTPS origin in production",
+        });
+      }
+      if (env.LEX_AUTH_SESSION_ENCRYPTION_KEY) {
+        const authKey = Buffer.from(env.LEX_AUTH_SESSION_ENCRYPTION_KEY, "base64");
+        if (authKey.length !== 32) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["LEX_AUTH_SESSION_ENCRYPTION_KEY"],
+            message: "must be a 32-byte base64 value",
           });
         }
       }
